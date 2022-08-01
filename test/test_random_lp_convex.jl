@@ -55,7 +55,7 @@ function parse_commandline()
         "--p"
         help = "choice of p norm"
         arg_type = Float64
-        default = 0.5
+        default = 3.0
     end
     _args = parse_args(s, as_symbols=true)
     return LP.LPMinimizationParams(; _args...)
@@ -94,7 +94,7 @@ f = ProximalOperators.LeastSquares(A, b)
 # H(x) = A' * A + LP.smoothlph(λ, 0.1, params.p, x)
 
 # huberlike
-f_composite(x) = 1 / 2 * (A * x - b)' * (A * x - b) + LP.huberlike(λ, 1e-1, params.p, x)
+f_composite(x) = 1 / 2 * LP.l4(A * x - b) + LP.huberlike(λ, 1e-1, params.p, x)
 # g(x) = A' * (A * x - b) + LP.smoothlpg(λ, 0.1, params.p, x)
 # H(x) = A' * A + LP.smoothlph(λ, 0.1, params.p, x)
 

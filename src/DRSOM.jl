@@ -26,6 +26,7 @@ mutable struct IterativeAlgorithm{IteratorType,H,S,D,K}
 end
 
 """
+# this part borrows from ProximalAlgorithms
     IterativeAlgorithm(T; maxit, stop, solution, verbose, freq, display, kwargs...)
 
 Wrapper for an iterator type `T`, adding termination and verbosity options on top of it.

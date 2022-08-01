@@ -88,7 +88,7 @@ for n in [100, 200, 1000]
         method_state = Dict{String,Any}()
 
         # rsom
-        name, state, k, arr_obj = run_rsomb(
+        name, state, k, arr_obj = run_drsomb(
             copy(x0), f_composite;
             tol=1e-7,
             maxiter=1000,

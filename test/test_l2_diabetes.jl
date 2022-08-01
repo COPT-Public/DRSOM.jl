@@ -63,7 +63,7 @@ sort!(λs)
 training_loss(wb) = LP.mean_squared_error(
         training_label, LP.standardized_linear_model(wb, training_input, input_loc, input_scale)
 )
-f_composite(x) = training_loss(x) + LP.huberlike(λ, 1e-1, 0.5, x)
+f_composite(x) = training_loss(x)
 x0 = zeros(n_features + 1)
 lowtol = 1e-6
 tol = 1e-8
@@ -76,7 +76,7 @@ freq = 40
 iter_scale = 0
 #######
 
-name, state, k, arr_obj = run_rsomb(copy(x0), f_composite)
+name, state, k, arr_obj = run_drsomb(copy(x0), f_composite; maxiter=maxiter)
 res1 = Optim.optimize(f_composite, x0, GradientDescent(;
                 alphaguess=LineSearches.InitialHagerZhang(),
                 linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
