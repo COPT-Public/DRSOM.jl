@@ -6,6 +6,7 @@ $$
         x_{k+1}     = x_k- \alpha_k^1 g_k +\alpha_k^2 d_k, \\
         \alpha_k  = \arg \min m_k^\alpha(\alpha), 
 $$
+
 where  $m_k^\alpha(\alpha)$ is a 2-dimensional quadratic approximation to $f(x)$ using gradient $g_k$ and Hessian information $H_k$.
 
 - The differentiation is done by `ForwardDiff` and `ReverseDiff` using finite-difference.
