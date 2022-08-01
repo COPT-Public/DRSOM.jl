@@ -6,6 +6,7 @@ $$
         x_{k+1}     = x_k- \alpha_k^1 g_k +\alpha_k^2 d_k, \\
         \alpha_k  = \arg \min m_k^\alpha(\alpha)
 $$
+
 where the 2-dimensional quadratic model $m_k^\alpha(\alpha)$ is defined as follows:
 $$
         m_k^\alpha(\alpha)  := f(x_k) + (c _k)^{T} \alpha+\frac{1}{2} \alpha^{T} Q_k \alpha         \\
