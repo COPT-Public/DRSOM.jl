@@ -4,23 +4,13 @@ DRSOM.jl is a Julia implementation of the Dimension-Reduced Second-Order Method 
 
 $$
         x_{k+1}     = x_k- \alpha_k^1 g_k +\alpha_k^2 d_k, \\
-        \alpha_k  = \arg \min m_k^\alpha(\alpha)
+        \alpha_k  = \arg \min m_k^\alpha(\alpha), 
 $$
+where  $m_k^\alpha(\alpha)$ is a 2-dimensional quadratic approximation to $f(x)$ using gradient $g_k$ and Hessian information $H_k$.
 
-where the 2-dimensional quadratic model $m_k^\alpha(\alpha)$ is defined as follows:
-$$
-        m_k^\alpha(\alpha)  := f(x_k) + (c _k)^{T} \alpha+\frac{1}{2} \alpha^{T} Q_k \alpha         \\
-                            Q_k=\begin{bmatrix}
-                                     ( g_k)^{T} H_k g_k  & -( d_k)^{T} H_k g_k \\
-                                     -( d_k)^{T} H_k g_k & ( d_k)^{T} H_k d_k
-                                 \end{bmatrix} \in \mathcal S^{2}, c _k=\begin{bmatrix}
-                                                                            -\left\| g_k\right\|^{2} \\
-                                                                            +( g_k)^{T} d_k
-                                                                        \end{bmatrix} \in \real^{2}.
-$$
-
-- $g_k, H_k$ are gradient and Hessian, respectively. However, **DRSOM does not have to compute** $H_k$; instead, it only requires Hessian-vector products.
-- The differentiation is done by `ForwardDiff` and `ReverseDiff` using finite-difference. Alternatively, you may provide $g_k, H_k$ directly. 
+- The differentiation is done by `ForwardDiff` and `ReverseDiff` using finite-difference.
+- Notably, **DRSOM does not have to compute** Hessian $H_k$; instead, it only requires Hessian-vector products.
+-  Alternatively, you may provide $g_k, H_k$ directly. 
 
 ## Examples
 We provide easy examples for DRSOM.jl. All examples are listed in `examples/` directory. To run an example, start at the root directory of DRSOM.jl.
