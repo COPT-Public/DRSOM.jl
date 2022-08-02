@@ -39,4 +39,14 @@ If everything works, it should output a `.html` for visualization results (see t
 ## Known issues
 `DRSOM.jl` is still under active development. Please add issues on GitHub.
 ## Reference
-[1] Chuwen Zhang, Dongdong Ge, Bo Jiang, and Yinyu Ye. DRSOM: A Dimension Reduced Second-Order Method and Preliminary Analyses, working paper. arXiv
+You are welcome to cite our paper :), [see](https://arxiv.org/abs/2208.00208)
+```bibtex
+@misc{zhang2022drsom,
+      title={DRSOM: A Dimension Reduced Second-Order Method and Preliminary Analyses}, 
+      author={Chuwen Zhang and Dongdong Ge and Bo Jiang and Yinyu Ye},
+      year={2022},
+      eprint={2208.00208},
+      archivePrefix={arXiv},
+      primaryClass={math.OC}
+}
+```
