@@ -32,12 +32,16 @@ julia -i --project=./ test/test_snl.jl
 
 If everything works, it should output a `.html` for visualization results (see the [example](example/snl.default.html))
 
-## Acknowledgment
-- We are heavily inspired by the wonderful Julia package [ProximalAlgorithms.jl](https://github.com/JuliaFirstOrder/ProximalAlgorithms.jl).  We also appreciate the elegant implementation of [Optim.jl](https://github.com/JuliaNLSolvers/Optim.jl/) that enables effortless comparison and benchmarking.
-- Special thanks go to the COPT team and Tianyi Lin [(Darren)](https://tydlin.github.io/) for helpful suggestions.
-
 ## Known issues
 `DRSOM.jl` is still under active development. Please add issues on GitHub.
+
+## License
+`DRSOM.jl` is licensed under the MIT License. Check `LICENSE` for more details
+
+## Acknowledgment
+
+- Special thanks go to the COPT team and Tianyi Lin [(Darren)](https://tydlin.github.io/) for helpful suggestions.
+
 ## Reference
 You are welcome to cite our paper :), [see](https://arxiv.org/abs/2208.00208)
 ```bibtex
