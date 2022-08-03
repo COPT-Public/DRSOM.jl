@@ -1,4 +1,4 @@
-
+module drsom_helper
 using ProximalOperators
 using DRSOM
 using ProximalAlgorithms
@@ -188,3 +188,5 @@ options = Optim.Options(
     show_trace=true,
     show_every=50,
 )
+
+end

@@ -90,3 +90,17 @@ function hessba(state; scale::Real=200.0, tp::ReverseDiff.CompiledTape)
     return Hg, Hd
 end
 
+# multi-direction mode
+function hessba(state, D; scale::Real=200.0, tp::ReverseDiff.CompiledTape)
+    x = state.x
+    ReverseDiff.gradient!(state.∇f, tp, x)
+    # Hessian-vector finite diff
+    function hv(v::Vector)
+        ReverseDiff.gradient!(state.∇fb, tp, x + v ./ scale)
+        Hv = scale * (state.∇fb - state.∇f)
+        return Hv
+    end
+
+    return hv.(D)
+end
+

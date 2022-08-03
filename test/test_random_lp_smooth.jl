@@ -17,6 +17,7 @@
 ###############
 
 include("helper.jl")
+include("helper_plus.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -38,6 +39,9 @@ using LinearOperators
 using ArgParse
 using Optim
 using .LP
+using .drsom_helper
+using .drsom_helper_plus
+
 
 
 function parse_commandline()
@@ -95,8 +99,8 @@ f = ProximalOperators.LeastSquares(A, b)
 
 # huberlike
 f_composite(x) = 1 / 2 * (A * x - b)' * (A * x - b) + LP.huberlike(λ, 1e-1, params.p, x)
-# g(x) = A' * (A * x - b) + LP.smoothlpg(λ, 0.1, params.p, x)
-# H(x) = A' * A + LP.smoothlph(λ, 0.1, params.p, x)
+g(x) = A' * (A * x - b) + LP.huberlikeg(λ, 0.1, params.p, x)
+H(x) = A' * A + LP.huberlikeh(λ, 0.1, params.p, x)
 
 lowtol = 1e-6
 tol = 1e-6
@@ -112,8 +116,8 @@ iter_scale = 0
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 
-name, state, k, arr_obj = run_drsomb(copy(x0), f_composite)
-# name, state, k, arr_obj = run_rsomd(copy(x0), f_composite, g, H; tol=1e-7)
+# name, state, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite)
+name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
 
 # compare with GD and LBFGS, Trust region newton,
 options = Optim.Options(
@@ -123,9 +127,12 @@ options = Optim.Options(
     show_trace=true,
     show_every=50,
 )
-res1 = Optim.optimize(f_composite, x0, GradientDescent(;
-        alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
-res2 = Optim.optimize(f_composite, x0, LBFGS(;
-        linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
+# res1 = Optim.optimize(f_composite, x0, GradientDescent(;
+#         alphaguess=LineSearches.InitialHagerZhang(),
+#         linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
+# res2 = Optim.optimize(f_composite, x0, LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
 # res3 = Optim.optimize(f_composite, x0, NewtonTrustRegion(), options)
+
+name, state3, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
+

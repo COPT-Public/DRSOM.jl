@@ -133,4 +133,28 @@ function huberlike(λ, ϵ, p::Real, x)
     huberlike.(λ, ϵ, p, x) |> sum
 end
 
+function huberlikeg(λ, ϵ, p::Real, x::Real)
+    if abs(x) > ϵ
+        λ * p * (abs(x))^(p - 1) * sign(x)
+    else
+        λ * p * x / ϵ * (ϵ / 2 + x^2 / ϵ / 2)^(p - 1)
+    end
+end
+
+function huberlikeg(λ, ϵ, p::Real, x::Vector)
+    huberlikeg.(λ, ϵ, p, x)
+end
+
+function huberlikeh(λ, ϵ, p::Real, x::Real)
+    if abs(x) > ϵ
+        λ * p * (p - 1) * (abs(x))^(p - 2)
+    else
+        λ * p / ϵ * (ϵ / 2 + x^2 / ϵ / 2)^(p - 1) + λ * p * (x / ϵ)^2 * (p - 1) * (ϵ / 2 + x^2 / ϵ / 2)^(p - 2)
+    end
+end
+
+function huberlikeh(λ, ϵ, p::Real, x::Vector)
+    huberlikeh.(λ, ϵ, p, x) |> Diagonal
+end
+
 end # module

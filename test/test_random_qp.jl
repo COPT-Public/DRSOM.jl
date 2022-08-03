@@ -15,6 +15,7 @@
 ###############
 
 include("helper.jl")
+include("helper_plus.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -33,7 +34,8 @@ using Statistics
 using LinearOperators
 using Optim
 using .LP
-
+using .drsom_helper
+using .drsom_helper_plus
 
 params = LP.parse_commandline()
 A, v, b = LP.create_random_lp(params)
@@ -69,4 +71,5 @@ method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 
 # rsom
-name, state, k, traj = run_rsomd_traj(copy(x0), f_composite, g, H)
+name, state, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
+name, state, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
