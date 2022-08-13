@@ -83,7 +83,7 @@ gram = A' * A
 
 # find Lipschitz constant
 L, _ = LinearOperators.normest(gram, 1e-4)
-λ = LinearAlgebra.normInf(A'b) / 10
+λ = LinearAlgebra.normInf(A'b) / 3
 # find convexity constant
 # vals, vecs, info = KrylovKit.eigsolve(A'A, 1, :SR)
 σ = 0.0
@@ -99,8 +99,8 @@ f = ProximalOperators.LeastSquares(A, b)
 
 # huberlike
 f_composite(x) = 1 / 2 * (A * x - b)' * (A * x - b) + LP.huberlike(λ, 1e-1, params.p, x)
-g(x) = A' * (A * x - b) + LP.huberlikeg(λ, 0.1, params.p, x)
-H(x) = A' * A + LP.huberlikeh(λ, 0.1, params.p, x)
+g(x) = A' * (A * x - b) + LP.huberlikeg.(λ, 0.1, params.p, x)
+H(x) = A' * A + (LP.huberlikeh.(λ, 0.1, params.p, x) |> Diagonal)
 
 lowtol = 1e-6
 tol = 1e-6
@@ -112,27 +112,29 @@ freq = 40
 #######
 iter_scale = 0
 #######
-
-method_objval = Dict{String,AbstractArray{Float64}}()
-method_state = Dict{String,Any}()
-
-# name, state, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite)
-name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
-
 # compare with GD and LBFGS, Trust region newton,
 options = Optim.Options(
     g_tol=1e-6,
     iterations=10000,
     store_trace=true,
     show_trace=true,
-    show_every=50,
-)
-# res1 = Optim.optimize(f_composite, x0, GradientDescent(;
-#         alphaguess=LineSearches.InitialHagerZhang(),
-#         linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
-# res2 = Optim.optimize(f_composite, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
-# res3 = Optim.optimize(f_composite, x0, NewtonTrustRegion(), options)
+    show_every=50,)
+method_objval = Dict{String,AbstractArray{Float64}}()
+method_state = Dict{String,Any}()
 
-name, state3, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
+# name, state, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite)
+
+
+res1 = Optim.optimize(f_composite, g, x0, GradientDescent(;
+        alphaguess=LineSearches.InitialHagerZhang(),
+        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
+        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
+
+name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=10000, tol=1e-8, freq=1)
+# name, state2, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
+name, statek, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:krylov)
+name, stateg, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
+# name, stateg, k, arr_obj = drsom_helper_plus.run_drsomb(copy(x0), f_composite; maxiter=1000, tol=1e-6, direction=:gaussian)
 

@@ -167,24 +167,25 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
         Hg = H * state.∇f
         Hd = H * state.d
     end
-
-    Q11 = state.∇f' * Hg
-    Q12 = -state.∇f' * Hd
-    Q22 = state.d' * Hd
-    c1 = -state.∇f'state.∇f
-    c2 = state.∇f'state.d
+    gnorm = norm(state.∇f)
+    dnorm = norm(state.d)
+    Q11 = state.∇f' * Hg / gnorm^2
+    Q12 = -state.∇f' * Hd / gnorm / dnorm
+    Q22 = state.d' * Hd / dnorm^2
+    c1 = -state.∇f'state.∇f / gnorm
+    c2 = state.∇f'state.d / dnorm
     state.Q = Q = [Q11 Q12; Q12 Q22]
     state.c = c = [c1; c2]
-    gg = state.∇f' * state.∇f
-    gd = state.∇f' * state.d
-    dd = state.d' * state.d
+    gg = state.∇f' * state.∇f / gnorm^2
+    gd = state.∇f' * state.d / gnorm / dnorm
+    dd = state.d' * state.d / dnorm^2
     G = [gg -gd; -gd dd]
     # G = diagm(ones(2))
     it = 1
     # if Q22 > 1e-4
     while true
         a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
-        x = y = state.z - a1 .* state.∇f + a2 .* state.d
+        x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
         fx = iter.f(x)
         alp = [a1; a2]
         dq = -alp' * Q * [a1; a2] / 2 - alp' * c

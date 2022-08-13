@@ -4,6 +4,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
+using Distributions
 
 """
     DRSOMFreePlusIteration(; <keyword-arguments>)
@@ -20,6 +21,8 @@ Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     t::Dates.DateTime = Dates.now()
     itermax::Int64 = 20
     mode = :forward
+    direction = :krylov
+    direction_num::Int64 = 1
 end
 
 
@@ -42,8 +45,7 @@ Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
-    ϵ1::R             # eps 1: residual for fix-point 
-    ϵ2::R             # eps 2: residual for gradient 
+    ϵ::R             # eps 2: residual for gradient 
     γ::R = 1e-16      # scaling parameter γ for λ
     λ::R = 1e-16      # dual λ
     it::Int = 1       # inner iteration #. for trs adjustment
@@ -51,14 +53,14 @@ Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
 end
 
 function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)))
-    # for d it is too small, reduce to a Cauchy point ?
-    eigvalues = eigvals(Q)
-    sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(0, -lmin)
-    lmax = max(lb, lmax) + 1e4
-    state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
     try
+        # for d it is too small, reduce to a Cauchy point ?
+        eigvalues = eigvals(Q)
+        sort!(eigvalues)
+        lmin, lmax = eigvalues
+        lb = max(0, -lmin)
+        lmax = max(lb, lmax) + 1e1
+        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
         alpha = -(Q + state.λ .* G) \ c
         return alpha
     catch
@@ -123,12 +125,11 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
                 ∇fb=grad_f_b,
                 α=[a1, 0, 0],
                 d=d,
-                Δ=0.0,
+                Δ=norm(d, 2),
                 dq=dq,
                 df=df,
                 ρ=ro,
-                ϵ1=norm(d, 2),
-                ϵ2=norm(grad_f_x, 2),
+                ϵ=norm(grad_f_x, 2),
                 γ=1e-6,
                 λ=1e-6,
                 it=it,
@@ -142,6 +143,8 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
     end
 end
 
+function generate_direction()
+end
 
 """
 Solve an iteration using TRS to produce stepsizes,
@@ -155,26 +158,61 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
     state.fz = fz = state.fx
     state.∇fz = state.∇f
     # construct trs
+    # compute Hg, Hd first
     if iter.mode ∈ (:forward, false)
         Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
     elseif iter.mode ∈ (:backward, true)
         # todo, not ready yet.
-        HD = iter.rh(state, D; tp=iter.tp)
+        # compute gradient first
+        Hg, Hd = iter.rh(state; tp=iter.tp)
     else
         state.∇f = iter.g(state.x)
         H = iter.H(state.x)
-        vals, vecs, info = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
-        if vals[1] < -0.1
-            D = [-state.∇f / norm(state.∇f) state.d / norm(state.d) reshape(vecs[1], n, 1)]
-            # D = [-state.∇f state.d]
+        Hg = H * state.∇f
+        Hd = H * state.d
+    end
+    gnorm = norm(state.∇f)
+    dnorm = norm(state.d)
+    # add new directions v
+    #   and again, we compute Hv
+    # mode
+
+    if iter.direction == :krylov
+        # - krylov:
+        vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
+
+
+        v = reshape(vecs[1], n, 1)
+        HD = [-Hg / gnorm Hd / dnorm H * v]
+        D = [-state.∇f / gnorm state.d / dnorm v]
+
+    elseif iter.direction == :gaussian
+        # - gaussian
+        Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
+        D = MvNormal(zeros(n), Σ ./ iter.direction_num)
+        # sanity check:
+
+        V = rand(D, iter.direction_num)
+        # normalization
+        V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
+
+        if iter.mode ∈ (:forward, false)
+            throw(ErrorException("forward mode not supported yet"))
+        elseif iter.mode ∈ (:backward, true)
+            Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
         else
-            D = [-state.∇f state.d]
+            Hv = H * V
         end
-        HD = H * D
+
+        HD = [-Hg / gnorm Hd / dnorm Hv]
+        D = [-state.∇f / gnorm state.d / dnorm V]
+    else
+        throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
     end
     state.Q = Q = D' * HD
     state.c = c = D' * state.∇f
-    G = D' * D
+    # G = D' * D
+    G = Diagonal(ones(2 + iter.direction_num))
 
     it = 1
     while true
@@ -198,10 +236,9 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
             state.dq = dq
             state.df = df
             state.d = x - z
-            state.Δ = sqrt(alp' * alp)
+            state.Δ = sqrt(alp' * G * alp)
             state.it = it
-            state.ϵ1 = norm(x - z)
-            state.ϵ2 = norm(state.∇f)
+            state.ϵ = norm(state.∇f)
             state.it = it
             state.t = (Dates.now() - iter.t).value / 1e3
             return state, state
@@ -211,17 +248,18 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
 end
 
 drsom_stopping_criterion(tol, state::DRSOMFreePlusState) =
-    (state.ϵ2 <= tol) || (state.ϵ1 <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 sprintarray(arr) = join(map(x -> @sprintf("%+.0e", x), arr), ",")
 function drsom_display(it, state::DRSOMFreePlusState)
-    if mod(it, 30) == 1
-        @printf("%5s | %10s | %20s | %7s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
-            "k", "f", "α", "Δ", "|d|", "|∇f|", "γ", "λ", "ρ", "it", "t",
+    if mod(it, 30) == 0 || it == 1
+        @printf("%5s | %10s | %20s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
+            "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
+
     end
-    @printf("%5d | %+.3e | %20s | %.1e | %.1e | %.1e | %.1e | %.1e | %+.2f | %2d | %6.1f |\n",
-        it, state.fx, sprintarray(state.α), state.Δ, state.ϵ1, state.ϵ2, state.γ, state.λ, state.ρ, state.it, state.t
+    @printf("%5d | %+.3e | %20s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
+        it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end
 

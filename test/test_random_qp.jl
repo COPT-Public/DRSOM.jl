@@ -38,11 +38,15 @@ using .drsom_helper
 using .drsom_helper_plus
 
 params = LP.parse_commandline()
-A, v, b = LP.create_random_lp(params)
-x0 = zeros(params.m)
+m = n = params.n
+D = Normal(0.0, 1.0)
+A = rand(D, (n, m)) .* rand(Bernoulli(0.85), (n, m))
+v = rand(D, m) .* rand(Bernoulli(0.5), m)
+b = A * v + rand(D, (n))
+x0 = zeros(m)
 
 Q = A' * A
-h = A' * b
+h = Q' * b
 # find Lipschitz constant
 L, _ = LinearOperators.normest(Q, 1e-4)
 # find convexity constant
@@ -69,7 +73,8 @@ iter_scale = 0
 
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
-
-# rsom
-name, state, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
-name, state, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
+# cg
+res = Optim.optimize(f_composite, g, x0, ConjugateGradient(); inplace=false)
+# drsom
+name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
+name, stateg, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
