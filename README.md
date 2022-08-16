@@ -16,6 +16,9 @@ where  $m_k^\alpha(\alpha)$ is a 2-dimensional quadratic approximation to $f(x)$
 ## Examples
 We provide easy examples for DRSOM.jl. All examples are listed in `examples/` directory. To run an example, start at the root directory of DRSOM.jl.
 
+### Nonconvex Logistic
+<img src="assets/new.gif" alt="drawing" width="30"/> 
+
 ### L2 regression for diabetes dataset
 
 ```bash

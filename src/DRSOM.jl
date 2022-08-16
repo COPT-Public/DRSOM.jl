@@ -83,5 +83,6 @@ end
 # algorithm implementations
 include("algorithms/drsom_free.jl")
 include("algorithms/drsom_free_plus.jl")
+include("algorithms/drsom_l.jl")
 
 end # module

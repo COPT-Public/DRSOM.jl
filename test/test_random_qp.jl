@@ -16,6 +16,7 @@
 
 include("helper.jl")
 include("helper_plus.jl")
+include("helper_l.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -36,6 +37,7 @@ using Optim
 using .LP
 using .drsom_helper
 using .drsom_helper_plus
+using .drsom_helper_l
 
 params = LP.parse_commandline()
 m = n = params.n
@@ -60,13 +62,6 @@ f_composite(x) = 1 / 2 * x' * Q * x - h' * x
 g(x) = Q * x - h
 H(x) = Q
 
-lowtol = 1e-6
-tol = 1e-6
-maxtime = 300
-maxiter = 1e5
-verbose = true
-freq = 40
-
 #######
 iter_scale = 0
 #######
@@ -76,5 +71,43 @@ method_state = Dict{String,Any}()
 # cg
 res = Optim.optimize(f_composite, g, x0, ConjugateGradient(); inplace=false)
 # drsom
-name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
-name, stateg, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
+r = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
+rp = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
+rl = drsom_helper_l.run_drsomb(
+    copy(x0), f_composite;
+    maxiter=1000, tol=1e-6, direction=:gaussian
+)
+rl = drsom_helper_l.run_drsomb(
+    copy(x0), f_composite;
+    maxiter=1000, tol=1e-6, direction=:gaussian,
+    hessian_rank=:∞
+)
+results = [r, rp, rl]
+
+
+method_objval_ragged = rstack([
+        getfval.(results)...
+    ]; fill=NaN
+)
+method_names = getname.(results)
+
+
+@printf("plotting results\n")
+
+pgfplotsx()
+title = L"\textrm{ Convex QP}: Q \in \mathcal S_+^{%$(n)\times %$(n)}"
+fig = plot(
+    1:(method_objval_ragged|>size|>first),
+    method_objval_ragged,
+    label=permutedims(method_names),
+    xscale=:log10,
+    yscale=:log10,
+    xlabel="Iteration", ylabel=L"\|\nabla f\| = \epsilon",
+    title=title,
+    size=(1280, 720),
+    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+    dpi=1000,
+)
+
+savefig(fig, "/tmp/res.pdf")

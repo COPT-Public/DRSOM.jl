@@ -43,5 +43,5 @@ g(x) = A * x - b
 H(x) = A
 
 x0 = zeros(100)
-name, state, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
-name, state, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
+name, state, k, arr = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)
+name, state, k, arr = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6)

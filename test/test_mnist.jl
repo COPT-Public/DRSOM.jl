@@ -52,21 +52,21 @@ method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 ########################################################
 # rsom
-name, state, k, arr_obj = run_drsomb(copy(w0), f_composite; maxiter=10)
-method_objval[name] = copy(arr_obj)
+name, state, k, arr = run_drsomb(copy(w0), f_composite; maxiter=10)
+method_objval[name] = copy(arr)
 iter_scale = max(iter_scale, k) # compute max plot scale
 @printf("train error. %.4f\n", 1 - accuracy(x_train, yc_train, state.x))
 @printf("test error. %.4f\n", 1 - accuracy(x_test, yc_test, state.x))
 
 
-name, state, k, arr_obj = run_drsomb(copy(w0), f_composite; maxiter=40)
-method_objval[name] = copy(arr_obj)
+name, state, k, arr = run_drsomb(copy(w0), f_composite; maxiter=40)
+method_objval[name] = copy(arr)
 iter_scale = max(iter_scale, k) # compute max plot scale
 @printf("train error. %.4f\n", 1 - accuracy(x_train, yc_train, state.x))
 @printf("test error. %.4f\n", 1 - accuracy(x_test, yc_test, state.x))
 
-name, state, k, arr_obj = run_drsomb(copy(w0), f_composite; maxiter=100)
-method_objval[name] = copy(arr_obj)
+name, state, k, arr = run_drsomb(copy(w0), f_composite; maxiter=100)
+method_objval[name] = copy(arr)
 iter_scale = max(iter_scale, k) # compute max plot scale
 @printf("train error. %.4f\n", 1 - accuracy(x_train, yc_train, state.x))
 @printf("test error. %.4f\n", 1 - accuracy(x_test, yc_test, state.x))

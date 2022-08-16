@@ -1,3 +1,12 @@
+# DRSOM-L:
+# @author: Chuwen Z.
+#     a radius free, quasi-Newton DRSOM implementation 
+#     referred to as the DRSOM with Hessian-Learnings (DRSOM-L).
+# @note:
+#     - in this scheme, we find an approximation of H
+#         using SR1 and DFP like low rank updates
+#         while preserving the negative curvature, if possible.
+#     - in this view, the Hessian-vector products are no longer needed.
 
 using Base.Iterators
 using LinearAlgebra
@@ -7,14 +16,12 @@ using KrylovKit
 using Distributions
 
 """
-    DRSOMFreePlusIteration(; <keyword-arguments>)
+    DRSOMLIteration(; <keyword-arguments>)
 """
-Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
+Base.@kwdef mutable struct DRSOMLIteration{Tx,Tf,Tg,Tψ,Tc,Tt,Tr}
     f::Tf             # f: smooth f
     ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
-    rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
     g::Tg = nothing   # gradient function
-    H::TH = nothing   # hessian function
     x0::Tx            # initial point
     cfg::Tc = nothing # gradient config
     tp::Tt = nothing  # gradient tape
@@ -23,18 +30,22 @@ Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     mode = :forward
     direction = :krylov
     direction_num::Int64 = 1
+    hessian = :sr1
+    hessian_rank::Tr = :∞
 end
 
 
-Base.IteratorSize(::Type{<:DRSOMFreePlusIteration}) = Base.IsInfinite()
+Base.IteratorSize(::Type{<:DRSOMLIteration}) = Base.IsInfinite()
 
-Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
+Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
+    U::Tu             # vectors of Hessian such that H = U⋅W⋅U' = ∑ w⋅u⋅u'
+    W::Tw             # diagonals of Hessian 
+    H::Tq             # complete form of Hessian
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
-    ∇fb::Tx           # gradient buffer (for temporary use)
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
@@ -52,7 +63,7 @@ Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
     t::R = 0.0        # running time
 end
 
-function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)))
+function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
     try
         # for d it is too small, reduce to a Cauchy point ?
         eigvalues = eigvals(Q)
@@ -70,23 +81,22 @@ function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)
 end
 
 
-function Base.iterate(iter::DRSOMFreePlusIteration)
+function Base.iterate(iter::DRSOMLIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
+    n = z |> length
     grad_f_x = similar(z)
-    grad_f_b = similar(z)
     if iter.mode ∈ (:forward, false)
-        Hg, _ = iter.rh(iter.f, grad_f_x, z - z, z; cfg=iter.cfg)
+        throw(ErrorException("not implemented"))
     elseif iter.mode ∈ (:backward, true)
-        Hg, _ = iter.rh(grad_f_x, grad_f_b, z - z, z; tp=iter.tp)
+        ReverseDiff.gradient!(grad_f_x, iter.tp, z)
     else
-        grad_f_x = iter.g(z)
-        H = iter.H(z)
-        Hg = H * grad_f_x
+        throw(ErrorException("not implemented"))
     end
-    Q11 = grad_f_x' * Hg
+
     ######################################
+    Q11 = 1.0
     c1 = -grad_f_x' * grad_f_x
     Q = [Q11 0; 0 0]
     c = [c1; 0]
@@ -112,7 +122,7 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
         if ro > 0.1 || it == iter.itermax
             t = (Dates.now() - iter.t).value / 1e3
             d = y - z
-            state = DRSOMFreePlusState(
+            state = DRSOMLState(
                 x=y,
                 y=y,
                 z=z,
@@ -120,10 +130,12 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
                 fz=fz,
                 Q=Q,
                 c=c,
+                U=zeros(n, 0),
+                W=zeros(0),
+                H=zeros(n, n), # Array{Float64}(undef, n, n)
                 ∇f=grad_f_x,
-                ∇fz=z,
-                ∇fb=grad_f_b,
-                α=[a1, 0, 0],
+                ∇fz=similar(grad_f_x),
+                α=[a1],
                 d=d,
                 Δ=norm(d, 2),
                 dq=dq,
@@ -137,13 +149,10 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
             )
             return state, state
         else
-            ls *= 0.5
+            ls *= 0.05
             it += 1
         end
     end
-end
-
-function generate_direction()
 end
 
 """
@@ -151,64 +160,91 @@ Solve an iteration using TRS to produce stepsizes,
 alpha: extrapolation
 gamma: gradient step
 """
-function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,Tx}) where {R,Tx}
+function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,Tx}
 
     n = length(state.x)
     state.z = z = state.x
     state.fz = fz = state.fx
-    state.∇fz = state.∇f
+    copy!(state.∇fz, state.∇f)
     # construct trs
     # compute Hg, Hd first
-    if iter.mode ∈ (:forward, false)
-        Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
-    elseif iter.mode ∈ (:backward, true)
-        # todo, not ready yet.
-        # compute gradient first
-        Hg, Hd = iter.rh(state; tp=iter.tp)
+    if iter.mode ∈ (:backward, true)
+        ReverseDiff.gradient!(state.∇f, iter.tp, state.x)
     else
-        state.∇f = iter.g(state.x)
-        H = iter.H(state.x)
-        Hg = H * state.∇f
-        Hd = H * state.d
+        throw(ErrorException("not implemented"))
     end
     gnorm = norm(state.∇f)
     dnorm = norm(state.d)
+
+
+    # update approx. Hessian
+    Δg = state.∇f - state.∇fz
+    # new hessian update vector
+    u = Δg - state.H * state.d
+    w = (state.d' * (u))
+    # not orthogonal
+    if w != 0
+        w = 1 / w
+        state.H += w * u * u'
+        if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
+            # preserving Hessian below some rank
+            #   rank(H) <= iter.hessian_rank
+            length(state.W) > 0 && (state.H -= -state.U[:, 1] * state.W[1] * state.U[:, 1]')
+            state.U = [state.U[:, 2:min(end, iter.hessian_rank)] u]
+            state.W = [state.W[2:min(end, iter.hessian_rank)]..., w]
+        else
+            # else allow potentially full rank
+            state.U = [state.U u]
+            state.W = [state.W..., w]
+        end
+    end
+    D = [-state.∇f / gnorm state.d / dnorm]
     # add new directions v
     #   and again, we compute Hv
-
     if iter.direction == :krylov
-        # - krylov:
-        vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
-        v = reshape(vecs[1], n, 1)
-        HD = [-Hg / gnorm Hd / dnorm H * v]
-        D = [-state.∇f / gnorm state.d / dnorm v]
+        #     # - krylov:
+        #     vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
+        #     v = reshape(vecs[1], n, 1)
+        #     HD = [-Hg / gnorm Hd / dnorm H * v]
+        #     D = [-state.∇f / gnorm state.d / dnorm v]
 
-    elseif iter.direction == :gaussian
-        # - gaussian
-        Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
-        D = MvNormal(zeros(n), Σ ./ iter.direction_num)
-        # sanity check:
+        # elseif iter.direction == :gaussian
+        #     # - gaussian
+        #     Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
+        #     D = MvNormal(zeros(n), Σ ./ iter.direction_num)
+        #     # sanity check:
 
-        V = rand(D, iter.direction_num)
-        # normalization
-        V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
+        #     V = rand(D, iter.direction_num)
+        #     # normalization
+        #     V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
 
-        if iter.mode ∈ (:forward, false)
-            throw(ErrorException("forward mode not supported yet"))
-        elseif iter.mode ∈ (:backward, true)
-            Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
-        else
-            Hv = H * V
-        end
+        #     if iter.mode ∈ (:forward, false)
+        #         throw(ErrorException("forward mode not supported yet"))
+        #     elseif iter.mode ∈ (:backward, true)
+        #         Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
+        #     else
+        #         Hv = H * V
+        #     end
 
-        HD = [-Hg / gnorm Hd / dnorm Hv]
-        D = [-state.∇f / gnorm state.d / dnorm V]
-    else
-        throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
+        #     HD = [-Hg / gnorm Hd / dnorm Hv]
+        #     D = [-state.∇f / gnorm state.d / dnorm V]
+        # else
+        #     throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
     end
-    state.Q = Q = D' * HD
+    # compute Q,c,G
+    # use low-rank updates
+    if iter.hessian_rank ∈ (:∞, -1)
+        state.Q = Q = D' * state.H * D
+    elseif iter.hessian_rank > 0
+        UD = D' * state.U
+        state.Q = Q = UD * Diagonal(state.W) * UD'
+    else
+
+    end
     state.c = c = D' * state.∇f
     G = D' * D
+    # start inner iterations
+
     it = 1
     while true
         alp = TrustRegionSubproblem(Q, c, state; G=G)
@@ -242,11 +278,10 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMFreePlusState) =
+drsom_stopping_criterion(tol, state::DRSOMLState) =
     (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
-sprintarray(arr) = join(map(x -> @sprintf("%+.0e", x), arr), ",")
-function drsom_display(it, state::DRSOMFreePlusState)
+function drsom_display(it, state::DRSOMLState)
     if it == 1
         log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
@@ -263,14 +298,14 @@ function drsom_display(it, state::DRSOMFreePlusState)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %20s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
+        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
 
     end
-    @printf("%5d | %+.3e | %20s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
+    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
         it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end
 
-default_solution(::DRSOMFreePlusIteration, state::DRSOMFreePlusState) = state.x
+default_solution(::DRSOMLIteration, state::DRSOMLState) = state.x

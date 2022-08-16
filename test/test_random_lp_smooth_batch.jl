@@ -96,14 +96,14 @@ for n in [50, 100, 1000]
                 method_state = Dict{String,Any}()
 
                 # drsom
-                name, state, k, arr_obj = drsom_helper.run_drsomd(
+                name, state, k, arr = drsom_helper.run_drsomd(
                     copy(x0), f_composite, g, H;
                     tol=1e-7,
                     maxiter=maxiter,
                     freq=10
                 )
                 # drsom krylov
-                namek, statek, kk, arr_objk = drsom_helper_plus.run_drsomd(
+                namek, statek, kk, arrk = drsom_helper_plus.run_drsomd(
                     copy(x0), f_composite, g, H;
                     tol=1e-7,
                     maxiter=maxiter,
@@ -111,7 +111,7 @@ for n in [50, 100, 1000]
                     direction=:krylov
                 )
                 # drsom gaussian no.1
-                nameg1, stateg1, kg1, arr_objg1 = drsom_helper_plus.run_drsomd(
+                nameg1, stateg1, kg1, arrg1 = drsom_helper_plus.run_drsomd(
                     copy(x0), f_composite, g, H;
                     tol=1e-7,
                     maxiter=maxiter,
@@ -120,7 +120,7 @@ for n in [50, 100, 1000]
                     direction_num=1
                 )
                 # drsom gaussian no.3
-                nameg3, stateg3, kg3, arr_objg3 = drsom_helper_plus.run_drsomd(
+                nameg3, stateg3, kg3, arrg3 = drsom_helper_plus.run_drsomd(
                     copy(x0), f_composite, g, H;
                     tol=1e-7,
                     maxiter=maxiter,
@@ -130,7 +130,7 @@ for n in [50, 100, 1000]
                 )
 
                 # drsom gaussian no.5
-                nameg5, stateg5, kg5, arr_objg5 = drsom_helper_plus.run_drsomd(
+                nameg5, stateg5, kg5, arrg5 = drsom_helper_plus.run_drsomd(
                     copy(x0), f_composite, g, H;
                     tol=1e-7,
                     maxiter=maxiter,
@@ -141,7 +141,7 @@ for n in [50, 100, 1000]
 
 
 
-                method_objval[name] = copy(arr_obj)
+                method_objval[name] = copy(arr)
                 iter_scale = max(iter_scale, k) # compute max plot scale
 
                 # compare with GD and LBFGS, Trust region newton,

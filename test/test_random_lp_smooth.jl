@@ -18,6 +18,7 @@
 
 include("helper.jl")
 include("helper_plus.jl")
+include("helper_l.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -41,6 +42,7 @@ using Optim
 using .LP
 using .drsom_helper
 using .drsom_helper_plus
+using .drsom_helper_l
 
 
 
@@ -118,23 +120,94 @@ options = Optim.Options(
     iterations=10000,
     store_trace=true,
     show_trace=true,
-    show_every=50,)
+    show_every=50,
+    time_limit=50
+)
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 
-# name, state, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite)
+# res1 = Optim.optimize(f_composite, g, x0, GradientDescent(;
+#         alphaguess=LineSearches.InitialHagerZhang(),
+#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+# res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+# res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
 
-
-res1 = Optim.optimize(f_composite, g, x0, GradientDescent(;
+res1 = Optim.optimize(
+    f_composite, x0, GradientDescent(;
         alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
-        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+        linesearch=LineSearches.StrongWolfe()
+    ), options;
+    autodiff=:forward)
+res2 = Optim.optimize(
+    f_composite, x0, LBFGS(;
+        linesearch=LineSearches.StrongWolfe()
+    ), options;
+    autodiff=:forward)
+# res3 = Optim.optimize(
+#     f_composite, x0, NewtonTrustRegion(), options;
+#     autodiff=:forward
+# )
 res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
 
-name, state2, k, arr_obj = drsom_helper.run_drsomd(copy(x0), f_composite, g, H; maxiter=10000, tol=1e-8, freq=1)
-# name, state2, k, arr_obj = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
-name, statek, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:krylov)
-name, stateg, k, arr_obj = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
-# name, stateg, k, arr_obj = drsom_helper_plus.run_drsomb(copy(x0), f_composite; maxiter=1000, tol=1e-6, direction=:gaussian)
+r = drsom_helper.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=10000, tol=1e-8, freq=1
+)
+# name, state2, k, arr = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
+rpk = drsom_helper_plus.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=1000, tol=1e-6,
+    direction=:krylov
+)
+rpg = drsom_helper_plus.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=1000, tol=1e-6,
+    direction=:gaussian, direction_num=2
+)
+rlr = drsom_helper_l.run_drsomb(
+    copy(x0), f_composite;
+    maxiter=1000, tol=1e-6,
+    hessian=:sr1, hessian_rank=m
+)
+rl = drsom_helper_l.run_drsomb(
+    copy(x0), f_composite;
+    maxiter=1000, tol=1e-6,
+    hessian=:sr1, hessian_rank=:∞
+)
+
+results = [
+    optim_to_result(res1, "GD+Wolfe"),
+    optim_to_result(res2, "LBFGS+Wolfe"),
+    optim_to_result(res3, "Newton-TR*(Analytic)"),
+    r, rpk, rpg, rlr, rl
+]
+
+
+method_objval_ragged = rstack([
+        getfval.(results)...
+    ]; fill=NaN
+)
+method_names = getname.(results)
+
+
+@printf("plotting results\n")
+
+pgfplotsx()
+title = L"\frac{1}{2}\|Ax-b\|^2 + \|x\|_p^p, p = %$(params.p), A \in R^{%$(n)\times %$(m)}"
+fig = plot(
+    1:(method_objval_ragged|>size|>first),
+    method_objval_ragged,
+    label=permutedims(method_names),
+    xscale=:log2,
+    yscale=:log10,
+    xlabel="Iteration", ylabel=L"\|\nabla f\| = \epsilon",
+    title=title,
+    size=(1280, 720),
+    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+    dpi=1000,
+)
+
+savefig(fig, @sprintf("/tmp/|∇f|-L2Lp-%d-%d-%.1f.pdf", n, m, params.p))
 
