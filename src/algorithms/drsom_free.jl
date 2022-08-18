@@ -221,7 +221,7 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
 end
 
 drsom_stopping_criterion(tol, state::DRSOMFreeState) =
-    (state.ϵ2 <= tol) || (state.ϵ1 <= tol) && abs(state.fz - state.fx) <= tol
+    (state.ϵ2 / 1e2 <= tol) || (state.ϵ1 <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMFreeState)

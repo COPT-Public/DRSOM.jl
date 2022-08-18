@@ -23,6 +23,7 @@ Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     mode = :forward
     direction = :krylov
     direction_num::Int64 = 1
+    η::Float64 = 1e-1
 end
 
 
@@ -59,7 +60,7 @@ function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)
         sort!(eigvalues)
         lmin, lmax = eigvalues
         lb = max(0, -lmin)
-        lmax = max(lb, lmax) + 1e1
+        lmax = max(lb, lmax) + 1e4
         state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
         alpha = -(Q + state.λ .* G) \ c
         return alpha
@@ -175,36 +176,40 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
     dnorm = norm(state.d)
     # add new directions v
     #   and again, we compute Hv
+    if gnorm < iter.η
+        if iter.direction == :krylov
+            # - krylov:
+            vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
+            v = reshape(vecs[1], n, 1)
+            HD = [-Hg / gnorm Hd / dnorm H * v]
+            D = [-state.∇f / gnorm state.d / dnorm v]
 
-    if iter.direction == :krylov
-        # - krylov:
-        vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
-        v = reshape(vecs[1], n, 1)
-        HD = [-Hg / gnorm Hd / dnorm H * v]
-        D = [-state.∇f / gnorm state.d / dnorm v]
+        elseif iter.direction == :gaussian
+            # - gaussian
+            Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
+            D = MvNormal(zeros(n), Σ ./ iter.direction_num)
+            # sanity check:
 
-    elseif iter.direction == :gaussian
-        # - gaussian
-        Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
-        D = MvNormal(zeros(n), Σ ./ iter.direction_num)
-        # sanity check:
+            V = rand(D, iter.direction_num)
+            # normalization
+            V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
 
-        V = rand(D, iter.direction_num)
-        # normalization
-        V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
+            if iter.mode ∈ (:forward, false)
+                throw(ErrorException("forward mode not supported yet"))
+            elseif iter.mode ∈ (:backward, true)
+                Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
+            else
+                Hv = H * V
+            end
 
-        if iter.mode ∈ (:forward, false)
-            throw(ErrorException("forward mode not supported yet"))
-        elseif iter.mode ∈ (:backward, true)
-            Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
+            HD = [-Hg / gnorm Hd / dnorm Hv]
+            D = [-state.∇f / gnorm state.d / dnorm V]
         else
-            Hv = H * V
+            throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
         end
-
-        HD = [-Hg / gnorm Hd / dnorm Hv]
-        D = [-state.∇f / gnorm state.d / dnorm V]
     else
-        throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
+        HD = [-Hg / gnorm Hd / dnorm]
+        D = [-state.∇f / gnorm state.d / dnorm]
     end
     state.Q = Q = D' * HD
     state.c = c = D' * state.∇f

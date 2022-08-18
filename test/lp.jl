@@ -27,6 +27,10 @@ function parse_commandline()
         help = "choice of p norm"
         arg_type = Float64
         default = 1.0
+        "--nnz"
+        help = "sparsity"
+        arg_type = Float64
+        default = 0.5
     end
     _args = parse_args(s, as_symbols=true)
     return LP.LPMinimizationParams(; _args...)
@@ -60,6 +64,7 @@ Base.@kwdef mutable struct LPMinimizationParams
     n::Int64 = 10
     m::Int64 = 100
     p::Float64 = 1
+    nnz::Float64 = 0.5
     λ::Float64 = 1 / 2
 end
 

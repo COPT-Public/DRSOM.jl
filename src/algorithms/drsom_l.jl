@@ -70,7 +70,7 @@ function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
         sort!(eigvalues)
         lmin, lmax = eigvalues
         lb = max(0, -lmin)
-        lmax = max(lb, lmax) + 1e1
+        lmax = max(lb, lmax) + 1e4
         state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
         alpha = -(Q + state.λ .* G) \ c
         return alpha
@@ -87,9 +87,7 @@ function Base.iterate(iter::DRSOMLIteration)
     fz = iter.f(z)
     n = z |> length
     grad_f_x = similar(z)
-    if iter.mode ∈ (:forward, false)
-        throw(ErrorException("not implemented"))
-    elseif iter.mode ∈ (:backward, true)
+    if iter.mode ∈ (:backward, true)
         ReverseDiff.gradient!(grad_f_x, iter.tp, z)
     else
         throw(ErrorException("not implemented"))
@@ -178,24 +176,36 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
 
 
     # update approx. Hessian
-    Δg = state.∇f - state.∇fz
-    # new hessian update vector
-    u = Δg - state.H * state.d
-    w = (state.d' * (u))
-    # not orthogonal
-    if w != 0
-        w = 1 / w
-        state.H += w * u * u'
-        if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
-            # preserving Hessian below some rank
-            #   rank(H) <= iter.hessian_rank
-            length(state.W) > 0 && (state.H -= -state.U[:, 1] * state.W[1] * state.U[:, 1]')
-            state.U = [state.U[:, 2:min(end, iter.hessian_rank)] u]
-            state.W = [state.W[2:min(end, iter.hessian_rank)]..., w]
+    if iter.hessian == :sr1
+        Δg = state.∇f - state.∇fz
+        Δy = state.H * state.d
+        # new hessian update vector
+        u = Δg - Δy
+        w = (state.d' * (u))
+        # not orthogonal
+        if w != 0
+            w = 1 / w
+            if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
+                # preserving Hessian below some rank
+                #   rank(H) <= iter.hessian_rank
+                state.U = [state.U u][:, 1:min(end, iter.hessian_rank)]
+                state.W = [state.W..., w][1:min(end, iter.hessian_rank)]
+            else
+                # else allow potentially full rank
+                state.H += w * u * u'
+            end
+        end
+    elseif iter.hessian == :bfgs
+        if iter.hessian_rank ∈ (:∞, -1)
+            Δg = state.∇f - state.∇fz
+            # new hessian update vector
+            Δy = state.H * state.d
+            w = (state.d' * (Δg))
+            (w != 0) && (state.H += Δg * Δg' / w)
+            w = -(state.d' * Δy)
+            (w != 0) && (state.H += Δy * Δy' / w)
         else
-            # else allow potentially full rank
-            state.U = [state.U u]
-            state.W = [state.W..., w]
+            throw(ErrorException("BFGS do not support limited rank H approx."))
         end
     end
     D = [-state.∇f / gnorm state.d / dnorm]

@@ -62,6 +62,10 @@ function parse_commandline()
         help = "choice of p norm"
         arg_type = Float64
         default = 0.5
+        "--nnz"
+        help = "sparsity"
+        arg_type = Float64
+        default = 0.5
     end
     _args = parse_args(s, as_symbols=true)
     return LP.LPMinimizationParams(; _args...)
@@ -70,12 +74,13 @@ Random.seed!(2)
 params = parse_commandline()
 n = params.n
 m = params.m
+nnz = params.nnz
 
 # create a sparse instance
 D = Uniform(0.0, 1.0)
-A = rand(D, (n, m)) .* rand(Bernoulli(0.65), (n, m))
-xt = rand(D, m) .* rand(Bernoulli(0.65), m)
-b = A * xt
+A = rand(D, (n, m)) .* rand(Bernoulli(nnz), (n, m))
+v = rand(D, m) .* rand(Bernoulli(nnz), m)
+b = A * v
 
 x0 = zeros(params.m)
 
@@ -152,7 +157,7 @@ res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inpla
 
 r = drsom_helper.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=10000, tol=1e-8, freq=1
+    maxiter=10000, tol=1e-7
 )
 # name, state2, k, arr = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
 rpk = drsom_helper_plus.run_drsomd(
@@ -163,7 +168,7 @@ rpk = drsom_helper_plus.run_drsomd(
 rpg = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-6,
-    direction=:gaussian, direction_num=2
+    direction=:gaussian, direction_num=10
 )
 rlr = drsom_helper_l.run_drsomb(
     copy(x0), f_composite;
@@ -175,12 +180,21 @@ rl = drsom_helper_l.run_drsomb(
     maxiter=1000, tol=1e-6,
     hessian=:sr1, hessian_rank=:∞
 )
+rb = drsom_helper_l.run_drsomb(
+    copy(x0), f_composite;
+    maxiter=1000, tol=1e-6,
+    hessian=:bfgs, hessian_rank=:∞
+)
 
 results = [
     optim_to_result(res1, "GD+Wolfe"),
     optim_to_result(res2, "LBFGS+Wolfe"),
     optim_to_result(res3, "Newton-TR*(Analytic)"),
-    r, rpk, rpg, rlr, rl
+    r,
+    rpk, rpg,
+    rlr,
+    rl,
+    rb
 ]
 
 
@@ -194,7 +208,7 @@ method_names = getname.(results)
 @printf("plotting results\n")
 
 pgfplotsx()
-title = L"\frac{1}{2}\|Ax-b\|^2 + \|x\|_p^p, p = %$(params.p), A \in R^{%$(n)\times %$(m)}"
+title = L"\frac{1}{2}\|Ax-b\|^2 + \|x\|_p^p, p = %$(params.p), A \in R^{%$(n)\times %$(m)}, nnz = %$(nnz)"
 fig = plot(
     1:(method_objval_ragged|>size|>first),
     method_objval_ragged,
@@ -209,5 +223,5 @@ fig = plot(
     dpi=1000,
 )
 
-savefig(fig, @sprintf("/tmp/|∇f|-L2Lp-%d-%d-%.1f.pdf", n, m, params.p))
+savefig(fig, @sprintf("/tmp/|∇f|-L2Lp-%d-%d-%.1f-%.1f.pdf", n, m, params.p, params.nnz))
 
