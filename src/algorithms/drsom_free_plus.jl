@@ -23,7 +23,7 @@ Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     mode = :forward
     direction = :krylov
     direction_num::Int64 = 1
-    η::Float64 = 1e-1
+    η::Float64 = 1e-3
 end
 
 
@@ -124,7 +124,7 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
                 ∇f=grad_f_x,
                 ∇fz=z,
                 ∇fb=grad_f_b,
-                α=[a1, 0, 0],
+                α=[a1, 0],
                 d=d,
                 Δ=norm(d, 2),
                 dq=dq,
@@ -256,24 +256,16 @@ function drsom_display(it, state::DRSOMFreePlusState)
         log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
-        loglength = log |> length
-        name = "The Dimension-Reduced Second-Order Method"
-        sep = string(repeat("-", loglength))
-        pref = loglength - (name |> length)
-
-        prefs = string(repeat(" ", pref / 2 |> round |> Int))
-        @printf("%s\n", sep)
-        @printf("%s%s%s\n", prefs, name, prefs)
-        @printf("%s\n", sep)
+        format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %20s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
+        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
 
     end
-    @printf("%5d | %+.3e | %20s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
+    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
         it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end

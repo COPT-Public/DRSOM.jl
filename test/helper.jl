@@ -14,16 +14,18 @@ using ForwardDiff
 using ReverseDiff
 using LineSearches
 
-export getfval, getname, geteps, optim_to_result
+export getresultfield, getname, geteps, optim_to_result
 
 Base.@kwdef mutable struct Result{StateType,Int}
     name::String
     state::StateType
     k::Int
-    traj::Vector{Float64}
+    traj::Vector{StateType}
 end
 
-function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, freq=10)
+Base.copy(x::T) where {T} = T([deepcopy(getfield(x, k)) for k ∈ fieldnames(T)]...)
+
+function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, freq=1, record=true0)
     ########################################################
     name = "DRLS"
     method = ProximalAlgorithms.DRLSIteration
@@ -38,7 +40,7 @@ function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, freq=10)
     else
         iter = method(x0=x0, f=f, g=g)
     end
-    arr = Vector{Float64}()
+    arr = Vector{ProximalAlgorithms.DRLSState}()
     rb = nothing
     for (k, state::ProximalAlgorithms.DRLSState) in enumerate(iter)
         norm_res = norm(state.res, Inf)
@@ -51,7 +53,7 @@ function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, freq=10)
         end
         mod(k, freq) == 0 && DRSOM.default_display(k, obj, state.gamma, norm_res)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
@@ -70,7 +72,7 @@ function run_fista(x0, f, g, L=nothing, σ=nothing, tol=1e-6, maxiter=200, freq=
     else
         iter = method(x0=x0, f=f, g=g)
     end
-    arr = Vector{Float64}()
+    arr = Vector{ProximalAlgorithms.FastForwardBackwardState}()
     rb = nothing
     for (k, state::ProximalAlgorithms.FastForwardBackwardState) in enumerate(iter)
         norm_res = norm(state.res, Inf)
@@ -83,7 +85,7 @@ function run_fista(x0, f, g, L=nothing, σ=nothing, tol=1e-6, maxiter=200, freq=
         end
         mod(k, freq) == 0 && DRSOM.default_display(k, obj, state.gamma, norm_res)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
@@ -97,17 +99,17 @@ end
 # - run_drsomd: (direct mode), run DRSOM with provided g(⋅) and H(⋅)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
-function run_drsomf(x0, f_composite; tol=1e-6, maxiter=100, freq=1)
+function run_drsomf(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMFreeState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
     cfg = ForwardDiff.GradientConfig(f_composite, x0, ForwardDiff.Chunk(x0))
     iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessfa, f=f_composite, cfg=cfg, mode=:forward)
     for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
-        push!(arr, state.ϵ2)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -115,14 +117,14 @@ function run_drsomf(x0, f_composite; tol=1e-6, maxiter=100, freq=1)
         end
         mod(k, freq) == 0 && DRSOM.drsom_display(k, state)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
-function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1)
+function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMFreeState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
@@ -132,7 +134,7 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1)
     @printf("%s\n", '#'^60)
     iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled, mode=:backward)
     for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
-        push!(arr, state.ϵ2)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -140,42 +142,20 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1)
         end
         mod(k, freq) == 0 && DRSOM.drsom_display(k, state)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
-function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1)
+function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMFreeState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
     iter = DRSOM.DRSOMFreeIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct)
     for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
-        push!(arr, state.ϵ2)
-        if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
-            rb = (state, k)
-            DRSOM.drsom_display(k, state)
-            break
-        end
-        mod(k, freq) == 0 && DRSOM.drsom_display(k, state)
-    end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
-    return Result(name=name, state=rb[1], k=rb[2], traj=arr)
-end
-
-function run_drsomd_traj(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1)
-    ########################################################
-    name = "DRSOM"
-    arr = Vector{Float64}()
-    traj = []
-    rb = nothing
-    @printf("%s\n", '#'^60)
-    @printf("running: %s with tol: %.3e\n", name, tol)
-    iter = DRSOM.DRSOMFreeIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct)
-    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
-        push!(traj, state)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -199,11 +179,19 @@ options = Optim.Options(
 )
 
 # utilities
-getfval(x) = getfield(x, :traj)
+getresultfield(x, y=:fx) = getfield.(getfield(x, :traj), y)
 getname(x) = getfield(x, :name)
 geteps(x) = x.g_norm
+
+Base.@kwdef mutable struct OptimState
+    fx::Float64
+    ϵ::Float64
+end
 function optim_to_result(rr, name)
-    return Result(name=name, state=rr, k=rr.iterations, traj=geteps.(rr.trace))
+    traj = map(
+        (x) -> OptimState(fx=x.value, ϵ=x.g_norm), rr.trace
+    )
+    return Result(name=name, state=traj[end], k=rr.iterations, traj=traj)
 end
 
 

@@ -165,15 +165,15 @@ rpk = drsom_helper_plus.run_drsomd(
     maxiter=1000, tol=1e-6,
     direction=:krylov
 )
-rpg = drsom_helper_plus.run_drsomd(
-    copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6,
-    direction=:gaussian, direction_num=10
-)
+# rpg = drsom_helper_plus.run_drsomd(
+#     copy(x0), f_composite, g, H;
+#     maxiter=1000, tol=1e-6,
+#     direction=:gaussian, direction_num=10
+# )
 rlr = drsom_helper_l.run_drsomb(
     copy(x0), f_composite;
     maxiter=1000, tol=1e-6,
-    hessian=:sr1, hessian_rank=m
+    hessian=:sr1p, hessian_rank=m
 )
 rl = drsom_helper_l.run_drsomb(
     copy(x0), f_composite;
@@ -191,15 +191,17 @@ results = [
     optim_to_result(res2, "LBFGS+Wolfe"),
     optim_to_result(res3, "Newton-TR*(Analytic)"),
     r,
-    rpk, rpg,
+    rpk,
+    # rpg,
     rlr,
     rl,
     rb
 ]
 
-
+metric = :ϵ
+# metric = :fx
 method_objval_ragged = rstack([
-        getfval.(results)...
+        getresultfield.(results, metric)...
     ]; fill=NaN
 )
 method_names = getname.(results)
@@ -223,5 +225,5 @@ fig = plot(
     dpi=1000,
 )
 
-savefig(fig, @sprintf("/tmp/|∇f|-L2Lp-%d-%d-%.1f-%.1f.pdf", n, m, params.p, params.nnz))
+savefig(fig, @sprintf("/tmp/%s-L2Lp-%d-%d-%.1f-%.1f.pdf", metric, n, m, params.p, params.nnz))
 

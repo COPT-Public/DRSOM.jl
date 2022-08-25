@@ -7,6 +7,9 @@ using Dates
 """
     DRSOMFreeIteration(; <keyword-arguments>)
 """
+
+
+
 Base.@kwdef mutable struct DRSOMFreeIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     f::Tf             # f: smooth f
     ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
@@ -42,8 +45,7 @@ Base.@kwdef mutable struct DRSOMFreeState{R,Tx,Tq,Tc}
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
-    ϵ1::R             # eps 1: residual for fix-point 
-    ϵ2::R             # eps 2: residual for gradient 
+    ϵ::R             # eps: residual for gradient 
     γ::R = 1e-16      # scaling parameter γ for λ
     λ::R = 1e-16      # dual λ
     it::Int = 1       # inner iteration #. for trs adjustment
@@ -125,12 +127,11 @@ function Base.iterate(iter::DRSOMFreeIteration)
                 a1=a1,
                 a2=a2,
                 d=d,
-                Δ=0.0,
+                Δ=a1,
                 dq=dq,
                 df=df,
                 ρ=ro,
-                ϵ1=norm(d, 2),
-                ϵ2=norm(grad_f_x, 2),
+                ϵ=norm(grad_f_x, 2),
                 γ=1e-6,
                 λ=1e-6,
                 it=it,
@@ -192,10 +193,8 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
         df = fz - fx
         ro = df / dq
         if (df < 0) || (ro <= 0.1)
-            # state.λ *= 10
             state.γ *= 5
         elseif ro >= 0.5
-            # state.λ = max(min(sqrt(state.λ), state.λ / 100), 1e-10)
             state.γ = max(min(sqrt(state.γ), log(10, state.γ + 1)), 1e-16)
         end
         if (ro > 0.05 && df > 0) || it == iter.itermax
@@ -210,8 +209,7 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
             state.d = x - z
             state.Δ = sqrt(a1^2 + a2^2)
             state.it = it
-            state.ϵ1 = norm(x - z)
-            state.ϵ2 = norm(state.∇f)
+            state.ϵ = norm(state.∇f)
             state.it = it
             state.t = (Dates.now() - iter.t).value / 1e3
             return state, state
@@ -221,17 +219,24 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
 end
 
 drsom_stopping_criterion(tol, state::DRSOMFreeState) =
-    (state.ϵ2 / 1e2 <= tol) || (state.ϵ1 <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMFreeState)
-    if mod(it, 30) == 1
-        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
-            "k", "f", "α1", "α2", "Δ", "|d|", "|∇f|", "γ", "λ", "ρ", "it", "t",
+    if it == 1
+        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
+            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+        )
+        format_header(log)
+        @printf("%s", log)
+    end
+    if mod(it, 30) == 0
+        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
+            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
     end
-    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %.1e | %+.2f | %2d | %6.1f |\n",
-        it, state.fx, state.a1, state.a2, state.Δ, state.ϵ1, state.ϵ2, state.γ, state.λ, state.ρ, state.it, state.t
+    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.2f | %2d | %6.1f |\n",
+        it, state.fx, state.a1, state.a2, state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end
 

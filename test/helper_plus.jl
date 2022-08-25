@@ -18,7 +18,7 @@ Base.@kwdef mutable struct Result{StateType,Int}
     name::String
     state::StateType
     k::Int
-    traj::Vector{Float64}
+    traj::Vector{StateType}
 end
 
 
@@ -33,9 +33,9 @@ naming(dirtype, numdir) = @sprintf("%s(%s,%s)", basename, dirtype, numdir)
 # - run_drsomd: (direct mode), run DRSOM with provided g(⋅) and H(⋅)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
-function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, direction=:gaussian, direction_num=1)
+function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true, direction=:gaussian, direction_num=1)
     ########################################################
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMFreePlusState}()
     rb = nothing
     name = naming(direction, direction_num)
     @printf("%s\n", '#'^60)
@@ -46,7 +46,7 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, direction=:g
     @printf("%s\n", '#'^60)
     iter = DRSOM.DRSOMFreePlusIteration(x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled, mode=:backward, direction=direction, direction_num=direction_num)
     for (k, state::DRSOM.DRSOMFreePlusState) in enumerate(iter)
-        push!(arr, state.ϵ)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -54,20 +54,20 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, direction=:g
         end
         (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
-function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, direction=:gaussian, direction_num=1)
+function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, record=true, direction=:gaussian, direction_num=1)
     ########################################################
     name = naming(direction, direction_num)
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMFreePlusState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
     iter = DRSOM.DRSOMFreePlusIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct, direction=direction, direction_num=direction_num)
     for (k, state::DRSOM.DRSOMFreePlusState) in enumerate(iter)
-        push!(arr, state.ϵ)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -75,7 +75,7 @@ function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, direct
         end
         (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 

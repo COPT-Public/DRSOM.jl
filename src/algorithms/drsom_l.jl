@@ -38,12 +38,15 @@ end
 Base.IteratorSize(::Type{<:DRSOMLIteration}) = Base.IsInfinite()
 
 Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
+    k::Int            # iterate #
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
     U::Tu             # vectors of Hessian such that H = U⋅W⋅U' = ∑ w⋅u⋅u'
     W::Tw             # diagonals of Hessian 
     H::Tq             # complete form of Hessian
+    up::Tx            #
+    un::Tx            #
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
     y::Tx             # forward point
@@ -129,6 +132,8 @@ function Base.iterate(iter::DRSOMLIteration)
                 Q=Q,
                 c=c,
                 U=zeros(n, 0),
+                up=zeros(n),
+                un=zeros(n),
                 W=zeros(0),
                 H=zeros(n, n), # Array{Float64}(undef, n, n)
                 ∇f=grad_f_x,
@@ -144,6 +149,7 @@ function Base.iterate(iter::DRSOMLIteration)
                 λ=1e-6,
                 it=it,
                 t=t,
+                k=1,
             )
             return state, state
         else
@@ -207,6 +213,32 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
         else
             throw(ErrorException("BFGS do not support limited rank H approx."))
         end
+    else
+        iter.hessian == :sr1p
+        Δg = state.∇f - state.∇fz
+        Δy = state.H * state.d
+        # new hessian update vector
+        u = Δg - Δy
+        w = (state.d' * (u))
+
+        # not orthogonal
+        if w != 0
+            w = 1 / w
+            if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
+                # preserving Hessian below some rank
+                #   rank(H) <= iter.hessian_rank
+                state.U = [state.U u][:, 1:min(end, iter.hessian_rank)]
+                state.W = [state.W..., w][1:min(end, iter.hessian_rank)]
+                if w > 0
+                    state.up = 1 / state.k * (state.up * (state.k - 1) + u * sqrt(w))
+                else
+                    state.un = 1 / state.k * (state.un * (state.k - 1) + u * sqrt(-w))
+                end
+            else
+                # else allow potentially full rank
+                state.H += w * u * u'
+            end
+        end
     end
     D = [-state.∇f / gnorm state.d / dnorm]
     # add new directions v
@@ -247,7 +279,9 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
         state.Q = Q = D' * state.H * D
     elseif iter.hessian_rank > 0
         UD = D' * state.U
-        state.Q = Q = UD * Diagonal(state.W) * UD'
+        upD = D' * state.up
+        unD = D' * state.un
+        state.Q = Q = UD * Diagonal(state.W) * UD' + upD * upD' - unD * unD'
     else
 
     end
@@ -282,6 +316,7 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
             state.ϵ = norm(state.∇f)
             state.it = it
             state.t = (Dates.now() - iter.t).value / 1e3
+            state.k += 1
             return state, state
         end
         it += 1
@@ -293,27 +328,19 @@ drsom_stopping_criterion(tol, state::DRSOMLState) =
 
 function drsom_display(it, state::DRSOMLState)
     if it == 1
-        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
+        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s \n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
-        loglength = log |> length
-        name = "The Dimension-Reduced Second-Order Method"
-        sep = string(repeat("-", loglength))
-        pref = loglength - (name |> length)
-
-        prefs = string(repeat(" ", pref / 2 |> round |> Int))
-        @printf("%s\n", sep)
-        @printf("%s%s%s\n", prefs, name, prefs)
-        @printf("%s\n", sep)
+        format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
+        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s \n",
             "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
         )
 
     end
-    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
+    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f \n",
         it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end

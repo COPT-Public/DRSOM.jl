@@ -737,6 +737,14 @@ git-tree-sha1 = "bf36f528eec6634efc60d7ec062008f171071434"
 uuid = "88015f11-f218-50d7-93a8-a6af411a945d"
 version = "3.0.0+1"
 
+[[deps.LIBSVMFileIO]]
+deps = ["Formatting", "SparseArrays"]
+git-tree-sha1 = "1a4c6bb8ffe1da4afcc21f13e067cd6555f5e8dc"
+repo-rev = "master"
+repo-url = "https://github.com/mvmorin/LIBSVMFileIO.jl"
+uuid = "036c95be-6683-11e9-362f-15daa430852d"
+version = "0.1.0"
+
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Printf", "Unicode"]
 git-tree-sha1 = "e7e9184b0bf0158ac4e4aa9daf00041b5909bf1a"

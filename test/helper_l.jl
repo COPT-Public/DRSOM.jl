@@ -19,7 +19,7 @@ Base.@kwdef mutable struct Result{StateType,Int}
     name::String
     state::StateType
     k::Int
-    traj::Vector{Float64}
+    traj::Vector{StateType}
 end
 
 
@@ -35,12 +35,12 @@ naming(mode, rank) = @sprintf("%s(%s,+%s)", basename, mode, rank)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
 function run_drsomb(
-    x0, f_composite; tol=1e-6, maxiter=100, freq=1,
+    x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true,
     direction=:gaussian, direction_num=1,
     hessian=:sr1, hessian_rank=length(x0)
 )
     ########################################################
-    arr = Vector{Float64}()
+    arr = Vector{DRSOM.DRSOMLState}()
     rb = nothing
     name = naming(hessian, hessian_rank)
     @printf("%s\n", '#'^60)
@@ -56,7 +56,7 @@ function run_drsomb(
         hessian=hessian, hessian_rank=hessian_rank
     )
     for (k, state::DRSOM.DRSOMLState) in enumerate(iter)
-        push!(arr, state.ϵ)
+        (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
@@ -64,7 +64,7 @@ function run_drsomb(
         end
         (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
     end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], arr[end])
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
