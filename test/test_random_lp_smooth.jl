@@ -16,9 +16,11 @@
 # 3. Ge, D., Jiang, X., Ye, Y.: A note on the complexity of Lp minimization. Mathematical Programming. 129, 285–299 (2011). https://doi.org/10.1007/s10107-011-0470-2
 ###############
 
+
 include("helper.jl")
 include("helper_plus.jl")
 include("helper_l.jl")
+include("helper_c.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -43,7 +45,7 @@ using .LP
 using .drsom_helper
 using .drsom_helper_plus
 using .drsom_helper_l
-
+using .drsom_helper_c
 
 
 function parse_commandline()
@@ -165,26 +167,32 @@ rpk = drsom_helper_plus.run_drsomd(
     maxiter=1000, tol=1e-6,
     direction=:krylov
 )
+
+rpc = drsom_helper_c.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=10000, tol=1e-6,
+    direction=:undef
+)
 # rpg = drsom_helper_plus.run_drsomd(
 #     copy(x0), f_composite, g, H;
 #     maxiter=1000, tol=1e-6,
 #     direction=:gaussian, direction_num=10
 # )
-rlr = drsom_helper_l.run_drsomb(
-    copy(x0), f_composite;
-    maxiter=1000, tol=1e-6,
-    hessian=:sr1p, hessian_rank=m
-)
-rl = drsom_helper_l.run_drsomb(
-    copy(x0), f_composite;
-    maxiter=1000, tol=1e-6,
-    hessian=:sr1, hessian_rank=:∞
-)
-rb = drsom_helper_l.run_drsomb(
-    copy(x0), f_composite;
-    maxiter=1000, tol=1e-6,
-    hessian=:bfgs, hessian_rank=:∞
-)
+# rlr = drsom_helper_l.run_drsomb(
+#     copy(x0), f_composite;
+#     maxiter=1000, tol=1e-6,
+#     hessian=:sr1p, hessian_rank=m
+# )
+# rl = drsom_helper_l.run_drsomb(
+#     copy(x0), f_composite;
+#     maxiter=1000, tol=1e-6,
+#     hessian=:sr1, hessian_rank=:∞
+# )
+# rb = drsom_helper_l.run_drsomb(
+#     copy(x0), f_composite;
+#     maxiter=1000, tol=1e-6,
+#     hessian=:bfgs, hessian_rank=:∞
+# )
 
 results = [
     optim_to_result(res1, "GD+Wolfe"),
@@ -192,38 +200,39 @@ results = [
     optim_to_result(res3, "Newton-TR*(Analytic)"),
     r,
     rpk,
+    rpc,
     # rpg,
-    rlr,
-    rl,
-    rb
+    # rlr,
+    # rl,
+    # rb
 ]
 
-metric = :ϵ
-# metric = :fx
-method_objval_ragged = rstack([
-        getresultfield.(results, metric)...
-    ]; fill=NaN
-)
-method_names = getname.(results)
+for metric in (:ϵ, :fx)
+    method_objval_ragged = rstack([
+            getresultfield.(results, metric)...
+        ]; fill=NaN
+    )
+    method_names = getname.(results)
 
 
-@printf("plotting results\n")
+    @printf("plotting results\n")
 
-pgfplotsx()
-title = L"\frac{1}{2}\|Ax-b\|^2 + \|x\|_p^p, p = %$(params.p), A \in R^{%$(n)\times %$(m)}, nnz = %$(nnz)"
-fig = plot(
-    1:(method_objval_ragged|>size|>first),
-    method_objval_ragged,
-    label=permutedims(method_names),
-    xscale=:log2,
-    yscale=:log10,
-    xlabel="Iteration", ylabel=L"\|\nabla f\| = \epsilon",
-    title=title,
-    size=(1280, 720),
-    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
-    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-    dpi=1000,
-)
+    pgfplotsx()
+    title = L"\frac{1}{2}\|Ax-b\|^2 + \|x\|_p^p, p = %$(params.p), A \in R^{%$(n)\times %$(m)}, nnz = %$(nnz)"
+    fig = plot(
+        1:(method_objval_ragged|>size|>first),
+        method_objval_ragged,
+        label=permutedims(method_names),
+        xscale=:log2,
+        yscale=:log10,
+        xlabel="Iteration",
+        ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
+        title=title,
+        size=(1280, 720),
+        yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+        xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+        dpi=1000,
+    )
 
-savefig(fig, @sprintf("/tmp/%s-L2Lp-%d-%d-%.1f-%.1f.pdf", metric, n, m, params.p, params.nnz))
-
+    savefig(fig, @sprintf("/tmp/%s-L2Lp-%d-%d-%.1f-%.1f.pdf", metric, n, m, params.p, params.nnz))
+end

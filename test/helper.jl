@@ -102,13 +102,13 @@ end
 function run_drsomf(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{DRSOM.DRSOMFreeState}()
+    arr = Vector{DRSOM.DRSOMState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
     cfg = ForwardDiff.GradientConfig(f_composite, x0, ForwardDiff.Chunk(x0))
-    iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessfa, f=f_composite, cfg=cfg, mode=:forward)
-    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
+    iter = DRSOM.DRSOMIteration(x0=x0, rh=DRSOM.hessfa, f=f_composite, cfg=cfg, mode=:forward)
+    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
         (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
@@ -124,7 +124,7 @@ end
 function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{DRSOM.DRSOMFreeState}()
+    arr = Vector{DRSOM.DRSOMState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
@@ -132,8 +132,8 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true)
     f_tape_compiled = ReverseDiff.compile(f_tape)
     @printf("compile finished\n")
     @printf("%s\n", '#'^60)
-    iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled, mode=:backward)
-    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
+    iter = DRSOM.DRSOMIteration(x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled, mode=:backward)
+    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
         (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
@@ -149,12 +149,12 @@ end
 function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, record=true)
     ########################################################
     name = "DRSOM"
-    arr = Vector{DRSOM.DRSOMFreeState}()
+    arr = Vector{DRSOM.DRSOMState}()
     rb = nothing
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
-    iter = DRSOM.DRSOMFreeIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct)
-    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
+    iter = DRSOM.DRSOMIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct)
+    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
         (record) && push!(arr, copy(state))
         if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)

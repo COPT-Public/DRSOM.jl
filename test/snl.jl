@@ -145,9 +145,9 @@ end
 #         return least_square(n, m, xv, pp, edges)
 #     end
 #     x0 = vec(Xv)
-#     iter = DRSOM.DRSOMFreeIteration(x0=x0, f=loss)
+#     iter = DRSOM.DRSOMIteration(x0=x0, f=loss)
 #     rb = nothing
-#     for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
+#     for (k, state::DRSOM.DRSOMState) in enumerate(iter)
 
 #         if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
 #             rb = state, k
@@ -168,9 +168,9 @@ function rsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float6
     f_tape = ReverseDiff.GradientTape(loss, x0)
     f_tape_compiled = ReverseDiff.compile(f_tape)
     @printf("compile finished\n")
-    iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessba, f=loss, tp=f_tape_compiled, mode=:backward)
+    iter = DRSOM.DRSOMIteration(x0=x0, rh=DRSOM.hessba, f=loss, tp=f_tape_compiled, mode=:backward)
     rb = nothing
-    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
+    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
 
         if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
             rb = state, k
