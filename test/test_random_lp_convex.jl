@@ -17,6 +17,7 @@
 ###############
 
 include("helper.jl")
+include("helper_plus.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -38,7 +39,8 @@ using LinearOperators
 using ArgParse
 using Optim
 using .LP
-
+using .drsom_helper
+using .drsom_helper_plus
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -112,8 +114,8 @@ iter_scale = 0
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 
-name, state, k, arr_obj = run_drsomb(copy(x0), f_composite)
-# name, state, k, arr_obj = run_rsomd(copy(x0), f_composite, g, H; tol=1e-7)
+name, state, k, arr = drsom_helper.run_drsomb(copy(x0), f_composite; tol=1e-10, maxiter=1e4)
+# name, state, k, arr = run_rsomd(copy(x0), f_composite, g, H; tol=1e-7)
 
 # compare with GD and LBFGS, Trust region newton,
 options = Optim.Options(

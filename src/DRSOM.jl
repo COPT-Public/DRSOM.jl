@@ -12,6 +12,7 @@ include("utilities/ad.jl")
 include("utilities/fb_tools.jl")
 include("utilities/iteration_tools.jl")
 include("utilities/display_tools.jl")
+include("utilities/trs.jl")
 
 # algorithm interface
 
@@ -81,6 +82,10 @@ function (alg::IterativeAlgorithm{IteratorType})(; kwargs...) where {IteratorTyp
 end
 
 # algorithm implementations
-include("algorithms/drsom_free.jl")
+include("algorithms/drsom.jl")
+include("algorithms/drsom_plus.jl")
+include("algorithms/drsom_l.jl")
+include("algorithms/drsom_c.jl")
+include("algorithms/drsom_f.jl")
 
 end # module
