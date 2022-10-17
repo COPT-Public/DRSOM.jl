@@ -45,8 +45,6 @@ Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     U::Tu             # vectors of Hessian such that H = U⋅W⋅U' = ∑ w⋅u⋅u'
     W::Tw             # diagonals of Hessian 
     H::Tq             # complete form of Hessian
-    up::Tx            #
-    un::Tx            #
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
     y::Tx             # forward point
@@ -64,6 +62,7 @@ Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     λ::R = 1e-16      # dual λ
     it::Int = 1       # inner iteration #. for trs adjustment
     t::R = 0.0        # running time
+    β::R = 0.0        # Lipschitz estimate
 end
 
 function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
@@ -132,10 +131,8 @@ function Base.iterate(iter::DRSOMLIteration)
                 Q=Q,
                 c=c,
                 U=zeros(n, 0),
-                up=zeros(n),
-                un=zeros(n),
                 W=zeros(0),
-                H=zeros(n, n), # Array{Float64}(undef, n, n)
+                H=ones(n, n),
                 ∇f=grad_f_x,
                 ∇fz=similar(grad_f_x),
                 α=[a1],
@@ -150,6 +147,7 @@ function Base.iterate(iter::DRSOMLIteration)
                 it=it,
                 t=t,
                 k=1,
+                β=0.0,
             )
             return state, state
         else
@@ -190,18 +188,35 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
         w = (state.d' * (u))
         # not orthogonal
         if w != 0
-            w = 1 / w
             if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
                 # preserving Hessian below some rank
                 #   rank(H) <= iter.hessian_rank
                 state.U = [state.U u][:, 1:min(end, iter.hessian_rank)]
-                state.W = [state.W..., w][1:min(end, iter.hessian_rank)]
+                state.W = [state.W..., 1 / w][1:min(end, iter.hessian_rank)]
             else
                 # else allow potentially full rank
-                state.H += w * u * u'
+                state.H += u * u' / w
             end
         end
-    elseif iter.hessian == :bfgs
+    elseif iter.hessian == :sr1inv
+        Δg = state.∇f - state.∇fz
+        Δy = state.d
+        # new hessian update vector
+        u = Δy - state.H * Δg
+        w = (Δg' * (u))
+        # not orthogonal
+        if w != 0
+            if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
+                # preserving Hessian below some rank
+                #   rank(H) <= iter.hessian_rank
+                state.U = [state.U u][:, 1:min(end, iter.hessian_rank)]
+                state.W = [state.W..., 1 / w][1:min(end, iter.hessian_rank)]
+            else
+                # else allow potentially full rank
+                state.H += u * u' / w
+            end
+        end
+    elseif iter.hessian == :dfp
         if iter.hessian_rank ∈ (:∞, -1)
             Δg = state.∇f - state.∇fz
             # new hessian update vector
@@ -213,65 +228,54 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
         else
             throw(ErrorException("BFGS do not support limited rank H approx."))
         end
-    else
-        iter.hessian == :sr1p
+    elseif iter.hessian == :bfgs
+        if iter.hessian_rank ∈ (:∞, -1)
+            Δg = state.∇f - state.∇fz
+            Δy = state.H * Δg
+            # new hessian update vector
+            w = (Δg' * (state.d))
+            (w != 0) && (state.H += state.d * state.d' / w)
+            w = -(Δg' * Δy)
+            (w != 0) && (state.H += Δy * Δy' / w)
+        else
+            throw(ErrorException("BFGS do not support limited rank H approx."))
+        end
+    elseif iter.hessian == :sr1lip
         Δg = state.∇f - state.∇fz
         Δy = state.H * state.d
         # new hessian update vector
-        u = Δg - Δy
+        u = Δg - Δy - 0.5 * state.β * state.Δ^2 * state.d
         w = (state.d' * (u))
 
-        # not orthogonal
-        if w != 0
-            w = 1 / w
-            if iter.hessian_rank ∉ (:∞, -1) && iter.hessian_rank > 0
-                # preserving Hessian below some rank
-                #   rank(H) <= iter.hessian_rank
-                state.U = [state.U u][:, 1:min(end, iter.hessian_rank)]
-                state.W = [state.W..., w][1:min(end, iter.hessian_rank)]
-                if w > 0
-                    state.up = 1 / state.k * (state.up * (state.k - 1) + u * sqrt(w))
-                else
-                    state.un = 1 / state.k * (state.un * (state.k - 1) + u * sqrt(-w))
-                end
-            else
-                # else allow potentially full rank
-                state.H += w * u * u'
-            end
+        if iter.hessian_rank ∈ (:∞, -1)
+            # else allow potentially full rank
+            (w != 0) && (state.H += u * u' / w)
+        else
+            throw(ErrorException("BFGS do not support limited rank H approx."))
         end
+
+
+    else
+        throw(ErrorException("no such mode implemented"))
     end
-    D = [-state.∇f / gnorm state.d / dnorm]
+
+    # construct subspace
     # add new directions v
     #   and again, we compute Hv
-    if iter.direction == :krylov
-        #     # - krylov:
-        #     vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
-        #     v = reshape(vecs[1], n, 1)
-        #     HD = [-Hg / gnorm Hd / dnorm H * v]
-        #     D = [-state.∇f / gnorm state.d / dnorm v]
-
-        # elseif iter.direction == :gaussian
-        #     # - gaussian
-        #     Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
-        #     D = MvNormal(zeros(n), Σ ./ iter.direction_num)
-        #     # sanity check:
-
-        #     V = rand(D, iter.direction_num)
-        #     # normalization
-        #     V = V * (1 ./ norm.(eachcol(V)) |> Diagonal)
-
-        #     if iter.mode ∈ (:forward, false)
-        #         throw(ErrorException("forward mode not supported yet"))
-        #     elseif iter.mode ∈ (:backward, true)
-        #         Hv = reduce(hcat, map(v -> iter.rh(state, v; tp=iter.tp), eachcol(V)))
-        #     else
-        #         Hv = H * V
-        #     end
-
-        #     HD = [-Hg / gnorm Hd / dnorm Hv]
-        #     D = [-state.∇f / gnorm state.d / dnorm V]
-        # else
-        #     throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
+    # if use inverse Hessian
+    # we adopt 2-D subspace quasi-Newton TRS
+    if iter.hessian ∈ [:sr1inv, :bfgs]
+        dₙ = -state.H * state.∇f
+        D = [-state.∇f / gnorm dₙ / norm(dₙ)]
+        throw(ErrorException("you should use line-search instead"))
+        # otherwise, no Newton step available
+    elseif iter.direction == :krylov
+        throw(ErrorException("no such mode implemented"))
+    elseif iter.direction == :full
+        # use full dimensional TRS
+        D = LinearAlgebra.I
+    else
+        D = [-state.∇f / gnorm state.d / dnorm]
     end
     # compute Q,c,G
     # use low-rank updates
@@ -279,9 +283,7 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
         state.Q = Q = D' * state.H * D
     elseif iter.hessian_rank > 0
         UD = D' * state.U
-        upD = D' * state.up
-        unD = D' * state.un
-        state.Q = Q = UD * Diagonal(state.W) * UD' + upD * upD' - unD * unD'
+        state.Q = Q = UD * Diagonal(state.W) * UD'
     else
 
     end
@@ -317,6 +319,7 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
             state.it = it
             state.t = (Dates.now() - iter.t).value / 1e3
             state.k += 1
+            state.β = 6 * (dq - df) / (state.Δ^3)
             return state, state
         end
         it += 1
@@ -328,20 +331,20 @@ drsom_stopping_criterion(tol, state::DRSOMLState) =
 
 function drsom_display(it, state::DRSOMLState)
     if it == 1
-        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s \n",
-            "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %6s \n",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "γ", "λ", "ρ", "β", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s \n",
-            "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %6s \n",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "γ", "λ", "ρ", "β", "kₜ", "t",
         )
 
     end
-    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f \n",
-        it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
+    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %+.0e | %2d | %6.1f \n",
+        it, state.fx, sprintarray(state.α[1:min(2, end)]), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.β, state.it, state.t
     )
 end
 

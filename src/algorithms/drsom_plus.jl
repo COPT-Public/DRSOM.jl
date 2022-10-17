@@ -7,9 +7,9 @@ using KrylovKit
 using Distributions
 
 """
-    DRSOMFreePlusIteration(; <keyword-arguments>)
+    DRSOMPlusIteration(; <keyword-arguments>)
 """
-Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
+Base.@kwdef mutable struct DRSOMPlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     f::Tf             # f: smooth f
     ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
     rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
@@ -23,13 +23,13 @@ Base.@kwdef mutable struct DRSOMFreePlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     mode = :forward
     direction = :krylov
     direction_num::Int64 = 1
-    η::Float64 = 1e-3
+    ϵk::Float64 = 1e6 # when to use Krylov
 end
 
 
-Base.IteratorSize(::Type{<:DRSOMFreePlusIteration}) = Base.IsInfinite()
+Base.IteratorSize(::Type{<:DRSOMPlusIteration}) = Base.IsInfinite()
 
-Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
+Base.@kwdef mutable struct DRSOMPlusState{R,Tx,Tq,Tc}
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
@@ -53,7 +53,7 @@ Base.@kwdef mutable struct DRSOMFreePlusState{R,Tx,Tq,Tc}
     t::R = 0.0        # running time
 end
 
-function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)))
+function TrustRegionSubproblem(Q, c, state::DRSOMPlusState; G=diagmQ(ones(2)))
     try
         # for d it is too small, reduce to a Cauchy point ?
         eigvalues = eigvals(Q)
@@ -71,7 +71,7 @@ function TrustRegionSubproblem(Q, c, state::DRSOMFreePlusState; G=diagmQ(ones(2)
 end
 
 
-function Base.iterate(iter::DRSOMFreePlusIteration)
+function Base.iterate(iter::DRSOMPlusIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
@@ -113,7 +113,7 @@ function Base.iterate(iter::DRSOMFreePlusIteration)
         if ro > 0.1 || it == iter.itermax
             t = (Dates.now() - iter.t).value / 1e3
             d = y - z
-            state = DRSOMFreePlusState(
+            state = DRSOMPlusState(
                 x=y,
                 y=y,
                 z=z,
@@ -152,7 +152,7 @@ Solve an iteration using TRS to produce stepsizes,
 alpha: extrapolation
 gamma: gradient step
 """
-function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,Tx}) where {R,Tx}
+function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) where {R,Tx}
 
     n = length(state.x)
     state.z = z = state.x
@@ -176,14 +176,20 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
     dnorm = norm(state.d)
     # add new directions v
     #   and again, we compute Hv
-    if gnorm < iter.η
+    if gnorm < iter.ϵk
         if iter.direction == :krylov
             # - krylov:
-            vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
+            vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :LR, Float64)
             v = reshape(vecs[1], n, 1)
             HD = [-Hg / gnorm Hd / dnorm H * v]
             D = [-state.∇f / gnorm state.d / dnorm v]
-
+        elseif iter.direction == :homokrylov
+            # - krylov:
+            B = [H state.∇f; state.∇f' 0]
+            vals, vecs, _ = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64)
+            v = reshape(vecs[1][1:end-1] / vecs[1][end], n, 1)
+            HD = [-Hg / gnorm Hd / dnorm H * v]
+            D = [-state.∇f / gnorm state.d / dnorm v]
         elseif iter.direction == :gaussian
             # - gaussian
             Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
@@ -205,7 +211,8 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
             HD = [-Hg / gnorm Hd / dnorm Hv]
             D = [-state.∇f / gnorm state.d / dnorm V]
         else
-            throw(ErrorException(@sprintf("unknown direction %s", iter.direction)))
+            HD = [-Hg / gnorm Hd / dnorm]
+            D = [-state.∇f / gnorm state.d / dnorm]
         end
     else
         HD = [-Hg / gnorm Hd / dnorm]
@@ -247,27 +254,27 @@ function Base.iterate(iter::DRSOMFreePlusIteration, state::DRSOMFreePlusState{R,
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMFreePlusState) =
+drsom_stopping_criterion(tol, state::DRSOMPlusState) =
     (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 sprintarray(arr) = join(map(x -> @sprintf("%+.0e", x), arr), ",")
-function drsom_display(it, state::DRSOMFreePlusState)
+function drsom_display(it, state::DRSOMPlusState)
     if it == 1
         log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
-            "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
         @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
-            "k", "f", string(repeat(" ", 7 * (state.α |> length) - 2), "α"), "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
 
     end
     @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %2d | %6.1f |\n",
-        it, state.fx, sprintarray(state.α), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
+        it, state.fx, sprintarray(state.α[1:min(2, end)]), state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end
 
-default_solution(::DRSOMFreePlusIteration, state::DRSOMFreePlusState) = state.x
+default_solution(::DRSOMPlusIteration, state::DRSOMPlusState) = state.x

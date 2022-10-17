@@ -5,12 +5,12 @@ using Printf
 using Dates
 
 """
-    DRSOMFreeIteration(; <keyword-arguments>)
+    DRSOMIteration(; <keyword-arguments>)
 """
 
 
 
-Base.@kwdef mutable struct DRSOMFreeIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
+Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     f::Tf             # f: smooth f
     ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
     rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
@@ -25,9 +25,9 @@ Base.@kwdef mutable struct DRSOMFreeIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
 end
 
 
-Base.IteratorSize(::Type{<:DRSOMFreeIteration}) = Base.IsInfinite()
+Base.IteratorSize(::Type{<:DRSOMIteration}) = Base.IsInfinite()
 
-Base.@kwdef mutable struct DRSOMFreeState{R,Tx,Tq,Tc}
+Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
@@ -52,7 +52,7 @@ Base.@kwdef mutable struct DRSOMFreeState{R,Tx,Tq,Tc}
     t::R = 0.0        # running time
 end
 
-function TrustRegionSubproblem(Q, c, state::DRSOMFreeState; G=diagmQ(ones(2)))
+function TrustRegionSubproblem(Q, c, state::DRSOMState; G=diagmQ(ones(2)))
     # for d it is too small, reduce to a Cauchy point ?
     eigvalues = eigvals(Q)
     sort!(eigvalues)
@@ -64,13 +64,23 @@ function TrustRegionSubproblem(Q, c, state::DRSOMFreeState; G=diagmQ(ones(2)))
         alpha = -(Q + state.λ .* G) \ c
         return alpha
     catch
-        print(Q)
-        print(state.λ)
+        try
+            # this means it is singular
+            state.λ = state.λ + 10 # a wild solution
+            alpha = -(Q + state.λ .* G) \ c
+            return alpha
+        catch
+            println(Q)
+            println(G)
+            println(c)
+            println(state.λ)
+            error("failed at evaluate Q")
+        end
     end
 end
 
 
-function Base.iterate(iter::DRSOMFreeIteration)
+function Base.iterate(iter::DRSOMIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
@@ -113,7 +123,7 @@ function Base.iterate(iter::DRSOMFreeIteration)
         if ro > 0.1 || it == iter.itermax
             t = (Dates.now() - iter.t).value / 1e3
             d = y - z
-            state = DRSOMFreeState(
+            state = DRSOMState(
                 x=y,
                 y=y,
                 z=z,
@@ -151,7 +161,7 @@ Solve an iteration using TRS to produce stepsizes,
 alpha: extrapolation
 gamma: gradient step
 """
-function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) where {R,Tx}
+function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx}
 
     n = length(state.x)
     state.z = z = state.x
@@ -168,28 +178,31 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
         Hg = H * state.∇f
         Hd = H * state.d
     end
-    gnorm = norm(state.∇f)
+    gnorm = state.ϵ = norm(state.∇f)
+    if gnorm <= 1e-10
+        return state, state
+    end
     dnorm = norm(state.d)
-    Q11 = state.∇f' * Hg / gnorm^2
-    Q12 = -state.∇f' * Hd / gnorm / dnorm
-    Q22 = state.d' * Hd / dnorm^2
-    c1 = -state.∇f'state.∇f / gnorm
-    c2 = state.∇f'state.d / dnorm
+    Q11 = state.∇f' * Hg
+    Q12 = -state.∇f' * Hd
+    Q22 = state.d' * Hd
+    c1 = -state.∇f'state.∇f
+    c2 = state.∇f'state.d
     state.Q = Q = [Q11 Q12; Q12 Q22]
     state.c = c = [c1; c2]
-    gg = state.∇f' * state.∇f / gnorm^2
-    gd = state.∇f' * state.d / gnorm / dnorm
-    dd = state.d' * state.d / dnorm^2
+    gg = state.∇f' * state.∇f
+    gd = state.∇f' * state.d
+    dd = state.d' * state.d
     G = [gg -gd; -gd dd]
-    # G = diagm(ones(2))
+    
     it = 1
-    # if Q22 > 1e-4
+   
     while true
         a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
-        x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
+        x = y = state.z - a1 .* state.∇f + a2 .* state.d
         fx = iter.f(x)
         alp = [a1; a2]
-        dq = -alp' * Q * [a1; a2] / 2 - alp' * c
+        dq = -alp' * Q * alp / 2 - alp' * c
         df = fz - fx
         ro = df / dq
         if (df < 0) || (ro <= 0.1)
@@ -207,7 +220,7 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
             state.dq = dq
             state.df = df
             state.d = x - z
-            state.Δ = sqrt(a1^2 + a2^2)
+            state.Δ = sqrt(alp' * G * alp)
             state.it = it
             state.ϵ = norm(state.∇f)
             state.it = it
@@ -218,21 +231,21 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMFreeState) =
+drsom_stopping_criterion(tol, state::DRSOMState) =
     (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
-function drsom_display(it, state::DRSOMFreeState)
+function drsom_display(it, state::DRSOMState)
     if it == 1
         log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
-            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
         @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
-            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "it", "t",
+            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
     end
     @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.2f | %2d | %6.1f |\n",
@@ -240,7 +253,7 @@ function drsom_display(it, state::DRSOMFreeState)
     )
 end
 
-default_solution(::DRSOMFreeIteration, state::DRSOMFreeState) = state.x
+default_solution(::DRSOMIteration, state::DRSOMState) = state.x
 
 """
 """
@@ -253,6 +266,6 @@ ReducedTrustRegion(;
     freq=100,
     display=default_display,
     kwargs...
-) = IterativeAlgorithm(DRSOMFreeIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
+) = IterativeAlgorithm(DRSOMIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
 
 # Aliases

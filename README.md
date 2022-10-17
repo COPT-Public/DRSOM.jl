@@ -19,6 +19,7 @@ We provide easy examples for DRSOM.jl. All examples are listed in `examples/` di
 ### Nonconvex Logistic
 
 <img src="assets/new.gif" alt="drawing" width="30"/> 
+
 ```bash
 julia -i --project=./ test_ncvx_logistic.jl
 ```

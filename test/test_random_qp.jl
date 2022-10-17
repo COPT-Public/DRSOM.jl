@@ -58,6 +58,9 @@ L, _ = LinearOperators.normest(Q, 1e-4)
 
 ########################################################
 # direct evaluation
+# Q = Matrix{Float64}([1 0; 0 -1])
+# h = Vector{Float64}([0; 0])
+# x0 = Vector{Float64}([1; 0])
 f_composite(x) = 1 / 2 * x' * Q * x - h' * x
 g(x) = Q * x - h
 H(x) = Q
@@ -68,25 +71,35 @@ iter_scale = 0
 
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
-# cg
-res = Optim.optimize(f_composite, g, x0, ConjugateGradient(); inplace=false)
 # drsom
 r = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
-rp = drsom_helper_plus.run_drsomd(copy(x0), f_composite, g, H; maxiter=1000, tol=1e-6, direction=:gaussian)
-rl = drsom_helper_l.run_drsomb(
-    copy(x0), f_composite;
+rp = drsom_helper_plus.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=1000, tol=1e-6, direction=:krylov
+)
+rp2 = drsom_helper_plus.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=1000, tol=1e-6, direction=:homokrylov
+)
+rp1 = drsom_helper_plus.run_drsomd(
+    copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-6, direction=:gaussian
 )
-rl = drsom_helper_l.run_drsomb(
-    copy(x0), f_composite;
-    maxiter=1000, tol=1e-6, direction=:gaussian,
-    hessian_rank=:∞
-)
-results = [r, rp, rl]
+
+# rl = drsom_helper_l.run_drsomb(
+#     copy(x0), f_composite;
+#     maxiter=1000, tol=1e-6, direction=:gaussian
+# )
+# rl = drsom_helper_l.run_drsomb(
+#     copy(x0), f_composite;
+#     maxiter=1000, tol=1e-6, direction=:gaussian,
+#     hessian_rank=:∞
+# )
+results = [r, rp, rp1, rp2]
 
 
 method_objval_ragged = rstack([
-        getfval.(results)...
+        getresultfield.(results, :ϵ)...
     ]; fill=NaN
 )
 method_names = getname.(results)
@@ -110,4 +123,4 @@ fig = plot(
     dpi=1000,
 )
 
-savefig(fig, "/tmp/res.pdf")
+savefig(fig, "/tmp/random-qp-$(n).pdf")

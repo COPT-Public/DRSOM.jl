@@ -16,6 +16,7 @@
 include("helper.jl")
 include("helper_plus.jl")
 include("helper_l.jl")
+include("helper_c.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -40,6 +41,7 @@ using .LP
 using .drsom_helper
 using .drsom_helper_plus
 using .drsom_helper_l
+using .drsom_helper_c
 
 
 using MLDatasets
@@ -100,54 +102,62 @@ r = drsom_helper.run_drsomb(
     copy(x0), loss;
     maxiter=10000, tol=1e-7
 )
+rpc = drsom_helper_c.run_drsomb(
+    copy(x0), loss;
+    maxiter=10000, tol=1e-6,
+    direction=:undef
+)
 
-rl = drsom_helper_l.run_drsomb(
-    copy(x0), loss;
-    maxiter=1000, tol=1e-6,
-    hessian=:sr1, hessian_rank=:∞
-)
-rb = drsom_helper_l.run_drsomb(
-    copy(x0), loss;
-    maxiter=1000, tol=1e-6,
-    hessian=:bfgs, hessian_rank=:∞
-)
+# rl = drsom_helper_l.run_drsomb(
+#     copy(x0), loss;
+#     maxiter=1000, tol=1e-6,
+#     hessian=:sr1, hessian_rank=:∞
+# )
+# rb = drsom_helper_l.run_drsomb(
+#     copy(x0), loss;
+#     maxiter=1000, tol=1e-6,
+#     hessian=:bfgs, hessian_rank=:∞
+# )
 
 results = [
     # optim_to_result(res1, "GD+Wolfe"),
     # optim_to_result(res2, "LBFGS+Wolfe"),
     optim_to_result(res3, "Newton-TR*(Analytic)"),
     r,
+    rpc,
     # rpk, rpg,
     # rlr,
-    rl,
-    rb
+    # rl,
+    # rb
 ]
 
-metric = :ϵ
-# metric = :fx
-method_objval_ragged = rstack([
-        getresultfield.(results, metric)...
-    ]; fill=NaN
-)
-method_names = getname.(results)
 
-@printf("plotting results\n")
+for metric in (:ϵ, :fx)
+    method_objval_ragged = rstack([
+            getresultfield.(results, metric)...
+        ]; fill=NaN
+    )
+    method_names = getname.(results)
 
-pgfplotsx()
-title = L"\min _{w \in {R}^{d}} \frac{1}{2} \sum_{i=1}^{n}\left(\frac{1}{1+e^{-w^{\top} x_{i}}}-y_{i}\right)^{2}+\frac{\alpha}{2}\|w\|^{2}"
-fig = plot(
-    1:(method_objval_ragged|>size|>first),
-    method_objval_ragged,
-    label=permutedims(method_names),
-    xscale=:log2,
-    yscale=:log10,
-    xlabel="Iteration", ylabel=L"\|\nabla f\| = \epsilon",
-    title=title,
-    size=(1280, 720),
-    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
-    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-    dpi=1000,
-)
+    @printf("plotting results\n")
 
-savefig(fig, "/tmp/$metric-ncvx-logistic-$name.pdf")
+    pgfplotsx()
+    title = L"\min _{w \in {R}^{d}} \frac{1}{2} \sum_{i=1}^{n}\left(\frac{1}{1+e^{-w^{\top} x_{i}}}-y_{i}\right)^{2}+\frac{\alpha}{2}\|w\|^{2}"
+    fig = plot(
+        1:(method_objval_ragged|>size|>first),
+        method_objval_ragged,
+        label=permutedims(method_names),
+        xscale=:log2,
+        yscale=:log10,
+        xlabel="Iteration",
+        ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
+        title=title,
+        size=(1280, 720),
+        yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+        xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+        dpi=1000,
+    )
 
+    savefig(fig, "/tmp/$metric-ncvx-logistic-$name.pdf")
+
+end

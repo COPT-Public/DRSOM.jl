@@ -18,7 +18,7 @@ end
 function hessf(f, state)
     d = state.d
     x = state.x
-    function gd(x)
+    function gd(x) 
         a = ForwardDiff.gradient(f, x)
         return a' * d
     end
