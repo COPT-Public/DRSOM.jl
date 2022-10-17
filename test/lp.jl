@@ -27,6 +27,10 @@ function parse_commandline()
         help = "choice of p norm"
         arg_type = Float64
         default = 1.0
+        "--nnz"
+        help = "sparsity"
+        arg_type = Float64
+        default = 0.5
     end
     _args = parse_args(s, as_symbols=true)
     return LP.LPMinimizationParams(; _args...)
@@ -60,6 +64,7 @@ Base.@kwdef mutable struct LPMinimizationParams
     n::Int64 = 10
     m::Int64 = 100
     p::Float64 = 1
+    nnz::Float64 = 0.5
     λ::Float64 = 1 / 2
 end
 
@@ -131,6 +136,30 @@ end
 
 function huberlike(λ, ϵ, p::Real, x)
     huberlike.(λ, ϵ, p, x) |> sum
+end
+
+function huberlikeg(λ, ϵ, p::Real, x::Real)
+    if abs(x) > ϵ
+        λ * p * (abs(x))^(p - 1) * sign(x)
+    else
+        λ * p * x / ϵ * (ϵ / 2 + x^2 / ϵ / 2)^(p - 1)
+    end
+end
+
+function huberlikeg(λ, ϵ, p::Real, x::Vector)
+    huberlikeg.(λ, ϵ, p, x)
+end
+
+function huberlikeh(λ, ϵ, p::Real, x::Real)
+    if abs(x) > ϵ
+        λ * p * (p - 1) * (abs(x))^(p - 2)
+    else
+        λ * p / ϵ * (ϵ / 2 + x^2 / ϵ / 2)^(p - 1) + λ * p * (x / ϵ)^2 * (p - 1) * (ϵ / 2 + x^2 / ϵ / 2)^(p - 2)
+    end
+end
+
+function huberlikeh(λ, ϵ, p::Real, x::Vector)
+    huberlikeh.(λ, ϵ, p, x) |> Diagonal
 end
 
 end # module

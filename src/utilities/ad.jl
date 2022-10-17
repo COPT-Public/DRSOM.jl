@@ -18,7 +18,7 @@ end
 function hessf(f, state)
     d = state.d
     x = state.x
-    function gd(x)
+    function gd(x) 
         a = ForwardDiff.gradient(f, x)
         return a' * d
     end
@@ -45,7 +45,7 @@ function hessf(f, d, x)
     return Hg, Hd
 end
 
-
+# approximation
 function hessfa(f, g_buffer, d, x; scale::Real=200.0, cfg::ForwardDiff.GradientConfig)
     ForwardDiff.gradient!(g_buffer, f, x, cfg)
     Hg = scale * (ForwardDiff.gradient(f, x + g_buffer ./ scale, cfg) - g_buffer)
@@ -90,3 +90,10 @@ function hessba(state; scale::Real=200.0, tp::ReverseDiff.CompiledTape)
     return Hg, Hd
 end
 
+function hessba(state, v; scale::Real=200.0, tp::ReverseDiff.CompiledTape)
+    x = state.x
+    # Hessian-vector finite diff
+    ReverseDiff.gradient!(state.∇fb, tp, x + v ./ scale)
+    Hv = scale * (state.∇fb - state.∇f)
+    Hv
+end

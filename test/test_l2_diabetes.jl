@@ -76,7 +76,7 @@ freq = 40
 iter_scale = 0
 #######
 
-name, state, k, arr_obj = run_drsomb(copy(x0), f_composite; maxiter=maxiter)
+name, state, k, arr = run_drsomb(copy(x0), f_composite; maxiter=maxiter)
 res1 = Optim.optimize(f_composite, x0, GradientDescent(;
                 alphaguess=LineSearches.InitialHagerZhang(),
                 linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
