@@ -30,7 +30,7 @@ Base.@kwdef mutable struct DRSOMFIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     itermax::Int64 = 20
     mode = :forward
     direction = :krylov
-    direction_num::Int64 = 3 # extra direction numbers beyond initial
+    direction_num::Int64 = 10 # extra direction numbers beyond initial
     direction_style = :truncate
     η::Float64 = 1e-4
     σmin = 1e-2
@@ -70,7 +70,8 @@ Base.@kwdef mutable struct DRSOMFState{R,Tx,Tq,Tc}
     ϵ::R              # eps 2: residual for gradient 
     σ::R = 1.0        # scaling parameter σ
     λ::R = 1e-16      # dual λ
-    it::Int = 1       # inner iteration #. for trs adjustment
+    k::Int = 0        # outer iteration #. 
+    kₜ::Int = 0        # inner iteration #. for trs adjustment
     t::R = 0.0        # running time
 end
 
@@ -98,7 +99,7 @@ function Base.iterate(iter::DRSOMFIteration)
     c = [c1; 0]
     # now use a TRS to solve (gamma, alpha)
     ls = 1.0
-    it = 1
+    kₜ = 1
     while true
         if Q11 > 0
             a1 = -c1 / Q11 * ls
@@ -140,13 +141,13 @@ function Base.iterate(iter::DRSOMFIteration)
                 ϵ=norm(grad_f_x, 2),
                 λ=1e-6,
                 σ=1.0,
-                it=it,
+                kₜ=kₜ,
                 t=t,
             )
             return state, state
         else
             ls *= 0.5
-            it += 1
+            kₜ += 1
         end
     end
 end
@@ -184,7 +185,7 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
     state.Q = Q = D' * HD
     state.c = c = D' * state.∇f
     state.G = G = D' * D
-    it = 1
+    kₜ = 1
     dim = 0
     bool_reduce = false
     while true
@@ -194,7 +195,8 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
         df = fz - fx
         dq = -alp' * Q * alp / 2 - alp' * c
         s = sqrt(alp' * G * alp)
-        ro = df / (s)^3
+        ρ = df / dq
+        ρd = df / (s)^3
         σ = state.λ / s
         acc_tr = false
         acc_direction = false
@@ -202,7 +204,7 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
             state.σ = max(state.σ, state.λ / s)
             bool_reduce = false
         end
-        if (df < 0) || (ro < iter.η)
+        if (df < 0) || (ρd < iter.η)
             # reduce "radius"
             # in Curtis, it is called the Constract step
             contract(iter, state, s)
@@ -223,8 +225,8 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
             # accept and go to acc stage
         end
         # direction quality check
-        acc_direction = (dim >= iter.direction_num)
-        if ~acc_direction && it < iter.itermax
+        acc_direction = (dim >= iter.direction_num) || (mod(state.k, 3) != 0)
+        if ~acc_direction && kₜ < iter.itermax
             # todo, how to check if it is good enough?
             # now with of maximum inner max
             v = HD * alp / norm(alp)
@@ -242,25 +244,24 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
             state.c = c = D' * state.∇f
             state.G = G = D' * D
             dim += 1
-            continue
         end
-        if (acc_tr && acc_direction) || it == iter.itermax
+        if (acc_tr && acc_direction) || kₜ == iter.itermax
             state.α = alp
             state.x = x
             state.y = y
             state.fx = fx
-            state.ρ = df / dq
-            state.ρd = ro
+            state.ρ = ρ
+            state.ρd = ρd
             state.df = df
             state.d = x - z
-            state.it = it
             state.ϵ = norm(state.∇f)
-            state.it = it
             state.t = (Dates.now() - iter.t).value / 1e3
+            state.k += 1
+            state.kₜ = kₜ
             return state, state
 
         end
-        it += 1
+        kₜ += 1
     end
 end
 
@@ -339,20 +340,20 @@ drsom_stopping_criterion(tol, state::DRSOMFState) =
 
 function drsom_display(it, state::DRSOMFState)
     if it == 1
-        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %6s \n",
-            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "σ", "λ", "ρ", "ρd", "kₜ", "t",
+        log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %2s | %6s \n",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "σ", "λ", "ρ", "ρd", "kₜ", "r", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
-    if mod(it, 30) == 0
-        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %6s \n",
-            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "σ", "λ", "ρ", "ρd", "kₜ", "t",
+    if mod(it, 10) == 0
+        @printf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %2s | %6s \n",
+            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "σ", "λ", "ρ", "ρd", "kₜ", "r", "t",
         )
 
     end
-    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %+.0e | %2d | %6.1f \n",
-        it, state.fx, sprintarray(state.α[1:min(2, end)]), state.Δ, state.ϵ, state.σ, state.λ, state.ρ, state.ρd, state.it, state.t
+    @printf("%5d | %+.3e | %13s | %.1e | %.1e | %.0e | %.0e | %+.0e | %+.0e | %2d | %2d | %6.1f \n",
+        it, state.fx, sprintarray(state.α[1:min(2, end)]), state.Δ, state.ϵ, state.σ, state.λ, state.ρ, state.ρd, state.kₜ, (state.α |> length), state.t
     )
 end
 

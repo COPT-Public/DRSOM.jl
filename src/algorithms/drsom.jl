@@ -64,8 +64,18 @@ function TrustRegionSubproblem(Q, c, state::DRSOMState; G=diagmQ(ones(2)))
         alpha = -(Q + state.λ .* G) \ c
         return alpha
     catch
-        print(Q)
-        print(state.λ)
+        try
+            # this means it is singular
+            state.λ = state.λ + 10 # a wild solution
+            alpha = -(Q + state.λ .* G) \ c
+            return alpha
+        catch
+            println(Q)
+            println(G)
+            println(c)
+            println(state.λ)
+            error("failed at evaluate Q")
+        end
     end
 end
 
@@ -168,28 +178,31 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
         Hg = H * state.∇f
         Hd = H * state.d
     end
-    gnorm = norm(state.∇f)
+    gnorm = state.ϵ = norm(state.∇f)
+    if gnorm <= 1e-10
+        return state, state
+    end
     dnorm = norm(state.d)
-    Q11 = state.∇f' * Hg / gnorm^2
-    Q12 = -state.∇f' * Hd / gnorm / dnorm
-    Q22 = state.d' * Hd / dnorm^2
-    c1 = -state.∇f'state.∇f / gnorm
-    c2 = state.∇f'state.d / dnorm
+    Q11 = state.∇f' * Hg
+    Q12 = -state.∇f' * Hd
+    Q22 = state.d' * Hd
+    c1 = -state.∇f'state.∇f
+    c2 = state.∇f'state.d
     state.Q = Q = [Q11 Q12; Q12 Q22]
     state.c = c = [c1; c2]
-    gg = state.∇f' * state.∇f / gnorm^2
-    gd = state.∇f' * state.d / gnorm / dnorm
-    dd = state.d' * state.d / dnorm^2
+    gg = state.∇f' * state.∇f
+    gd = state.∇f' * state.d
+    dd = state.d' * state.d
     G = [gg -gd; -gd dd]
     # G = diagm(ones(2))
     it = 1
     # if Q22 > 1e-4
     while true
         a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
-        x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
+        x = y = state.z - a1 .* state.∇f + a2 .* state.d
         fx = iter.f(x)
         alp = [a1; a2]
-        dq = -alp' * Q * [a1; a2] / 2 - alp' * c
+        dq = -alp' * Q * alp / 2 - alp' * c
         df = fz - fx
         ro = df / dq
         if (df < 0) || (ro <= 0.1)
@@ -207,7 +220,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
             state.dq = dq
             state.df = df
             state.d = x - z
-            state.Δ = sqrt(a1^2 + a2^2)
+            state.Δ = sqrt(alp' * G * alp)
             state.it = it
             state.ϵ = norm(state.∇f)
             state.it = it

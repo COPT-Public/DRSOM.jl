@@ -55,9 +55,9 @@ using NLPModels
 
 
 # nlp = CUTEstModel("ARGLINA")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
+# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=499")
 name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
 x0 = nlp.meta.x0

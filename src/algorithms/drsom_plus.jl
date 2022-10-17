@@ -179,11 +179,17 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
     if gnorm < iter.ϵk
         if iter.direction == :krylov
             # - krylov:
-            vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :SR, Float64)
+            vals, vecs, _ = KrylovKit.eigsolve(H, n, 1, :LR, Float64)
             v = reshape(vecs[1], n, 1)
             HD = [-Hg / gnorm Hd / dnorm H * v]
             D = [-state.∇f / gnorm state.d / dnorm v]
-
+        elseif iter.direction == :homokrylov
+            # - krylov:
+            B = [H state.∇f; state.∇f' 0]
+            vals, vecs, _ = KrylovKit.eigsolve(B, n, 1, :SR, Float64)
+            v = reshape(vecs[1][1:end-1] / vecs[1][end], n, 1)
+            HD = [-Hg / gnorm Hd / dnorm H * v]
+            D = [-state.∇f / gnorm state.d / dnorm v]
         elseif iter.direction == :gaussian
             # - gaussian
             Σ = Diagonal(ones(n) .+ 0.01) - state.∇f * state.∇f' / gnorm^2 #- state.d * state.d' / dnorm^2
