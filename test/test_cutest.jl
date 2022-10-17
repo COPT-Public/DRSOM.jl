@@ -57,7 +57,7 @@ using NLPModels
 # nlp = CUTEstModel("ARGLINA")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=499")
 name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
 x0 = nlp.meta.x0
@@ -104,10 +104,10 @@ r = drsom_helper.run_drsomd(
     maxiter=10000, tol=1e-6
 )
 
-rpk = drsom_helper_c.run_drsomd(
+rpk = drsom_helper_plus.run_drsomd(
     copy(x0), loss, g, H;
     maxiter=10000, tol=1e-6,
-    direction=:undef
+    direction=:homokrylov
 )
 
 rpft = drsom_helper_f.run_drsomd(

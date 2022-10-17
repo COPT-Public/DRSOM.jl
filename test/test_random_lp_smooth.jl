@@ -164,8 +164,8 @@ r = drsom_helper.run_drsomd(
 # name, state2, k, arr = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
 rpk = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6,
-    direction=:krylov
+    maxiter=1000, tol=1e-7,
+direction=:homokrylov
 )
 
 rpc = drsom_helper_c.run_drsomd(

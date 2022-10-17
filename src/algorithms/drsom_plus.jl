@@ -23,7 +23,7 @@ Base.@kwdef mutable struct DRSOMPlusIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     mode = :forward
     direction = :krylov
     direction_num::Int64 = 1
-    ϵk::Float64 = 1e-3 # when to use Krylov
+    ϵk::Float64 = 1e6 # when to use Krylov
 end
 
 
@@ -186,7 +186,7 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
         elseif iter.direction == :homokrylov
             # - krylov:
             B = [H state.∇f; state.∇f' 0]
-            vals, vecs, _ = KrylovKit.eigsolve(B, n, 1, :SR, Float64)
+            vals, vecs, _ = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64)
             v = reshape(vecs[1][1:end-1] / vecs[1][end], n, 1)
             HD = [-Hg / gnorm Hd / dnorm H * v]
             D = [-state.∇f / gnorm state.d / dnorm v]
