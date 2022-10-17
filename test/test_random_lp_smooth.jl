@@ -165,7 +165,7 @@ r = drsom_helper.run_drsomd(
 rpk = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-7,
-direction=:homokrylov
+    direction=:homokrylov
 )
 
 rpc = drsom_helper_c.run_drsomd(
