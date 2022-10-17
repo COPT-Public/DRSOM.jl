@@ -194,9 +194,9 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
     gd = state.∇f' * state.d
     dd = state.d' * state.d
     G = [gg -gd; -gd dd]
-    # G = diagm(ones(2))
+    
     it = 1
-    # if Q22 > 1e-4
+   
     while true
         a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
         x = y = state.z - a1 .* state.∇f + a2 .* state.d

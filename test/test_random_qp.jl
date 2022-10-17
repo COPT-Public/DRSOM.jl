@@ -123,4 +123,4 @@ fig = plot(
     dpi=1000,
 )
 
-savefig(fig, "/tmp/res.pdf")
+savefig(fig, "/tmp/random-qp-$(n).pdf")
