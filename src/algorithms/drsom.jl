@@ -95,9 +95,10 @@ function Base.iterate(iter::DRSOMIteration)
         H = iter.H(z)
         Hg = H * grad_f_x
     end
-    Q11 = grad_f_x' * Hg
+    gnorm = norm(grad_f_x)
+    Q11 = grad_f_x' * Hg / gnorm^2
     ######################################
-    c1 = -grad_f_x' * grad_f_x
+    c1 = -grad_f_x' * grad_f_x / gnorm
     Q = [Q11 0; 0 0]
     c = [c1; 0]
     # now use a TRS to solve (gamma, alpha)
@@ -112,7 +113,7 @@ function Base.iterate(iter::DRSOMIteration)
             a1 = 0.1 * ls
             dq = -a1 * c1
         end
-        y = z - a1 .* grad_f_x
+        y = z - a1 .* grad_f_x / gnorm
         # ######################################
         # todo, eval proximal here?
         #   - we should design special alg. for proximal case.
@@ -141,7 +142,7 @@ function Base.iterate(iter::DRSOMIteration)
                 dq=dq,
                 df=df,
                 ρ=ro,
-                ϵ=norm(grad_f_x, 2),
+                ϵ=norm(grad_f_x),
                 γ=1e-6,
                 λ=1e-6,
                 it=it,
@@ -178,28 +179,31 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
         Hg = H * state.∇f
         Hd = H * state.d
     end
+
+    dnorm = norm(state.d)
     gnorm = state.ϵ = norm(state.∇f)
+
     if gnorm <= 1e-10
         return state, state
     end
-    dnorm = norm(state.d)
-    Q11 = state.∇f' * Hg
-    Q12 = -state.∇f' * Hd
-    Q22 = state.d' * Hd
-    c1 = -state.∇f'state.∇f
-    c2 = state.∇f'state.d
+
+    Q11 = state.∇f' * Hg / gnorm^2
+    Q12 = -state.∇f' * Hd / gnorm / dnorm
+    Q22 = state.d' * Hd / dnorm^2
+    c1 = -state.∇f'state.∇f / gnorm
+    c2 = state.∇f'state.d / dnorm
     state.Q = Q = [Q11 Q12; Q12 Q22]
     state.c = c = [c1; c2]
-    gg = state.∇f' * state.∇f
-    gd = state.∇f' * state.d
-    dd = state.d' * state.d
+    gg = state.∇f' * state.∇f / gnorm^2
+    gd = state.∇f' * state.d / gnorm / dnorm
+    dd = state.d' * state.d / dnorm^2
     G = [gg -gd; -gd dd]
-    
+
     it = 1
-   
+
     while true
         a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
-        x = y = state.z - a1 .* state.∇f + a2 .* state.d
+        x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
         fx = iter.f(x)
         alp = [a1; a2]
         dq = -alp' * Q * alp / 2 - alp' * c
@@ -237,18 +241,18 @@ drsom_stopping_criterion(tol, state::DRSOMState) =
 
 function drsom_display(it, state::DRSOMState)
     if it == 1
-        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
+        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s \n",
             "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
+        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
             "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
     end
-    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.2f | %2d | %6.1f |\n",
+    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
         it, state.fx, state.a1, state.a2, state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end

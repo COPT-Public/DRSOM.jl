@@ -21,20 +21,20 @@ We provide easy examples for DRSOM.jl. All examples are listed in `examples/` di
 <img src="assets/new.gif" alt="drawing" width="30"/> 
 
 ```bash
-julia -i --project=./ test_ncvx_logistic.jl
+julia -i --project=./test test/test_ncvx_logistic.jl
 ```
 
 ### L2 regression for diabetes dataset
 
 ```bash
-julia -i --project=./ test/test_l2_diabetes.jl
+julia -i --project=./test test/test_l2_diabetes.jl
 ```
 
 ### Sensor network localization
 
 You can change parameters
 ```bash
-julia -i --project=./ test/test_snl.jl
+julia -i --project=./test test/test_snl.jl
 ```
 
 

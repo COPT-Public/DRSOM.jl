@@ -65,14 +65,22 @@ f_composite(x) = 1 / 2 * x' * Q * x - h' * x
 g(x) = Q * x - h
 H(x) = Q
 
-#######
-iter_scale = 0
-#######
 
+options = Optim.Options(
+    g_tol=1e-6,
+    iterations=10000,
+    store_trace=true,
+    show_trace=true,
+    show_every=10,
+    time_limit=500
+)
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
 # drsom
-r = drsom_helper.run_drsomd(copy(x0), f_composite, g, H)
+r = drsom_helper.run_drsomd(
+    copy(x0), f_composite, g, H,
+    maxiter=1000, tol=1e-6,
+)
 rp = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-6, direction=:krylov
@@ -85,7 +93,7 @@ rp1 = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-6, direction=:gaussian
 )
-
+cg = Optim.optimize(f_composite, g, x0, ConjugateGradient(), options; inplace=false)
 # rl = drsom_helper_l.run_drsomb(
 #     copy(x0), f_composite;
 #     maxiter=1000, tol=1e-6, direction=:gaussian
@@ -95,7 +103,13 @@ rp1 = drsom_helper_plus.run_drsomd(
 #     maxiter=1000, tol=1e-6, direction=:gaussian,
 #     hessian_rank=:∞
 # )
-results = [r, rp, rp1, rp2]
+results = [
+    optim_to_result(cg, "CG-Hager-Zhang"),
+    r,
+    rp,
+    rp1,
+    rp2
+]
 
 
 method_objval_ragged = rstack([

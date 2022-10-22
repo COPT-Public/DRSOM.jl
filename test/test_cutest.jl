@@ -101,25 +101,25 @@ res3 = Optim.optimize(loss, g, H, x0, NewtonTrustRegion(), options; inplace=fals
 # )
 r = drsom_helper.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6
+    maxiter=10000, tol=1e-6, freq=10
 )
 
 rpk = drsom_helper_plus.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6,
+    maxiter=10000, tol=1e-6, freq=10,
     direction=:homokrylov
 )
 
 rpft = drsom_helper_f.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6,
+    maxiter=10000, tol=1e-6, freq=10,
     direction=:undef,
     direction_style=:truncate
 )
 
 rpff = drsom_helper_f.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6,
+    maxiter=10000, tol=1e-6, freq=10,
     direction=:undef,
     direction_style=:full
 )

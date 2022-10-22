@@ -20,4 +20,6 @@ ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 
 [compat]
 LazyStack = "0.0.7"
-Plots = "1.31.3"
+PGFPlotsX = "=1.5.0"
+Plots = "=1.31.3"
+julia = "^1.7.0"
