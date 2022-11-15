@@ -13,7 +13,7 @@ function TrustRegionSubproblem(
     mode=:free,
     Δ::Float64=0.0,
     Δϵ::Float64=1e-4,
-    Δl::Float64=1e3,
+    Δl::Float64=1e2,
     λ::Float64=0.0
 ) where {StateType}
 

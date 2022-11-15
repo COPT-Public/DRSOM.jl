@@ -14,10 +14,11 @@
 # ----------	---	---------------------------------------------------------
 ###############
 
-include("helper.jl")
-include("helper_plus.jl")
-include("helper_l.jl")
-include("lp.jl")
+include("../helper.jl")
+include("../helper_plus.jl")
+include("../helper_l.jl")
+include("../helper_h.jl")
+include("../lp.jl")
 
 using ProximalOperators
 using DRSOM
@@ -38,6 +39,7 @@ using .LP
 using .drsom_helper
 using .drsom_helper_plus
 using .drsom_helper_l
+using .hsodm_helper
 
 params = LP.parse_commandline()
 m = n = params.n
@@ -74,35 +76,32 @@ options = Optim.Options(
     show_every=10,
     time_limit=500
 )
-method_objval = Dict{String,AbstractArray{Float64}}()
-method_state = Dict{String,Any}()
+
 # drsom
+cg = Optim.optimize(f_composite, g, x0, ConjugateGradient(), options; inplace=false)
+
 r = drsom_helper.run_drsomd(
     copy(x0), f_composite, g, H,
     maxiter=1000, tol=1e-6,
 )
+
 rp = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6, direction=:krylov
+    maxiter=1000, tol=1e-7, direction=:homokrylov
 )
-rp2 = drsom_helper_plus.run_drsomd(
+
+rp1 = hsodm_helper.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6, direction=:homokrylov
+    maxiter=1000, tol=1e-7, direction=:cold
 )
-rp1 = drsom_helper_plus.run_drsomd(
+
+rp2 = hsodm_helper.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6, direction=:gaussian
+    maxiter=1000, tol=1e-7, direction=:warm
 )
-cg = Optim.optimize(f_composite, g, x0, ConjugateGradient(), options; inplace=false)
-# rl = drsom_helper_l.run_drsomb(
-#     copy(x0), f_composite;
-#     maxiter=1000, tol=1e-6, direction=:gaussian
-# )
-# rl = drsom_helper_l.run_drsomb(
-#     copy(x0), f_composite;
-#     maxiter=1000, tol=1e-6, direction=:gaussian,
-#     hessian_rank=:∞
-# )
+#############################################
+# plot residual results
+#############################################
 results = [
     optim_to_result(cg, "CG-Hager-Zhang"),
     r,
@@ -110,8 +109,6 @@ results = [
     rp1,
     rp2
 ]
-
-
 method_objval_ragged = rstack([
         getresultfield.(results, :ϵ)...
     ]; fill=NaN
@@ -139,3 +136,29 @@ fig = plot(
 
 savefig(fig, "/tmp/random-qp-$(n).pdf")
 
+method_objval_ragged = rstack([
+        getresultfield.([rp1, rp2], :kλ)...
+    ]; fill=NaN
+)
+method_names = getname.([rp1, rp2])
+
+
+@printf("plotting results\n")
+
+pgfplotsx()
+title = L"\textrm{ Convex QP}: Q \in \mathcal S_+^{%$(n)\times %$(n)}"
+fig = plot(
+    1:(method_objval_ragged|>size|>first),
+    method_objval_ragged,
+    label=permutedims(method_names),
+    xscale=:log10,
+    yscale=:log10,
+    xlabel="Iteration", ylabel=L"\epsilon = 1e^{-8} \textrm{Lanczos iterations}",
+    title=title,
+    size=(1280, 720),
+    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+    dpi=1000,
+)
+
+savefig(fig, "/tmp/random-qp-$(n)-warmstart.pdf")

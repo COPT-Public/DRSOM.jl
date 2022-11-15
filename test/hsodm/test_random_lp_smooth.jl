@@ -16,12 +16,12 @@
 # 3. Ge, D., Jiang, X., Ye, Y.: A note on the complexity of Lp minimization. Mathematical Programming. 129, 285–299 (2011). https://doi.org/10.1007/s10107-011-0470-2
 ###############
 
-
-include("helper.jl")
-include("helper_plus.jl")
-include("helper_l.jl")
-include("helper_c.jl")
-include("lp.jl")
+include("../helper.jl")
+include("../helper_plus.jl")
+include("../helper_l.jl")
+include("../helper_h.jl")
+include("../helper_c.jl")
+include("../lp.jl")
 
 using ProximalOperators
 using LineSearches
@@ -46,7 +46,7 @@ using .drsom_helper
 using .drsom_helper_plus
 using .drsom_helper_l
 using .drsom_helper_c
-
+using .hsodm_helper
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -111,16 +111,7 @@ f_composite(x) = 1 / 2 * (A * x - b)' * (A * x - b) + LP.huberlike(λ, 1e-1, par
 g(x) = A' * (A * x - b) + LP.huberlikeg.(λ, 0.1, params.p, x)
 H(x) = A' * A + (LP.huberlikeh.(λ, 0.1, params.p, x) |> Diagonal)
 
-lowtol = 1e-6
-tol = 1e-6
-maxtime = 300
-maxiter = 1e5
-verbose = true
-freq = 40
 
-#######
-iter_scale = 0
-#######
 # compare with GD and LBFGS, Trust region newton,
 options = Optim.Options(
     g_tol=1e-6,
@@ -128,7 +119,7 @@ options = Optim.Options(
     store_trace=true,
     show_trace=true,
     show_every=50,
-    time_limit=50
+    time_limit=5000
 )
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
@@ -141,41 +132,44 @@ method_state = Dict{String,Any}()
 # res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
 
 res1 = Optim.optimize(
-    f_composite, x0, GradientDescent(;
+    f_composite, g, x0, GradientDescent(;
         alphaguess=LineSearches.InitialHagerZhang(),
         linesearch=LineSearches.StrongWolfe()
     ), options;
-    autodiff=:forward)
-res2 = Optim.optimize(
-    f_composite, x0, LBFGS(;
-        linesearch=LineSearches.StrongWolfe()
-    ), options;
-    autodiff=:forward)
-# res3 = Optim.optimize(
-#     f_composite, x0, NewtonTrustRegion(), options;
-#     autodiff=:forward
-# )
-res3 = Optim.optimize(
-    f_composite, g, H, x0, NewtonTrustRegion(
-    ), options;
+    autodiff=:forward,
     inplace=false
 )
+res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
+        linesearch=LineSearches.StrongWolfe()
+    ), options; inplace=false
+)
+# res3 = Optim.optimize(
+#     f_composite, g, H, x0, NewtonTrustRegion(
+#     ), options;
+#     inplace=false
+# )
 
 r = drsom_helper.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=10000, tol=1e-7
+    maxiter=10000, tol=1e-7, freq=50
 )
 # name, state2, k, arr = drsom_helper.run_drsomb(copy(x0), f_composite; maxiter=10000, tol=1e-8, freq=1)
 rpk = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-7,
+    maxiter=1000, tol=1e-7, freq=50,
     direction=:homokrylov
 )
 
-rpc = drsom_helper_c.run_drsomd(
+# rpc = drsom_helper_c.run_drsomd(
+#     copy(x0), f_composite, g, H;
+#     maxiter=10000, tol=1e-6, freq=50,
+#     direction=:undef
+# )
+
+rh = hsodm_helper.run_drsomd(
     copy(x0), f_composite, g, H;
-    maxiter=10000, tol=1e-6,
-    direction=:undef
+    maxiter=10000, tol=1e-7, freq=10,
+    direction=:warm
 )
 # rpg = drsom_helper_plus.run_drsomd(
 #     copy(x0), f_composite, g, H;
@@ -201,10 +195,11 @@ rpc = drsom_helper_c.run_drsomd(
 results = [
     optim_to_result(res1, "GD+Wolfe"),
     optim_to_result(res2, "LBFGS+Wolfe"),
-    optim_to_result(res3, "Newton-TR*(Analytic)"),
+    # optim_to_result(res3, "Newton-TR*(Analytic)"),
     r,
     rpk,
-    rpc,
+    # rpc,
+    rh,
     # rpg,
     # rlr,
     # rl,
@@ -240,3 +235,41 @@ for metric in (:ϵ, :fx)
 
     savefig(fig, @sprintf("/tmp/%s-L2Lp-%d-%d-%.1f-%.1f.pdf", metric, n, m, params.p, params.nnz))
 end
+
+
+
+
+# warmstart effect
+rhc = hsodm_helper.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=10000, tol=1e-7, freq=10,
+    direction=:cold
+)
+
+
+method_objval_ragged = rstack([
+        getresultfield.([rhc, rh], :kλ)...
+    ]; fill=NaN
+)
+method_names = getname.([rhc, rh])
+
+
+@printf("plotting results\n")
+
+pgfplotsx()
+title = L"\textrm{Warm-starting effect of eigenvector computation}"
+fig = plot(
+    1:(method_objval_ragged|>size|>first),
+    method_objval_ragged,
+    label=permutedims(method_names),
+    xscale=:log10,
+    yscale=:log10,
+    xlabel="Iteration", ylabel=L"\textrm{Lanczos iterations to reach} \epsilon = 1e^{-8} ",
+    title=title,
+    size=(1280, 720),
+    yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+    xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+    dpi=1000,
+)
+
+savefig(fig, "/tmp/random-qp-$(n)-warmstart.pdf")

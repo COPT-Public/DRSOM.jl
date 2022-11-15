@@ -1,4 +1,4 @@
-module drsom_helper_l
+module hsodm_helper
 using ProximalOperators
 using DRSOM
 using ProximalAlgorithms
@@ -14,7 +14,6 @@ using ForwardDiff
 using ReverseDiff
 using LineSearches
 
-
 Base.@kwdef mutable struct Result{StateType,Int}
     name::String
     state::StateType
@@ -23,8 +22,8 @@ Base.@kwdef mutable struct Result{StateType,Int}
 end
 
 
-basename = "DRSOML"
-naming(mode, rank) = @sprintf("%s(%s,+%s)", basename, mode, rank)
+basename = "HSODM"
+naming(dirtype) = @sprintf("%s(%s)", basename, dirtype)
 ########################################################
 # the DRSOM runner
 ########################################################
@@ -34,29 +33,25 @@ naming(mode, rank) = @sprintf("%s(%s,+%s)", basename, mode, rank)
 # - run_drsomd: (direct mode), run DRSOM with provided g(⋅) and H(⋅)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
-function run_drsomb(
-    x0, f_composite; tol=1e-6, maxiter=100, maxtime=100,
-    freq=1, record=true,
-    direction=:gaussian, direction_num=1,
-    hessian=:sr1, hessian_rank=length(x0)
+function run_drsomb(x0, f_composite;
+    tol=1e-6, maxiter=100, maxtime=100, freq=1,
+    record=true, direction=:cold
 )
     ########################################################
-    arr = Vector{DRSOM.DRSOMLState}()
+    arr = Vector{DRSOM.HSODMState}()
     rb = nothing
-    name = naming(hessian, hessian_rank)
+    name = naming(direction)
     @printf("%s\n", '#'^60)
     @printf("running: %s with tol: %.3e\n", name, tol)
     f_tape = ReverseDiff.GradientTape(f_composite, x0)
     f_tape_compiled = ReverseDiff.compile(f_tape)
     @printf("compile finished\n")
     @printf("%s\n", '#'^60)
-
-    iter = DRSOM.DRSOMLIteration(
-        x0=x0, f=f_composite, tp=f_tape_compiled, mode=:backward,
-        direction=direction, direction_num=direction_num,
-        hessian=hessian, hessian_rank=hessian_rank
+    iter = DRSOM.HSODMIteration(
+        x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled,
+        mode=:backward, direction=direction
     )
-    for (k, state::DRSOM.DRSOMLState) in enumerate(iter)
+    for (k, state::DRSOM.HSODMState) in enumerate(iter)
         (record) && push!(arr, copy(state))
         if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
@@ -68,6 +63,30 @@ function run_drsomb(
     @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
+
+function run_drsomd(x0, f_composite,
+    g, H; tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true, direction=:cold
+)
+    ########################################################
+    name = naming(direction)
+    arr = Vector{DRSOM.HSODMState}()
+    rb = nothing
+    @printf("%s\n", '#'^60)
+    @printf("running: %s with tol: %.3e\n", name, tol)
+    iter = DRSOM.HSODMIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct, direction=direction)
+    for (k, state::DRSOM.HSODMState) in enumerate(iter)
+        (record) && push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
+            rb = (state, k)
+            DRSOM.drsom_display(k, state)
+            break
+        end
+        (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
+    end
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
+    return Result(name=name, state=rb[1], k=rb[2], traj=arr)
+end
+
 
 # general options for Optim
 # GD and LBFGS, Trust Region Newton,
