@@ -33,7 +33,10 @@ naming(dirtype, numdir) = @sprintf("%s(%s,%s)", basename, dirtype, numdir)
 # - run_drsomd: (direct mode), run DRSOM with provided g(⋅) and H(⋅)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
-function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true, direction=:gaussian, direction_style=:truncate)
+function run_drsomb(x0, f_composite;
+    tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true,
+    direction=:gaussian, direction_style=:truncate
+)
     ########################################################
     arr = Vector{DRSOM.DRSOMFState}()
     rb = nothing
@@ -47,7 +50,7 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true,
     iter = DRSOM.DRSOMFIteration(x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled, mode=:backward, direction=direction, direction_style=direction_style)
     for (k, state::DRSOM.DRSOMFState) in enumerate(iter)
         (record) && push!(arr, copy(state))
-        if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
+        if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
             break
@@ -58,7 +61,7 @@ function run_drsomb(x0, f_composite; tol=1e-6, maxiter=100, freq=1, record=true,
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
-function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, record=true, direction=:gaussian, direction_style=:truncate)
+function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true, direction=:gaussian, direction_style=:truncate)
     ########################################################
     name = naming(direction, direction_style)
     arr = Vector{DRSOM.DRSOMFState}()
@@ -68,7 +71,7 @@ function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, freq=1, record
     iter = DRSOM.DRSOMFIteration(x0=x0, f=f_composite, g=g, H=H, mode=:direct, direction=direction, direction_style=direction_style)
     for (k, state::DRSOM.DRSOMFState) in enumerate(iter)
         (record) && push!(arr, copy(state))
-        if k >= maxiter || DRSOM.drsom_stopping_criterion(tol, state)
+        if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
             rb = (state, k)
             DRSOM.drsom_display(k, state)
             break

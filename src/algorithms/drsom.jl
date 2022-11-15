@@ -236,19 +236,19 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
 end
 
 drsom_stopping_criterion(tol, state::DRSOMState) =
-    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= tol / 1e4) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMState)
     if it == 1
-        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %5s | %2s | %6s \n",
+        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
             "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
+        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %7s | %2s | %6s \n",
             "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
     end

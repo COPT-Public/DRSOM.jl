@@ -87,5 +87,6 @@ include("algorithms/drsom_plus.jl")
 include("algorithms/drsom_l.jl")
 include("algorithms/drsom_c.jl")
 include("algorithms/drsom_f.jl")
+include("algorithms/hsodm.jl")
 
 end # module

@@ -6,10 +6,32 @@ using LinearAlgebra
 using ProximalOperators
 using Statistics
 using Distributions
+using Printf
 
 splitlines(s) = split(s, "\n")
 splitfields(s) = split(s, "\t")
 parsefloat64(s) = parse(Float64, s)
+
+push_optim_result_to_string(size, res, name) = string(
+    size,
+    ",$(name),",
+    @sprintf("%d,%.4e,%.4e,%.3f\n",
+        res.trace[end].iteration,
+        res.trace[end].value,
+        res.trace[end].g_norm,
+        res.time_run
+    )
+)
+push_state_to_string(size, state, name) = string(
+    size,
+    ",$(name),",
+    @sprintf("%d,%.4e,%.4e,%.3f\n",
+        k,
+        state.fx,
+        norm(state.∇f),
+        state.t
+    )
+)
 
 function parse_commandline()
     s = ArgParseSettings()
