@@ -45,38 +45,12 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
-    ϵ::R             # eps: residual for gradient 
+    ϵ::R              # eps: residual for gradient 
     γ::R = 1e-16      # scaling parameter γ for λ
+    ψ::R = 1.0        # 1-D linear search iteration #. if there is only one direction  
     λ::R = 1e-16      # dual λ
     it::Int = 1       # inner iteration #. for trs adjustment
     t::R = 0.0        # running time
-end
-
-function TrustRegionSubproblem(Q, c, state::DRSOMState; G=diagmQ(ones(2)))
-    # for d it is too small, reduce to a Cauchy point ?
-    eigvalues = eigvals(Q)
-    sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(0, -lmin)
-    lmax = max(lb, lmax) + 1e4
-    state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-    try
-        alpha = -(Q + state.λ .* G) \ c
-        return alpha
-    catch
-        try
-            # this means it is singular
-            state.λ = state.λ + 10 # a wild solution
-            alpha = -(Q + state.λ .* G) \ c
-            return alpha
-        catch
-            println(Q)
-            println(G)
-            println(c)
-            println(state.λ)
-            error("failed at evaluate Q")
-        end
-    end
 end
 
 
@@ -95,25 +69,17 @@ function Base.iterate(iter::DRSOMIteration)
         H = iter.H(z)
         Hg = H * grad_f_x
     end
-    gnorm = norm(grad_f_x)
-    Q11 = grad_f_x' * Hg / gnorm^2
     ######################################
-    c1 = -grad_f_x' * grad_f_x / gnorm
-    Q = [Q11 0; 0 0]
-    c = [c1; 0]
-    # now use a TRS to solve (gamma, alpha)
+    Q11 = grad_f_x' * Hg
+    c1 = -grad_f_x' * grad_f_x
+    # now use a LS to find the first iterate
     a2 = 0.0
     ls = 1.0
     it = 1
     while true
-        if Q11 > 0
-            a1 = -c1 / Q11 * ls
-            dq = -a1 * Q11 * a1 / 2 - a1 * c1
-        else
-            a1 = 0.1 * ls
-            dq = -a1 * c1
-        end
-        y = z - a1 .* grad_f_x / gnorm
+        a1 = ls # Q11 > 0 ? -c1 / Q11 * ls : ls
+        dq = -a1 * Q11 * a1 / 2 - a1 * c1
+        y = z - a1 .* grad_f_x
         # ######################################
         # todo, eval proximal here?
         #   - we should design special alg. for proximal case.
@@ -121,7 +87,7 @@ function Base.iterate(iter::DRSOMIteration)
         fx = iter.f(y)
         df = fz - fx
         ro = df / dq
-        if ro > 0.1 || it == iter.itermax
+        if (df > 0) || it == iter.itermax
             t = (Dates.now() - iter.t).value / 1e3
             d = y - z
             state = DRSOMState(
@@ -130,8 +96,8 @@ function Base.iterate(iter::DRSOMIteration)
                 z=z,
                 fx=fx,
                 fz=fz,
-                Q=Q,
-                c=c,
+                Q=Matrix{Float64}(undef, (1, 1)),
+                c=[c1],
                 ∇f=grad_f_x,
                 ∇fz=z,
                 ∇fb=grad_f_b,
@@ -169,91 +135,138 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
     state.fz = fz = state.fx
     state.∇fz = state.∇f
     # construct trs
-    if iter.mode ∈ (:forward, false)
-        Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
-    elseif iter.mode ∈ (:backward, true)
-        Hg, Hd = iter.rh(state; tp=iter.tp)
-    else
+    if iter.mode == :direct
+        # use Hvp to calculate Q
         state.∇f = iter.g(state.x)
-        H = iter.H(state.x)
-        Hg = H * state.∇f
-        Hd = H * state.d
+        gnorm = state.ϵ = norm(state.∇f)
+        dnorm = norm(state.d)
+        c1 = -state.∇f'state.∇f
+        c2 = state.∇f'state.d
+        state.c = c = [c1 / gnorm; c2 / dnorm]
+        state.Q = Q = simple_itp(iter, state, [-state.∇f / gnorm, state.d / dnorm], c)
+    else
+        if iter.mode ∈ (:forward, false)
+            Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
+        elseif iter.mode ∈ (:backward, true)
+            Hg, Hd = iter.rh(state; tp=iter.tp)
+        elseif iter.mode ∈ (:directhess)
+            H = iter.H(state.x)
+            Hg = H * state.∇f
+            Hd = H * state.d
+        end
+
+        gnorm = state.ϵ = norm(state.∇f)
+        dnorm = norm(state.d)
+
+        c1 = -state.∇f'state.∇f / gnorm
+        c2 = state.∇f'state.d / dnorm
+        state.c = c = [c1; c2]
+
+        Q11 = state.∇f' * Hg / gnorm^2
+        Q12 = -state.∇f' * Hd / gnorm / dnorm
+        Q22 = state.d' * Hd / dnorm^2
+        state.Q = Q = [Q11 Q12; Q12 Q22]
     end
 
-    dnorm = norm(state.d)
-    gnorm = state.ϵ = norm(state.∇f)
 
     if gnorm <= 1e-10
         return state, state
     end
 
-    Q11 = state.∇f' * Hg / gnorm^2
-    Q12 = -state.∇f' * Hd / gnorm / dnorm
-    Q22 = state.d' * Hd / dnorm^2
-    c1 = -state.∇f'state.∇f / gnorm
-    c2 = state.∇f'state.d / dnorm
-    state.Q = Q = [Q11 Q12; Q12 Q22]
-    state.c = c = [c1; c2]
     gg = state.∇f' * state.∇f / gnorm^2
     gd = state.∇f' * state.d / gnorm / dnorm
     dd = state.d' * state.d / dnorm^2
     G = [gg -gd; -gd dd]
 
+    # if the directions are too close (degenerate)
+    #   you can do QR to find a proper subset of directions
+    #   (but too expensive>)
+    # we simply use the gradient
+    bool_tr = abs.(tril(G, -1)) |> maximum < 0.97
+    # start inner iterations
     it = 1
+    if bool_tr
+        while true
 
-    while true
-        a1, a2 = TrustRegionSubproblem(Q, c, state; G=G)
-        x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
-        fx = iter.f(x)
-        alp = [a1; a2]
-        dq = -alp' * Q * alp / 2 - alp' * c
-        df = fz - fx
-        ro = df / dq
-        if (df < 0) || (ro <= 0.1)
-            state.γ *= 5
-        elseif ro >= 0.5
-            state.γ = max(min(sqrt(state.γ), log(10, state.γ + 1)), 1e-16)
+            a1, a2 = TrustRegionSubproblem(Q, c, state; G=G, mode=:free)
+
+            x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
+            fx = iter.f(x)
+            alp = [a1; a2]
+            dq = -alp' * Q * alp / 2 - alp' * c
+            df = fz - fx
+            ro = df / dq
+            if (df < 0) || (ro <= 0.1)
+                state.γ *= 5
+            elseif ro >= 0.5
+                state.γ = max(min(sqrt(state.γ), log(10, state.γ + 1)), 1e-16)
+            end
+            if (ro > 0.05 && df > 0) || it == iter.itermax
+                state.a1 = a1
+                state.a2 = a2
+                state.x = x
+                state.y = y
+                state.fx = fx
+                state.ρ = ro
+                state.dq = dq
+                state.df = df
+                state.d = x - z
+                state.Δ = sqrt(alp' * G * alp)
+                state.it = it
+                state.ϵ = norm(state.∇f)
+                state.t = (Dates.now() - iter.t).value / 1e3
+                return state, state
+            end
+            it += 1
         end
-        if (ro > 0.05 && df > 0) || it == iter.itermax
-            state.a1 = a1
-            state.a2 = a2
-            state.x = x
-            state.y = y
-            state.fx = fx
-            state.ρ = ro
-            state.dq = dq
-            state.df = df
-            state.d = x - z
-            state.Δ = sqrt(alp' * G * alp)
-            state.it = it
-            state.ϵ = norm(state.∇f)
-            state.it = it
-            state.t = (Dates.now() - iter.t).value / 1e3
-            return state, state
-        end
-        it += 1
+    else
+        state.ψ += 1.0
+        # univariate line search functions
+        s = similar(state.∇f)
+        s = -state.∇f
+        x = state.x
+
+        α, fx, lsa = OneDLineSearch(iter, state, x, s)
+
+        # summary
+        x = y = state.z - α .* state.∇f
+        gnorm = norm(state.∇f)
+        state.a1 = α
+        state.a2 = 0.0
+        state.x = x
+        state.y = y
+        state.fx = fx
+        state.ρ = 1.0
+        state.dq = 0.0
+        state.df = fz - fx
+        state.d = x - z
+        state.Δ = α * gnorm
+        state.ϵ = gnorm
+        state.it = it
+        state.t = (Dates.now() - iter.t).value / 1e3
+        return state, state
     end
 end
 
 drsom_stopping_criterion(tol, state::DRSOMState) =
-    (state.Δ <= tol / 1e4) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (abs.([state.a1 state.a2]) |> maximum <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMState)
     if it == 1
-        log = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
-            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
+        log = @sprintf("%5s | %5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
+            "k", "ψ", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
         format_header(log)
         @printf("%s", log)
     end
     if mod(it, 30) == 0
-        @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %7s | %2s | %6s \n",
-            "k", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
+        @printf("%5s | %5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %7s | %2s | %6s \n",
+            "k", "ψ", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
         )
     end
-    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
-        it, state.fx, state.a1, state.a2, state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
+    @printf("%5d | %5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
+        it, state.ψ, state.fx, state.a1, state.a2, state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
     )
 end
 
@@ -261,15 +274,15 @@ default_solution(::DRSOMIteration, state::DRSOMState) = state.x
 
 """
 """
-ReducedTrustRegion(;
-    maxit=10_000,
-    tol=1e-8,
-    stop=(iter, state) -> default_stopping_criterion(tol, iter, state),
-    solution=default_solution,
-    verbose=false,
-    freq=100,
-    display=default_display,
-    kwargs...
-) = IterativeAlgorithm(DRSOMIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
+# ReducedTrustRegion(;
+#     maxit=10_000,
+#     tol=1e-8,
+#     stop=(iter, state) -> default_stopping_criterion(tol, iter, state),
+#     solution=default_solution,
+#     verbose=false,
+#     freq=100,
+#     display=default_display,
+#     kwargs...
+# ) = IterativeAlgorithm(DRSOMIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
 
 # Aliases

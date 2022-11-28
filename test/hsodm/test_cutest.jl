@@ -23,6 +23,7 @@ include("../helper_c.jl")
 include("../helper_f.jl")
 include("../helper_h.jl")
 include("../lp.jl")
+include("tools.jl")
 
 using ProximalOperators
 using LineSearches
@@ -53,7 +54,22 @@ using .hsodm_helper
 
 using CUTEst
 using NLPModels
+#######################################################
+# examples
+# nlp = CUTEstModel("BROYDN7D", "-param", "N/2=2500")
+# nlp = CUTEstModel("SSBRYBND", "-param", "N=50")
+# nlp = CUTEstModel("SCURLY10", "-param", "N=10")
+# nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
+# nlp = CUTEstModel("BRYBND", "-param", "N=100")
+# nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
+# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+# nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
+# nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
+#######################################################
 
+bool_plotting = false
+name, param = ARGS[1:2]
 
 function get_needed_entry(r)
     return @sprintf("%d,%.1e,%.3f", r.k, r.state.ϵ, r.state.t)
@@ -63,15 +79,9 @@ function get_needed_entry_optim(r)
     return @sprintf("%d,%.1e,%.3f", r.k, r.state.ϵ, r.state.t)
 end
 
-bool_plotting = false
 
-# nlp = CUTEstModel("ARGLINA")
-# nlp = CUTEstModel("BRYBND", "-param", "N=100")
-# nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
-# nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
-nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
+nlp = CUTEstModel(name, "-param", param)
+
 name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
 x0 = nlp.meta.x0
 loss(x) = NLPModels.obj(nlp, x)
@@ -82,42 +92,29 @@ H(x) = NLPModels.hess(nlp, x)
 # compare with GD and LBFGS, Trust region newton,
 options = Optim.Options(
     g_tol=1e-6,
-    iterations=10000,
+    iterations=1000,
     store_trace=true,
     show_trace=true,
-    show_every=10,
+    show_every=1,
     time_limit=500
 )
 
 res1 = Optim.optimize(loss, g, x0, GradientDescent(;
         alphaguess=LineSearches.InitialHagerZhang(),
         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-res2 = Optim.optimize(loss, g, H, x0, LBFGS(;
-        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-res3 = Optim.optimize(loss, g, H, x0, NewtonTrustRegion(), options; inplace=false)
+# res2 = Optim.optimize(loss, g, H, x0, LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
+# res3 = Optim.optimize(loss, g, H, x0, NewtonTrustRegion(), options; inplace=false)
 
-# res1 = Optim.optimize(
-#     loss, x0, GradientDescent(;
-#         alphaguess=LineSearches.InitialHagerZhang(),
-#         linesearch=LineSearches.StrongWolfe()
-#     ), options;
-#     autodiff=:forward)
-# res2 = Optim.optimize(
-#     loss, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()
-#     ), options;
-#     autodiff=:forward)
-# res3 = Optim.optimize(
-#     loss, g, H, x0, NewtonTrustRegion(), options; inplace=false
-# )
+
 r = drsom_helper.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6, freq=10
+    maxiter=10000, tol=1e-6, freq=1
 )
 
 rpk = drsom_helper_plus.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6, freq=10,
+    maxiter=10000, tol=1e-6, freq=20,
     direction=:homokrylov
 )
 
@@ -137,9 +134,11 @@ rpk = drsom_helper_plus.run_drsomd(
 
 rh = hsodm_helper.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-8, freq=10,
+    maxiter=10000, tol=1e-8, freq=1,
     direction=:warm
 )
+
+rarc = wrapper_arc(nlp)
 
 if bool_plotting
     results = [
@@ -148,8 +147,8 @@ if bool_plotting
         optim_to_result(res3, "Newton-TR*(Analytic)"),
         r,
         rpk,
-        rpft,
-        rpff,
+        # rpft,
+        # rpff,
         rh
     ]
 
@@ -185,4 +184,4 @@ if bool_plotting
     end
 
 end
-finalize(nlp)
+# finalize(nlp)

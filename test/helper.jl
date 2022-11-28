@@ -12,9 +12,10 @@ using Statistics
 using Optim
 using ForwardDiff
 using ReverseDiff
+using NLPModels
 using LineSearches
 
-export getresultfield, getname, geteps, optim_to_result
+export getresultfield, getname, geteps
 
 Base.@kwdef mutable struct Result{StateType,Int}
     name::String
@@ -167,6 +168,28 @@ function run_drsomd(x0, f_composite, g, H; tol=1e-6, maxiter=100, maxtime=100, f
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
 
+# fully controlled kwargs
+function run_drsom(x0, f_composite; g=Nothing, H=Nothing, tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true, mode=:itp)
+    ########################################################
+    name = "DRSOM"
+    arr = Vector{DRSOM.DRSOMState}()
+    rb = nothing
+    @printf("%s\n", '#'^60)
+    @printf("running: %s with tol: %.3e\n", name, tol)
+    iter = DRSOM.DRSOMIteration(x0=x0, f=f_composite, g=g, H=H, mode=mode)
+    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
+        (record) && push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
+            rb = (state, k)
+            DRSOM.drsom_display(k, state)
+            break
+        end
+        (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
+    end
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
+    return Result(name=name, state=rb[1], k=rb[2], traj=arr)
+end
+
 
 # general options for Optim
 # GD and LBFGS, Trust Region Newton,
@@ -195,6 +218,14 @@ function optim_to_result(rr, name)
     return Result(name=name, state=traj[end], k=rr.iterations, traj=traj)
 end
 
-
+function arc_to_result(nlp, stats, name)
+    state = OptimState(
+        fx=stats.objective,
+        ϵ=NLPModels.grad(nlp, stats.solution) |> norm,
+        t=stats.elapsed_time
+    )
+    return Result(name=name, state=state, k=stats.iter, traj=[])
+end
+export OptimState, optim_to_result, arc_to_result
 
 end

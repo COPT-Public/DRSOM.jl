@@ -33,14 +33,44 @@ module SNL
 using DRSOM
 using Random
 using Printf
-using JuMP
-using MosekTools
 using LinearAlgebra
 using ProximalAlgorithms
 using Optim
 using LineSearches
 using ReverseDiff
+using JuMP
+try
+    using MosekTools
+    function SDR(n, m, nf::Real, pp::Matrix{Float64}, Nx::NeighborVector, edges::Dict)::Tuple
+        # we build standard SDP relaxation
+        solver = Mosek.Optimizer
+        model = Model(solver)
+        dd = n - m
+        e = [ones(dd, 1); sum(pp[:, dd+1:n], dims=2)] / sqrt(n)
+        C = 1.4 * nf * (e * e' - I(dd + 2))
+        @variable(model, Z[1:dd+2, 1:dd+2], PSD)
+        @variable(model, wp[keys(edges)] >= 0)
+        @variable(model, wn[keys(edges)] >= 0)
+        @constraint(model, Z[1:2, 1:2] .== [1 0; 0 1])
+        for nx in Nx
+            @constraint(model,
+                LinearAlgebra.tr(Z * nx.vec * nx.vec') + wp[nx.edge] - wn[nx.edge] == nx.distn)
+        end
+        @objective(model, Min, sum(wp) + sum(wn) + tr(C * Z))
+        @printf("SDR built finished \n")
+        optimize!(model)
 
+        Zv = value.(Z)
+        Yv = Zv[3:end, 3:end]
+        Xv = Zv[1:2, 3:end]
+
+        @printf("SDR residual trace(Y - X'X): %.2e\n", Yv - Xv' * Xv |> LinearAlgebra.tr)
+        return Zv, Yv, Xv
+    end
+catch e
+    @warn("Unable to import JuMP and MosekTools, in which case you cannot use SDP relaxation")
+    @warn(" If you intend to use SDR, then you should add JuMP and MosekTools as requirements")
+end
 #######################
 # plot defaults
 #######################
@@ -85,48 +115,6 @@ function create_neighborhood(n, m, pp, radius, nf, degree)
     return Nx
 end
 
-function SDR(n, m, nf::Real, pp::Matrix{Float64}, Nx::NeighborVector, edges::Dict)::Tuple
-    # we build standard SDP relaxation
-    solver = Mosek.Optimizer
-    model = Model(solver)
-    dd = n - m
-    e = [ones(dd, 1); sum(pp[:, dd+1:n], dims=2)] / sqrt(n)
-    C = 1.4 * nf * (e * e' - I(dd + 2))
-    @variable(model, Z[1:dd+2, 1:dd+2], PSD)
-    @variable(model, wp[keys(edges)] >= 0)
-    @variable(model, wn[keys(edges)] >= 0)
-    @constraint(model, Z[1:2, 1:2] .== [1 0; 0 1])
-    for nx in Nx
-        @constraint(model,
-            LinearAlgebra.tr(Z * nx.vec * nx.vec') + wp[nx.edge] - wn[nx.edge] == nx.distn)
-    end
-    @objective(model, Min, sum(wp) + sum(wn) + tr(C * Z))
-    @printf("SDR built finished \n")
-    optimize!(model)
-
-    Zv = value.(Z)
-    Yv = Zv[3:end, 3:end]
-    Xv = Zv[1:2, 3:end]
-
-    @printf("SDR residual trace(Y - X'X): %.2e\n", Yv - Xv' * Xv |> LinearAlgebra.tr)
-    return Zv, Yv, Xv
-end
-
-
-"""
-least_square
-"""
-
-# function least_square(n, m, points, pp, edges::Dict)
-#     val = 0
-#     for (i, j) in keys(edges)
-#         xij = j < n - m + 1 ? points[:, i] - points[:, j] : points[:, i] - pp[:, j]
-#         dh = sqrt(xij .^ 2 |> sum)
-#         val += (dh - edges[i, j])^2
-#     end
-#     return val
-# end
-
 function least_square(n, m, points, pp, Nx::NeighborVector)
     val = 0
     for nx in Nx
@@ -138,28 +126,29 @@ function least_square(n, m, points, pp, Nx::NeighborVector)
     return val
 end
 
+function drsom_nls_legacy(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
+    function loss(x::AbstractVector{T}) where {T}
+        xv = reshape(x, 2, n - m)
+        return least_square(n, m, xv, pp, Nx)
+    end
+    x0 = vec(Xv)
+    f_tape = ReverseDiff.GradientTape(loss, x0)
+    f_tape_compiled = ReverseDiff.compile(f_tape)
+    @printf("compile finished\n")
+    iter = DRSOM.DRSOMFreeIteration(x0=x0, rh=DRSOM.hessba, f=loss, tp=f_tape_compiled, mode=:backward)
+    rb = nothing
+    for (k, state::DRSOM.DRSOMFreeState) in enumerate(iter)
 
-# function rsom_nls(n, m, pp, edges, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
-#     function loss(x::AbstractVector{T}) where {T}
-#         xv = reshape(x, 2, n - m)
-#         return least_square(n, m, xv, pp, edges)
-#     end
-#     x0 = vec(Xv)
-#     iter = DRSOM.DRSOMIteration(x0=x0, f=loss)
-#     rb = nothing
-#     for (k, state::DRSOM.DRSOMState) in enumerate(iter)
+        if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
+            rb = state, k
+            break
+        end
+        verbose && mod(k, 1) == 0 && DRSOM.drsom_display(k, state)
+    end
+    return rb
+end
 
-#         if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
-#             rb = state, k
-#             break
-#         end
-#         verbose && mod(k, 1) == 0 && DRSOM.drsom_display(k, state)
-#     end
-#     return rb
-# end
-
-
-function rsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
+function drsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
     function loss(x::AbstractVector{T}) where {T}
         xv = reshape(x, 2, n - m)
         return least_square(n, m, xv, pp, Nx)

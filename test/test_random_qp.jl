@@ -17,6 +17,7 @@
 include("helper.jl")
 include("helper_plus.jl")
 include("helper_l.jl")
+include("helper_c.jl")
 include("lp.jl")
 
 using ProximalOperators
@@ -38,6 +39,7 @@ using .LP
 using .drsom_helper
 using .drsom_helper_plus
 using .drsom_helper_l
+using .drsom_helper_c
 
 params = LP.parse_commandline()
 m = n = params.n
@@ -76,10 +78,16 @@ options = Optim.Options(
 )
 method_objval = Dict{String,AbstractArray{Float64}}()
 method_state = Dict{String,Any}()
-# drsom
+
+
 r = drsom_helper.run_drsomd(
     copy(x0), f_composite, g, H,
-    maxiter=1000, tol=1e-6,
+    maxiter=1000, tol=1e-6
+)
+
+rp1 = drsom_helper_c.run_drsomd(
+    copy(x0), f_composite, g, H;
+    maxiter=1000, tol=1e-6, direction=:gaussian
 )
 rp = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
@@ -89,11 +97,7 @@ rp2 = drsom_helper_plus.run_drsomd(
     copy(x0), f_composite, g, H;
     maxiter=1000, tol=1e-6, direction=:homokrylov
 )
-rp1 = drsom_helper_plus.run_drsomd(
-    copy(x0), f_composite, g, H;
-    maxiter=1000, tol=1e-6, direction=:gaussian
-)
-cg = Optim.optimize(f_composite, g, x0, ConjugateGradient(), options; inplace=false)
+cg = Optim.optimize(f_composite, g, x0, ConjugateGradient(; eta=0.01), options; inplace=false)
 # rl = drsom_helper_l.run_drsomb(
 #     copy(x0), f_composite;
 #     maxiter=1000, tol=1e-6, direction=:gaussian

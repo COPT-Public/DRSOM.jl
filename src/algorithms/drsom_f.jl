@@ -335,7 +335,7 @@ end
 
 
 drsom_stopping_criterion(tol, state::DRSOMFState) =
-    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMFState)

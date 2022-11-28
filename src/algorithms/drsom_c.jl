@@ -72,62 +72,62 @@ Base.@kwdef mutable struct DRSOMCState{R,Tx,Tq,Tc}
     t::R = 0.0        # running time
 end
 
-function TrustRegionSubproblem(
-    Q, c,
-    state::DRSOMCState;
-    G=diagm(ones(2)),
-    mode=:free,
-    Δ::Float64=0.0,
-    Δϵ::Float64=1e-4,
-    Δl::Float64=1e3,
-    λ::Float64=0.0
-)
+# function TrustRegionSubproblem(
+#     Q, c,
+#     state::DRSOMCState;
+#     G=diagm(ones(2)),
+#     mode=:free,
+#     Δ::Float64=0.0,
+#     Δϵ::Float64=1e-4,
+#     Δl::Float64=1e3,
+#     λ::Float64=0.0
+# )
 
-    eigvalues = eigvals(Q)
-    sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(0, -lmin)
-    ub = max(lb, lmax) + Δl
-    if mode == :reg
-        # strictly solve a quadratic regularization problems
-        #   given a regularizer :λ 
-        alpha = -(Q + λ .* G) \ c
-        return alpha
+#     eigvalues = eigvals(Q)
+#     sort!(eigvalues)
+#     lmin, lmax = eigvalues
+#     lb = max(0, -lmin)
+#     ub = max(lb, lmax) + Δl
+#     if mode == :reg
+#         # strictly solve a quadratic regularization problems
+#         #   given a regularizer :λ 
+#         alpha = -(Q + λ .* G) \ c
+#         return alpha
 
-    elseif mode == :tr
-        # strictly solve TR via
-        #   given a radius :Δ
-        # this is a bisection procedure
-        λ = lb
-        alpha = -(Q + λ .* G) \ c
-        s = sqrt(alpha' * G * alpha) # size
-        if s <= Δ
-            # damped Newton step is OK
-            state.λ = λ
-            return alpha
-        end
-        # else we must hit the boundary
-        while (ub - lb) > Δϵ
-            λ = (lb + ub) / 2
-            alpha = -(Q + λ .* G) \ c
-            s = sqrt(alpha' * G * alpha) # size
-            if s > Δ + Δϵ
-                lb = λ
-            elseif s < Δ - Δϵ
-                ub = λ
-            else
-                # good enough
-                break
-            end
-        end
-        state.λ = λ
-        return alpha
+#     elseif mode == :tr
+#         # strictly solve TR via
+#         #   given a radius :Δ
+#         # this is a bisection procedure
+#         λ = lb
+#         alpha = -(Q + λ .* G) \ c
+#         s = sqrt(alpha' * G * alpha) # size
+#         if s <= Δ
+#             # damped Newton step is OK
+#             state.λ = λ
+#             return alpha
+#         end
+#         # else we must hit the boundary
+#         while (ub - lb) > Δϵ
+#             λ = (lb + ub) / 2
+#             alpha = -(Q + λ .* G) \ c
+#             s = sqrt(alpha' * G * alpha) # size
+#             if s > Δ + Δϵ
+#                 lb = λ
+#             elseif s < Δ - Δϵ
+#                 ub = λ
+#             else
+#                 # good enough
+#                 break
+#             end
+#         end
+#         state.λ = λ
+#         return alpha
 
-    else
-        ex = ErrorException("Only support :tr and :reg")
-        throw(ex)
-    end
-end
+#     else
+#         ex = ErrorException("Only support :tr and :reg")
+#         throw(ex)
+#     end
+# end
 
 
 function Base.iterate(iter::DRSOMCIteration)
@@ -363,7 +363,7 @@ end
 
 
 drsom_stopping_criterion(tol, state::DRSOMCState) =
-    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::DRSOMCState)

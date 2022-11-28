@@ -7,15 +7,14 @@ const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
 
 # various utilities
-
 include("utilities/ad.jl")
 include("utilities/fb_tools.jl")
 include("utilities/iteration_tools.jl")
 include("utilities/display_tools.jl")
 include("utilities/trs.jl")
+include("utilities/interpolation.jl")
 
 # algorithm interface
-
 mutable struct IterativeAlgorithm{IteratorType,H,S,D,K}
     maxit::Int
     stop::H
@@ -82,6 +81,7 @@ function (alg::IterativeAlgorithm{IteratorType})(; kwargs...) where {IteratorTyp
 end
 
 # algorithm implementations
+include("algorithms/drsom_legacy.jl")
 include("algorithms/drsom.jl")
 include("algorithms/drsom_plus.jl")
 include("algorithms/drsom_l.jl")

@@ -54,22 +54,22 @@ Base.@kwdef mutable struct DRSOMPlusState{R,Tx,Tq,Tc}
     λ₁::Float64 = 0.0   # smallest curvature if available
 end
 
-function TrustRegionSubproblem(Q, c, state::DRSOMPlusState; G=diagmQ(ones(2)))
-    try
-        # for d it is too small, reduce to a Cauchy point ?
-        eigvalues = eigvals(Q)
-        sort!(eigvalues)
-        lmin, lmax = eigvalues
-        lb = max(0, -lmin)
-        lmax = max(lb, lmax) + 1e4
-        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-        alpha = -(Q + state.λ .* G) \ c
-        return alpha
-    catch
-        print(Q)
-        print(state.λ)
-    end
-end
+# function TrustRegionSubproblem(Q, c, state::DRSOMPlusState; G=diagmQ(ones(2)))
+#     try
+#         # for d it is too small, reduce to a Cauchy point ?
+#         eigvalues = eigvals(Q)
+#         sort!(eigvalues)
+#         lmin, lmax = eigvalues
+#         lb = max(0, -lmin)
+#         lmax = max(lb, lmax) + 1e4
+#         state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
+#         alpha = -(Q + state.λ .* G) \ c
+#         return alpha
+#     catch
+#         print(Q)
+#         print(state.λ)
+#     end
+# end
 
 
 function Base.iterate(iter::DRSOMPlusIteration)
@@ -190,8 +190,8 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
             vals, vecs, _ = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=1e-8)
             v = reshape(vecs[1][1:end-1], n, 1)
             v = v / norm(v)
-            HD = [-Hg / gnorm Hd / dnorm H * v][:, 2:end]
-            D = [-state.∇f / gnorm state.d / dnorm v][:, 2:end]
+            HD = [-Hg / gnorm H * v]
+            D = [-state.∇f / gnorm v]
 
             state.λ₁ = vals[1]
         elseif iter.direction == :gaussian
@@ -259,7 +259,7 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
 end
 
 drsom_stopping_criterion(tol, state::DRSOMPlusState) =
-    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 sprintarray(arr) = join(map(x -> @sprintf("%+.0e", x), arr), ",")
 function drsom_display(it, state::DRSOMPlusState)

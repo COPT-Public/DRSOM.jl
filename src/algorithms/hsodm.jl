@@ -20,10 +20,11 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
     cfg::Tc = nothing # gradient config
     tp::Tt = nothing  # gradient tape
     t::Dates.DateTime = Dates.now()
+    eigtol::Float64 = 1e-10
     itermax::Int64 = 20
     mode = :forward
     direction = :cold
-    eigtol::Float64 = 1e-8
+    linesearch = :hagerzhang
 end
 
 
@@ -77,51 +78,52 @@ function Base.iterate(iter::HSODMIteration)
         v = v / t₀
     end
     vn = norm(v)
-
     vHv = (v'*H*v/2)[]
     vg = (v'*grad_f_x)[]
-    # now use a TRS to solve (gamma, state.γha)
-    γ = 1.0
-    it = 1
-    while true
-        Δ = vn * γ
-        y = z - γ .* grad_f_x
-        fx = iter.f(y)
-        dq = -γ^2 * vHv / 2 - γ * vg
-        df = fz - fx
-        ro = df / dq
-        if ro > 0.7 || it == iter.itermax
-            t = (Dates.now() - iter.t).value / 1e3
-            d = y - z
-            state = HSODMState(
-                x=y,
-                y=y,
-                z=z,
-                fx=fx,
-                fz=fz,
-                ∇f=grad_f_x,
-                ∇fz=z,
-                ∇fb=grad_f_b,
-                α=[γ],
-                d=d,
-                Δ=Δ,
-                dq=dq,
-                df=df,
-                ρ=ro,
-                ϵ=norm(grad_f_x, 2),
-                γ=1e-6,
-                kλ=kλ,
-                it=it,
-                t=t,
-                ξ=ones(length(z) + 1),
-                λ₁=λ₁
-            )
-            return state, state
-        else
-            γ *= 0.6
-            it += 1
-        end
+    bool_reverse_v = vg > 0
+    # reverse this v if g'v > 0
+    v = (-1)^bool_reverse_v * v
+    vg = (-1)^bool_reverse_v * vg
+    # now use a LS to solve (state.γ)
+    if iter.linesearch == :rfree
+        γ, fx, it = TRStyleLineSearch(iter, z, s, vHv, vg, 1.0)
+    elseif iter.linesearch == :hagerzhang
+        # use Hager-Zhang line-search algorithm
+        γ, fx, it = OneDLineSearch(iter, grad_f_x, fz, z, v)
+    else
     end
+    y = z + γ .* v
+    fx = iter.f(y)
+    dq = -γ^2 * vHv / 2 - γ * vg
+    df = fz - fx
+    ro = df / dq
+    Δ = vn * γ
+    t = (Dates.now() - iter.t).value / 1e3
+    d = y - z
+    state = HSODMState(
+        x=y,
+        y=y,
+        z=z,
+        fx=fx,
+        fz=fz,
+        ∇f=grad_f_x,
+        ∇fz=z,
+        ∇fb=grad_f_b,
+        α=[γ],
+        d=d,
+        Δ=Δ,
+        dq=dq,
+        df=df,
+        ρ=ro,
+        ϵ=norm(grad_f_x, 2),
+        γ=1e-6,
+        kλ=kλ,
+        it=it,
+        t=t,
+        ξ=ones(length(z) + 1),
+        λ₁=λ₁
+    )
+    return state, state
 end
 
 
@@ -147,9 +149,9 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     # else
     state.∇f = iter.g(state.x)
     H = iter.H(state.x)
-
+    gnorm = norm(state.∇f)
     # construct homogeneous system
-    B = [H state.∇f; state.∇f' 0]
+    B = [H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0]
     if iter.direction == :cold
         vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
     else
@@ -168,43 +170,45 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     vHv = (v'*H*v/2)[]
     vg = (v'*state.∇f)[]
-
-    it = 1
-    state.γ = state.Δ / vn * 2
-    while true
-        state.Δ = state.γ * vn
-        x = y = state.z + v * state.γ
-        fx = iter.f(x)
-        dq = -state.γ^2 * vHv / 2 - state.γ * vg
-        df = fz - fx
-        ro = df / dq
-        if (df < 0) || (ro <= 0.7)
-            state.γ *= 0.8
-        end
-
-        if (ro > 0.7 && df > 0) || it == iter.itermax
-            state.α = [state.γ]
-            state.x = x
-            state.y = y
-            state.fx = fx
-            state.ρ = ro
-            state.dq = dq
-            state.df = df
-            state.d = x - z
-            state.kλ = kλ
-            state.it = it
-            state.ϵ = norm(state.∇f)
-            state.it = it
-            state.ξ = ξ
-            state.t = (Dates.now() - iter.t).value / 1e3
-            return state, state
-        end
-        it += 1
+    bool_reverse_v = vg > 0
+    # reverse this v if g'v > 0
+    v = (-1)^bool_reverse_v * v
+    vg = (-1)^bool_reverse_v * vg
+    if iter.linesearch == :rfree
+        state.γ, fx, it = TRStyleLineSearch(iter, state.z, s, vHv, vg, 4 * state.Δ / vn)
+    elseif iter.linesearch == :hagerzhang
+        # use Hager-Zhang line-search algorithm
+        s = v
+        x = state.x
+        state.γ, fx, it = OneDLineSearch(iter, state.∇f, state.fx, x, s)
+    else
+        throw(Error("unknown option of line-search $iter.linesearch"))
     end
+    # summarize
+    state.Δ = state.γ * vn
+    x = y = state.z + v * state.γ
+    dq = -state.γ^2 * vHv / 2 - state.γ * vg
+    df = fz - fx
+    ro = df / dq
+    state.α = [state.γ]
+    state.x = x
+    state.y = y
+    state.fx = fx
+    state.ρ = ro
+    state.dq = dq
+    state.df = df
+    state.d = x - z
+    state.kλ = kλ
+    state.it = it
+    state.ϵ = norm(state.∇f)
+    state.ξ = ξ
+    state.t = (Dates.now() - iter.t).value / 1e3
+    return state, state
+
 end
 
 drsom_stopping_criterion(tol, state::HSODMState) =
-    (state.Δ <= tol / 1e4) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
 function drsom_display(it, state::HSODMState)

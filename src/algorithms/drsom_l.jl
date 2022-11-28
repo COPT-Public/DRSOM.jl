@@ -65,22 +65,22 @@ Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     β::R = 0.0        # Lipschitz estimate
 end
 
-function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
-    try
-        # for d it is too small, reduce to a Cauchy point ?
-        eigvalues = eigvals(Q)
-        sort!(eigvalues)
-        lmin, lmax = eigvalues
-        lb = max(0, -lmin)
-        lmax = max(lb, lmax) + 1e4
-        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-        alpha = -(Q + state.λ .* G) \ c
-        return alpha
-    catch
-        print(Q)
-        print(state.λ)
-    end
-end
+# function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
+#     try
+#         # for d it is too small, reduce to a Cauchy point ?
+#         eigvalues = eigvals(Q)
+#         sort!(eigvalues)
+#         lmin, lmax = eigvalues
+#         lb = max(0, -lmin)
+#         lmax = max(lb, lmax) + 1e4
+#         state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
+#         alpha = -(Q + state.λ .* G) \ c
+#         return alpha
+#     catch
+#         print(Q)
+#         print(state.λ)
+#     end
+# end
 
 
 function Base.iterate(iter::DRSOMLIteration)
@@ -327,7 +327,7 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
 end
 
 drsom_stopping_criterion(tol, state::DRSOMLState) =
-    (state.Δ <= tol / 1e2) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+    (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 function drsom_display(it, state::DRSOMLState)
     if it == 1
