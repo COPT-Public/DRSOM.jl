@@ -26,33 +26,23 @@ using Random
 using .SNL
 
 # create the data for SNL
-option = 2
+option = 1
 option_plot_js = true
 option_use_sdr = false
 
+size = parse(Int, ARGS[1])
+timelimit = parse(Int, ARGS[2])
+# create random data
+snldata = Dict()
+n = size
+Random.seed!(1) # for reproducibility
+snldata["m"] = m = Int(n / 30 |> round)
+snldata["PP"] = pp = rand(Float64, (2, n)) .- 0.5
+snldata["r"] = radius = 0.5
+snldata["nf"] = nf = 0.05
+snldata["deg"] = degree = Int(n / 20 |> round)
+matwrite(@sprintf("/tmp/test%d-%d.mat", m, n), snldata)
 
-if option == 1
-    # create random data
-    snldata = Dict()
-    n = 80
-    Random.seed!(1) # for reproducibility
-    snldata["m"] = m = 5
-    snldata["PP"] = pp = rand(Float64, (2, n)) .- 0.5
-    snldata["r"] = radius = 0.5
-    snldata["nf"] = nf = 0.05
-    snldata["deg"] = degree = 25
-    matwrite(@sprintf("/tmp/test%d-%d.mat", m, n), snldata)
-elseif option == 2
-    snldata = matread("example/example-drsom-better.mat")
-    pp = snldata["PP"]
-    radius = snldata["r"]
-    nf = snldata["nf"]
-    m = Int(snldata["m"])
-    _, n = size(pp)
-    degree = snldata["deg"]
-else
-    exit()
-end
 
 Nx = SNL.create_neighborhood(n, m, pp, radius, nf, degree)
 edges = Dict(nx.edge => nx.distn for nx in Nx)
@@ -64,8 +54,8 @@ else
     Xv = zeros(2, n - m)
 end
 
-state_drsom, k = SNL.drsom_nls_legacy(n, m, pp, Nx, Xv, 1e-6, 3e2, true)
-state_grad, k = SNL.gd_nls(n, m, pp, Nx, Xv, 1e-6, 3e3, true)
+state_drsom, k = SNL.drsom_nls(n, m, pp, Nx, Xv, 1e-6, 3e2, true, timelimit, 10)
+state_grad, k = SNL.gd_nls(n, m, pp, Nx, Xv, 1e-6, 3e3, true, timelimit, 30)
 
 Xvr = reshape(state_drsom.x, 2, n - m)
 # Xvf = reshape(state_fista.x, 2, n - m)

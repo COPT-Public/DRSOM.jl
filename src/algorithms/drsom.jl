@@ -66,7 +66,7 @@ function Base.iterate(iter::DRSOMIteration)
         Hg, _ = iter.rh(grad_f_x, grad_f_b, z - z, z; tp=iter.tp)
     else
         grad_f_x = iter.g(z)
-        H = iter.H(z)
+        H = LinearAlgebra.I # todo, change to interpolation
         Hg = H * grad_f_x
     end
     ######################################
@@ -226,7 +226,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
         s = -state.∇f
         x = state.x
 
-        α, fx, lsa = OneDLineSearch(iter, state, x, s)
+        α, fx, lsa = OneDLineSearch(iter, state.∇f, state.fz, x, s)
 
         # summary
         x = y = state.z - α .* state.∇f

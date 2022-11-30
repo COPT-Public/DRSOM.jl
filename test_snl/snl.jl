@@ -148,27 +148,70 @@ function drsom_nls_legacy(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol
     return rb
 end
 
-function drsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
+function drsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool, max_time::Real=100.0, freq=10)
     function loss(x::AbstractVector{T}) where {T}
         xv = reshape(x, 2, n - m)
         return least_square(n, m, xv, pp, Nx)
     end
     x0 = vec(Xv)
-    f_tape = ReverseDiff.GradientTape(loss, x0)
-    f_tape_compiled = ReverseDiff.compile(f_tape)
-    @printf("compile finished\n")
-    iter = DRSOM.DRSOMIteration(x0=x0, rh=DRSOM.hessba, f=loss, tp=f_tape_compiled, mode=:backward)
+    # f_tape = ReverseDiff.GradientTape(loss, x0)
+    # f_tape_compiled = ReverseDiff.compile(f_tape)
+    # @printf("compile finished\n")
+    # iter = DRSOM.DRSOMIteration(x0=x0, rh=DRSOM.hessba, f=loss, tp=f_tape_compiled, mode=:backward)
+    # rb = nothing
+    # for (k, state::DRSOM.DRSOMState) in enumerate(iter)
+
+    #     if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
+    #         rb = state, k
+    #         break
+    #     end
+    #     verbose && mod(k, 1) == 0 && DRSOM.drsom_display(k, state)
+    # end
+    # return rb
+    g(x) = DRSOM.ReverseDiff.gradient(loss, x)
+    iter = DRSOM.DRSOMIteration(x0=x0, f=loss, g=g, H=Nothing(), mode=:direct)
     rb = nothing
     for (k, state::DRSOM.DRSOMState) in enumerate(iter)
 
-        if k >= max_iter || DRSOM.drsom_stopping_criterion(tol, state)
-            rb = state, k
+        if k >= max_iter || state.t >= max_time || DRSOM.drsom_stopping_criterion(tol, state)
+            rb = (state, k)
+            DRSOM.drsom_display(k, state)
             break
         end
-        verbose && mod(k, 1) == 0 && DRSOM.drsom_display(k, state)
+        (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
     end
+    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return rb
 end
+
+
+
+function gd_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool, max_time::Real=100.0, freq=20)
+    function loss(x::AbstractVector{T}) where {T}
+        xv = reshape(x, 2, n - m)
+        return least_square(n, m, xv, pp, Nx)
+    end
+    x0 = vec(Xv)
+    g(x) = DRSOM.ReverseDiff.gradient(loss, x)
+    options = Optim.Options(
+        g_tol=tol,
+        iterations=round(Int, max_iter),
+        store_trace=true,
+        show_trace=true,
+        show_every=freq,
+        time_limit=max_time
+    )
+    res1 = Optim.optimize(
+        loss, g, x0,
+        GradientDescent(; alphaguess=LineSearches.InitialHagerZhang(),
+            linesearch=LineSearches.StrongWolfe()
+        ),
+        options;
+        inplace=false
+    )
+    return res1, res1
+end
+
 
 function fista_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
     function loss(x::AbstractVector{T}) where {T}
@@ -189,25 +232,4 @@ function fista_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float
     end
     return rb
 end
-
-
-function gd_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
-    function loss(x::AbstractVector{T}) where {T}
-        xv = reshape(x, 2, n - m)
-        return least_square(n, m, xv, pp, Nx)
-    end
-    x0 = vec(Xv)
-    options = Optim.Options(
-        g_tol=tol,
-        iterations=round(Int, max_iter),
-        store_trace=true,
-        show_trace=true,
-        show_every=50,
-    )
-    res1 = Optim.optimize(loss, x0, GradientDescent(; alphaguess=LineSearches.InitialHagerZhang(),
-            linesearch=LineSearches.StrongWolfe()), options; autodiff=:forward)
-    return res1, res1
-end
-
-
 end # module
