@@ -1,72 +1,78 @@
 ###############
-# @date: Tue Apr 19 2022
-# @author: Chuwen Zhang
+# file: test_snl.jl
+# project: test
+# created Date: Mo Apr yyyy
+# author: <<author>
+# -----
+# last Modified: Tue Apr 19 2022
+# modified By: Chuwen Zhang
 # -----
 # (c) 2022 Chuwen Zhang
 # -----
-# A script for the Sensor Network Localization using optionally SDP relaxation 
-#    and DRSOM to minimize the second-stage nonlinear least-square
+# HISTORY:
+# Date      	By	Comments
+# ----------	---	---------------------------------------------------------
+# Test script for the Sensor Network Localization using optionally SDP relaxation and RSOM to minimize the second-stage nonlinear least-square
 # see snl.jl for more descriptions.
 
 
 ###############
 include("snl.jl")
 
-
+using MAT
 using Plots
 using Printf
 using Random
-using ArgParse
 using .SNL
 
+# create the data for SNL
+option = 2
+option_plot_js = true
+option_use_sdr = false
 
 
-
-function parse_cmd()
-    _args = parse_args(SNL.s, as_symbols=true)
-    display(_args)
-    return _args
-end
-
-_args = parse_cmd()
-if _args[:c] == 1
-    snldata = SNL.create_snl_data(_args)
+if option == 1
+    # create random data
+    snldata = Dict()
+    n = 80
+    Random.seed!(1) # for reproducibility
+    snldata["m"] = m = 5
+    snldata["PP"] = pp = rand(Float64, (2, n)) .- 0.5
+    snldata["r"] = radius = 0.5
+    snldata["nf"] = nf = 0.05
+    snldata["deg"] = degree = 25
+    matwrite(@sprintf("/tmp/test%d-%d.mat", m, n), snldata)
+elseif option == 2
+    snldata = matread("example/example-drsom-better.mat")
+    pp = snldata["PP"]
+    radius = snldata["r"]
+    nf = snldata["nf"]
+    m = Int(snldata["m"])
+    _, n = size(pp)
+    degree = snldata["deg"]
 else
-    snldata = matread(_args[:fp])
+    exit()
 end
-n, m, nf, pp = snldata["n"], snldata["m"], snldata["nf"], snldata["PP"]
-@printf("finished loading")
-Nx = SNL.create_neighborhood(
-    snldata["n"], snldata["m"], snldata["PP"], snldata["r"], snldata["nf"], snldata["deg"]
-)
+
+Nx = SNL.create_neighborhood(n, m, pp, radius, nf, degree)
 edges = Dict(nx.edge => nx.distn for nx in Nx)
 @printf("neighborhood created with size: %.3e\n", length(Nx))
 
-# PHASE-I: initialzation
-if _args[:option_use_sdr] == 1
-    # if start with SDP relaxation
+if option_use_sdr
     Zv, Yv, Xv = SNL.SDR(n, m, nf, pp, Nx, edges)
 else
-    # else simply start at all 0s
     Xv = zeros(2, n - m)
 end
-# PHASE-II: 
-state_drsom, k = SNL.drsom_nls(
-    n, m, pp, Nx, Xv,
-    1e-5, 1e5, true,
-    _args[:timelimit], 20
-)
-state_grad, k = SNL.gd_nls(
-    n, m, pp, Nx, Xv,
-    1e-5, 1e5, true,
-    _args[:timelimit], 30
-)
+
+state_drsom, k = SNL.drsom_nls_legacy(n, m, pp, Nx, Xv, 1e-6, 3e2, true)
+state_grad, k = SNL.gd_nls(n, m, pp, Nx, Xv, 1e-6, 3e3, true)
 
 Xvr = reshape(state_drsom.x, 2, n - m)
+# Xvf = reshape(state_fista.x, 2, n - m)
 Xvg = reshape(state_grad.minimizer, 2, n - m)
 
 
-if _args[:option_plot_js] == 1
+if option_plot_js
     # js + html backend
     plotly()
     fig = scatter(
@@ -90,11 +96,16 @@ if _args[:option_plot_js] == 1
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="DRSOM"
     )
 
+    # scatter!(
+    #     fig, Xvf[1, :], Xvf[2, :], markerstrokecolor=[:purple],
+    #     markercolor="grey99", fillstyle=nothing, markershape=:circle, label="FISTA"
+    # )
+
     scatter!(
         fig, Xvg[1, :], Xvg[2, :], markerstrokecolor=[:purple],
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
     )
-    name = @sprintf("drsom_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
+    name = @sprintf("rsom_snl_%d_%d_%d", n, m, option_use_sdr)
     savefig(fig, @sprintf("/tmp/%s.html", name))
 else
     # publication
@@ -111,7 +122,7 @@ else
         size=(1080, 960),
     )
 
-    if _args[:option_use_sdr] == 1
+    if option_use_sdr
         scatter!(
             fig,
             Xv[1, :], Xv[2, :],
@@ -138,7 +149,7 @@ else
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="DRSOM"
     )
 
-    name = @sprintf("drsom_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
+    name = @sprintf("rsom_snl_%d_%d_%d", n, m, option_use_sdr)
     savefig(fig, @sprintf("/tmp/%s.tikz", name))
     savefig(fig, @sprintf("/tmp/%s.tex", name))
     savefig(fig, @sprintf("/tmp/%s.pdf", name))
@@ -181,7 +192,7 @@ else
         markerstrokecolor=[:red], markeralpha=0, markersize=8, markerstrokealpha=1,
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
     )
-    name = @sprintf("gd_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
+    name = @sprintf("gd_snl_%d_%d_%d", n, m, option_use_sdr)
     savefig(fig, @sprintf("/tmp/%s.tikz", name))
     savefig(fig, @sprintf("/tmp/%s.tex", name))
     savefig(fig, @sprintf("/tmp/%s.pdf", name))
