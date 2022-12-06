@@ -56,15 +56,18 @@ state_drsom, k = SNL.drsom_nls(
     1e-5, 1e5, true,
     _args[:timelimit], 20
 )
-state_grad, k = SNL.gd_nls(
-    n, m, pp, Nx, Xv,
-    1e-5, 1e5, true,
-    _args[:timelimit], 30
-)
 
 Xvr = reshape(state_drsom.x, 2, n - m)
-Xvg = reshape(state_grad.minimizer, 2, n - m)
 
+if _args[:option_set_comparison] == 1
+    state_grad, k = SNL.gd_nls(
+        n, m, pp, Nx, Xv,
+        1e-5, 1e5, true,
+        _args[:timelimit], 30
+    )
+
+    Xvg = reshape(state_grad.minimizer, 2, n - m)
+end
 
 if _args[:option_plot_js] == 1
     # js + html backend
@@ -90,12 +93,15 @@ if _args[:option_plot_js] == 1
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="DRSOM"
     )
 
-    scatter!(
-        fig, Xvg[1, :], Xvg[2, :], markerstrokecolor=[:purple],
-        markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
-    )
+    if _args[:option_set_comparison] == 1
+        scatter!(
+            fig, Xvg[1, :], Xvg[2, :], markerstrokecolor=[:purple],
+            markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
+        )
+    end
     name = @sprintf("drsom_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
     savefig(fig, @sprintf("/tmp/%s.html", name))
+
 else
     # publication
     pgfplotsx()
@@ -144,47 +150,48 @@ else
     savefig(fig, @sprintf("/tmp/%s.pdf", name))
     savefig(fig, @sprintf("/tmp/%s.png", name))
 
-    fig = scatter(
-        pp[1, 1:n-m], pp[2, 1:n-m],
-        markershape=:xcross,
-        markerstrokecolor=[:black],
-        markersize=8,
-        markerstrokewidth=1.5,
-        label="Truth",
-        legendfontsize=24,
-        tickfontsize=16,
-        size=(1080, 960),
-    )
+    if _args[:option_set_comparison] == 1
+        fig = scatter(
+            pp[1, 1:n-m], pp[2, 1:n-m],
+            markershape=:xcross,
+            markerstrokecolor=[:black],
+            markersize=8,
+            markerstrokewidth=1.5,
+            label="Truth",
+            legendfontsize=24,
+            tickfontsize=16,
+            size=(1080, 960),
+        )
 
-    if option_use_sdr
+        if option_use_sdr
+            scatter!(
+                fig,
+                Xv[1, :], Xv[2, :],
+                markerstrokecolor=[:blue],
+                markercolor="grey99",
+                fillstyle=nothing,
+                markershape=:circle,
+                label="SDR",)
+        end
+
         scatter!(
-            fig,
-            Xv[1, :], Xv[2, :],
-            markerstrokecolor=[:blue],
-            markercolor="grey99",
-            fillstyle=nothing,
-            markershape=:circle,
-            label="SDR",)
+            fig, pp[1, n-m+1:n], pp[2, n-m+1:n],
+            markershape=:rect,
+            markersize=8,
+            markercolor=[:green],
+            markerstrokewidth=0.1,
+            label="Anchors"
+        )
+
+        scatter!(
+            fig, Xvg[1, :], Xvg[2, :],
+            markerstrokecolor=[:red], markeralpha=0, markersize=8, markerstrokealpha=1,
+            markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
+        )
+        name = @sprintf("gd_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
+        savefig(fig, @sprintf("/tmp/%s.tikz", name))
+        savefig(fig, @sprintf("/tmp/%s.tex", name))
+        savefig(fig, @sprintf("/tmp/%s.pdf", name))
+        savefig(fig, @sprintf("/tmp/%s.png", name))
     end
-
-    scatter!(
-        fig, pp[1, n-m+1:n], pp[2, n-m+1:n],
-        markershape=:rect,
-        markersize=8,
-        markercolor=[:green],
-        markerstrokewidth=0.1,
-        label="Anchors"
-    )
-
-    scatter!(
-        fig, Xvg[1, :], Xvg[2, :],
-        markerstrokecolor=[:red], markeralpha=0, markersize=8, markerstrokealpha=1,
-        markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
-    )
-    name = @sprintf("gd_snl_%d_%d_%d", n, m, _args[:option_use_sdr])
-    savefig(fig, @sprintf("/tmp/%s.tikz", name))
-    savefig(fig, @sprintf("/tmp/%s.tex", name))
-    savefig(fig, @sprintf("/tmp/%s.pdf", name))
-    savefig(fig, @sprintf("/tmp/%s.png", name))
-
 end

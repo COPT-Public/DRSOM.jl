@@ -302,10 +302,16 @@ s = ArgParseSettings(
     default = 0.05
     "--option_plot_js"
     arg_type = Int
+    help = "bool use h5+js to visualize"
     default = 1
     "--option_use_sdr"
     arg_type = Int
+    help = "bool use SDP relaxation"
     default = 0
+    "--option_set_comparison"
+    arg_type = Int
+    help = "bool compare to Gradient Descent (with LS)"
+    default = 1
     "--timelimit"
     arg_type = Int
     default = 300
