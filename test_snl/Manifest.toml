@@ -2,7 +2,7 @@
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "3c092ddb2ae0cac82001f53daf1813c26ea56482"
+project_hash = "72a5d66df9fe4d632b3af951e514052a7992572d"
 
 [[deps.AMD]]
 deps = ["Libdl", "LinearAlgebra", "SparseArrays", "Test"]
@@ -84,18 +84,6 @@ deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers
 git-tree-sha1 = "c5fd7cd27ac4aed0acf4b73948f0110ff2a854b2"
 uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 version = "0.10.7"
-
-[[deps.CUTEst]]
-deps = ["CUTEst_jll", "DataStructures", "JSON", "Libdl", "LinearAlgebra", "NLPModels", "Pkg", "SparseArrays"]
-git-tree-sha1 = "e62f4e5c9d7c900b4cdb5d9cd28116884296c1cd"
-uuid = "1b53aba6-35b6-5f92-a507-53c67d53f819"
-version = "0.13.1"
-
-[[deps.CUTEst_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "4169deb7cdb1de1803a36288dcdb5ace252f6d34"
-uuid = "bb5f6f25-f23d-57fd-8f90-3ef7bad1d825"
-version = "2.0.4+1"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Pkg", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
@@ -936,6 +924,12 @@ deps = ["ArgCheck", "DataStructures", "Dates", "DefaultApplication", "DocStringE
 git-tree-sha1 = "2d062d69f112ff8d67eddfa2804fee8eb279ad16"
 uuid = "8314cec4-20b6-5062-9cdb-752b83310925"
 version = "1.5.0"
+
+[[deps.PackageCompiler]]
+deps = ["Artifacts", "LazyArtifacts", "Libdl", "Pkg", "Printf", "RelocatableFolders", "TOML", "UUIDs"]
+git-tree-sha1 = "68cd7e4e645fbfe72a906fdafd6838b308e4d148"
+uuid = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+version = "2.1.2"
 
 [[deps.Parameters]]
 deps = ["OrderedCollections", "UnPack"]

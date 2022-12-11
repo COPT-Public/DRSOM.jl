@@ -232,6 +232,33 @@ function gd_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64,
     return res1, res1
 end
 
+function cg_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool, max_time::Real=100.0, freq=20)
+    function loss(x::AbstractVector{T}) where {T}
+        xv = reshape(x, 2, n - m)
+        return least_square(n, m, xv, pp, Nx)
+    end
+    x0 = vec(Xv)
+    g(x) = DRSOM.ReverseDiff.gradient(loss, x)
+    options = Optim.Options(
+        g_tol=tol,
+        iterations=round(Int, max_iter),
+        store_trace=true,
+        show_trace=true,
+        show_every=freq,
+        time_limit=max_time
+    )
+    res1 = Optim.optimize(
+        loss, g, x0,
+        ConjugateGradient(;
+            alphaguess=LineSearches.InitialStatic(),
+            linesearch=LineSearches.HagerZhang()
+        ),
+        options;
+        inplace=false
+    )
+    return res1, res1
+end
+
 
 function fista_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool)
     function loss(x::AbstractVector{T}) where {T}
@@ -309,9 +336,12 @@ s = ArgParseSettings(
     help = "bool use SDP relaxation"
     default = 0
     "--option_set_comparison"
-    arg_type = Int
-    help = "bool compare to Gradient Descent (with LS)"
-    default = 1
+    arg_type = String
+    action = :append_arg
+    nargs = '*'
+    help = """compare to other algorithms, options: 
+    - gd: Gradient Descent (with LS)
+    - cg: Conjugate Gradient (Hager-Zhang)"""
     "--timelimit"
     arg_type = Int
     default = 300
