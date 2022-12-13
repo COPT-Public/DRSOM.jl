@@ -13,7 +13,6 @@
 
 include("src/snl.jl")
 
-
 using Plots
 using Printf
 using Random
@@ -59,25 +58,31 @@ function julia_main()::Cint
     )
 
     Xvr = reshape(state_drsom.x, 2, n - m)
-    othermd = _args[:option_set_comparison][1]
+    md = _args[:option_set_comparison]
+    if length(md) >=1 
+	othermd = md[1]
+    else
+	othermd=0
+    end
     if "gd" ∈ othermd
-        state_grad, k = SNL.gd_nls(
+        state_grad_gd, k = SNL.gd_nls(
             n, m, pp, Nx, Xv,
             1e-5, 1e5, true,
             _args[:timelimit], 30
         )
-
-        Xvg = reshape(state_grad.minimizer, 2, n - m)
+	println(state_grad_gd)
+        Xvg = reshape(state_grad_gd.minimizer, 2, n - m)
     end
 
     if "cg" ∈ othermd
-        state_grad, k = SNL.cg_nls(
+        state_grad_cg, k = SNL.cg_nls(
             n, m, pp, Nx, Xv,
             1e-5, 1e5, true,
             _args[:timelimit], 30
         )
 
-        Xvc = reshape(state_grad.minimizer, 2, n - m)
+        Xvc = reshape(state_grad_cg.minimizer, 2, n - m)
+	println(state_grad_cg)
     end
 
 
@@ -113,7 +118,7 @@ function julia_main()::Cint
         end
         if "cg" ∈ othermd
             scatter!(
-                fig, Xvc[1, :], Xvc[2, :], markerstrokecolor=[:purple],
+                fig, Xvc[1, :], Xvc[2, :], markerstrokecolor=[:green],
                 markercolor="grey99", fillstyle=nothing, markershape=:circle, label="CG"
             )
         end
