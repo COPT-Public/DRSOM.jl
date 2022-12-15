@@ -141,22 +141,22 @@ method_state = Dict{String,Any}()
 # res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
 
 res1 = Optim.optimize(
-    f_composite, x0, GradientDescent(;
+    f_composite, x0,
+    GradientDescent(;
         alphaguess=LineSearches.InitialHagerZhang(),
         linesearch=LineSearches.StrongWolfe()
     ), options;
     autodiff=:forward)
 res2 = Optim.optimize(
-    f_composite, x0, LBFGS(;
+    f_composite, x0,
+    LBFGS(;
         linesearch=LineSearches.StrongWolfe()
     ), options;
     autodiff=:forward)
-# res3 = Optim.optimize(
-#     f_composite, x0, NewtonTrustRegion(), options;
-#     autodiff=:forward
-# )
+
 res3 = Optim.optimize(
-    f_composite, g, H, x0, NewtonTrustRegion(
+    f_composite, g, H, x0,
+    NewtonTrustRegion(
     ), options;
     inplace=false
 )

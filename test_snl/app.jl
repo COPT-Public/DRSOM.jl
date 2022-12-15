@@ -59,10 +59,10 @@ function julia_main()::Cint
 
     Xvr = reshape(state_drsom.x, 2, n - m)
     md = _args[:option_set_comparison]
-    if length(md) >=1 
-	othermd = md[1]
+    if length(md) >= 1
+        othermd = md[1]
     else
-	othermd=0
+        othermd = 0
     end
     if "gd" ∈ othermd
         state_grad_gd, k = SNL.gd_nls(
@@ -70,7 +70,7 @@ function julia_main()::Cint
             1e-5, 1e5, true,
             _args[:timelimit], 30
         )
-	println(state_grad_gd)
+        println(state_grad_gd)
         Xvg = reshape(state_grad_gd.minimizer, 2, n - m)
     end
 
@@ -82,7 +82,7 @@ function julia_main()::Cint
         )
 
         Xvc = reshape(state_grad_cg.minimizer, 2, n - m)
-	println(state_grad_cg)
+        println(state_grad_cg)
     end
 
 
@@ -107,19 +107,19 @@ function julia_main()::Cint
 
         scatter!(
             fig, Xvr[1, :], Xvr[2, :], markerstrokecolor=[:black],
-            markercolor="grey99", fillstyle=nothing, markershape=:circle, label="DRSOM"
+            markercolor="grey99", markeralpha=0, markerstrokealpha=1, markershape=:circle, label="DRSOM"
         )
 
         if "gd" ∈ othermd
             scatter!(
                 fig, Xvg[1, :], Xvg[2, :], markerstrokecolor=[:purple],
-                markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
+                markercolor="grey99", markeralpha=0, markerstrokealpha=1, markershape=:circle, label="GD"
             )
         end
         if "cg" ∈ othermd
             scatter!(
                 fig, Xvc[1, :], Xvc[2, :], markerstrokecolor=[:green],
-                markercolor="grey99", fillstyle=nothing, markershape=:circle, label="CG"
+                markercolor="grey99", markeralpha=0, markerstrokealpha=1, markershape=:circle, label="CG"
             )
         end
 

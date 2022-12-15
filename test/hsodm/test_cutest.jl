@@ -16,13 +16,6 @@
 # 3. Ge, D., Jiang, X., Ye, Y.: A note on the complexity of Lp minimization. Mathematical Programming. 129, 285–299 (2011). https://doi.org/10.1007/s10107-011-0470-2
 ###############
 
-include("../helper.jl")
-include("../helper_plus.jl")
-include("../helper_l.jl")
-include("../helper_c.jl")
-include("../helper_f.jl")
-include("../helper_h.jl")
-include("../lp.jl")
 include("tools.jl")
 
 using ProximalOperators
@@ -68,7 +61,7 @@ using NLPModels
 # nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
 #######################################################
 
-bool_plotting = false
+bool_plotting = true
 name, param = ARGS[1:2]
 
 function get_needed_entry(r)
@@ -99,12 +92,25 @@ options = Optim.Options(
     time_limit=500
 )
 
-res1 = Optim.optimize(loss, g, x0, GradientDescent(;
+res1 = Optim.optimize(loss, g, x0,
+    GradientDescent(;
         alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-# res2 = Optim.optimize(loss, g, H, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-# res3 = Optim.optimize(loss, g, H, x0, NewtonTrustRegion(), options; inplace=false)
+        linesearch=LineSearches.StrongWolfe()
+    ), options; inplace=false)
+res2 = Optim.optimize(loss, g, H, x0,
+    LBFGS(;
+        linesearch=LineSearches.StrongWolfe()
+    ), options; inplace=false)
+res3 = Optim.optimize(loss, g, H, x0,
+    NewtonTrustRegion(
+    ), options; inplace=false)
+
+res4 = Optim.optimize(loss, g, H, x0,
+    ConjugateGradient(;
+        alphaguess=LineSearches.InitialStatic(),
+        linesearch=LineSearches.HagerZhang()
+    ), options; inplace=false)
+
 
 
 r = drsom_helper.run_drsomd(
@@ -134,24 +140,25 @@ rpk = drsom_helper_plus.run_drsomd(
 
 rh = hsodm_helper.run_drsomd(
     copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-8, freq=1,
+    maxiter=10000, tol=1e-6, freq=1,
     direction=:warm
 )
 
-rarc = wrapper_arc(nlp)
+# rarc = wrapper_arc(nlp)
+results = [
+    optim_to_result(res1, "GD+Wolfe"),
+    optim_to_result(res2, "LBFGS+Wolfe"),
+    optim_to_result(res3, "Newton-TR"),
+    optim_to_result(res4, "CG"),
+    r,
+    rpk,
+    # rpft,
+    # rpff,
+    rh,
+    # rarc
+]
 
 if bool_plotting
-    results = [
-        optim_to_result(res1, "GD+Wolfe"),
-        optim_to_result(res2, "LBFGS+Wolfe"),
-        optim_to_result(res3, "Newton-TR*(Analytic)"),
-        r,
-        rpk,
-        # rpft,
-        # rpff,
-        rh
-    ]
-
 
     for metric in (:fx, :ϵ)
         method_objval_ragged = rstack([
@@ -184,4 +191,4 @@ if bool_plotting
     end
 
 end
-# finalize(nlp)
+finalize(nlp)

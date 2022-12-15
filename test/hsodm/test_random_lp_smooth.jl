@@ -136,7 +136,6 @@ res1 = Optim.optimize(
         alphaguess=LineSearches.InitialHagerZhang(),
         linesearch=LineSearches.StrongWolfe()
     ), options;
-    autodiff=:forward,
     inplace=false
 )
 res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
