@@ -9,14 +9,13 @@ using Dates
 """
 
 
-
 Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
-    f::Tf             # f: smooth f
+    x0::Tx            # initial point
+    f::Tf             # f: smooth function
     ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
     rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
     g::Tg = nothing   # gradient function
     H::TH = nothing   # hessian function
-    x0::Tx            # initial point
     cfg::Tc = nothing # gradient config
     tp::Tt = nothing  # gradient tape
     t::Dates.DateTime = Dates.now()
@@ -49,7 +48,9 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     γ::R = 1e-16      # scaling parameter γ for λ
     ψ::R = 1.0        # 1-D linear search iteration #. if there is only one direction  
     λ::R = 1e-16      # dual λ
-    it::Int = 1       # inner iteration #. for trs adjustment
+    it::Int = 1       # inner iterations for trs adjustment
+    kf::Int = 0       # function evaluations
+    kg::Int = 0         # gradient evaluations
     t::R = 0.0        # running time
 end
 
@@ -113,6 +114,8 @@ function Base.iterate(iter::DRSOMIteration)
                 λ=1e-6,
                 it=it,
                 t=t,
+                kf=getfield(iter.f, :counter),
+                kg=getfield(iter.g, :counter)
             )
             return state, state
         else
@@ -215,6 +218,8 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
                 state.it = it
                 state.ϵ = norm(state.∇f)
                 state.t = (Dates.now() - iter.t).value / 1e3
+                state.kf = getfield(iter.f, :counter)
+                state.kg = getfield(iter.g, :counter)
                 return state, state
             end
             it += 1
@@ -272,17 +277,11 @@ end
 
 default_solution(::DRSOMIteration, state::DRSOMState) = state.x
 
-"""
-"""
-# ReducedTrustRegion(;
-#     maxit=10_000,
-#     tol=1e-8,
-#     stop=(iter, state) -> default_stopping_criterion(tol, iter, state),
-#     solution=default_solution,
-#     verbose=false,
-#     freq=100,
-#     display=default_display,
-#     kwargs...
-# ) = IterativeAlgorithm(DRSOMIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
+
+DimensionReducedSecondOrderMethod(;
+    name=:DRSOM,
+    stop=drsom_stopping_criterion,
+    display=drsom_display
+) = IterativeAlgorithm(DRSOMIteration, DRSOMState; name=name, stop=stop, display=display)
 
 # Aliases

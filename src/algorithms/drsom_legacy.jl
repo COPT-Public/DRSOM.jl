@@ -235,17 +235,5 @@ end
 
 default_solution(::DRSOMFreeIteration, state::DRSOMFreeState) = state.x
 
-"""
-"""
-ReducedTrustRegion(;
-    maxit=10_000,
-    tol=1e-8,
-    stop=(iter, state) -> default_stopping_criterion(tol, iter, state),
-    solution=default_solution,
-    verbose=false,
-    freq=100,
-    display=default_display,
-    kwargs...
-) = IterativeAlgorithm(DRSOMFreeIteration; maxit, stop, solution, verbose, freq, display, kwargs...)
 
 # Aliases

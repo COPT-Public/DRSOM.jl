@@ -24,7 +24,6 @@ Base.@kwdef mutable struct Result{StateType,Int}
     traj::Vector{StateType}
 end
 
-Base.copy(x::T) where {T} = T([deepcopy(getfield(x, k)) for k ∈ fieldnames(T)]...)
 
 function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true)
     ########################################################
