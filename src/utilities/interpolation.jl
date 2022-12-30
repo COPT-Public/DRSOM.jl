@@ -14,8 +14,8 @@ function generate_sample_sphere(m)
     return a / norm(a)
 end
 
-function simple_itp(iter, state, V, c)
-    # n, m = size(V)
+function directional_interpolation(iter, state, V::Tv, c::Tc) where {Tv<:VecOrMat,Tc<:VecOrMat}
+
     m = length(c)
     l = m * (m + 1) / 2 |> Int
     a = [generate_sample_sphere(m) for i = 1:l] .* 0.01
@@ -33,7 +33,6 @@ function simple_itp(iter, state, V, c)
 
     # sanity check
     # H = iter.H(state.x); C = hcat(V...); Qc = C' * H * C
-
     return Q
 end
 

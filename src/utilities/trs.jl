@@ -33,14 +33,11 @@ function TrustRegionSubproblem(
     λ::Float64=0.0
 ) where {StateType}
 
+    # the dimension of Q and G should not be two big.
     _Q, _G = Symmetric(Q), Symmetric(G)
     _c = c
 
-    eigvalues = eigvals(_Q, _G)
-    sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(1e-8, -lmin)
-    ub = max(lb, lmax) + Δl
+
     if mode == :reg
         ######################################
         # the strict regularization mode
@@ -50,78 +47,86 @@ function TrustRegionSubproblem(
         ######################################
         alpha = -(_Q + λ .* _G) \ _c
         return alpha
-    elseif mode == :tr
-        ######################################
-        # the strict radius mode
-        ######################################
-        # strictly solve TR given a radius :Δ
-        ######################################
-        λ = lb
-        try
-            alpha = -(_Q + λ .* _G) \ _c
-        catch e
-            println(lb)
-            printstyled(_Q)
-            println(_Q + λ .* _G)
-            throw(e)
-        end
+    else
+        eigvalues = eigvals(_Q, _G)
+        sort!(eigvalues)
+        lmin, lmax = eigvalues
+        lb = max(1e-8, -lmin)
+        ub = max(lb, lmax) + Δl
+        if mode == :tr
+            ######################################
+            # the strict radius mode
+            ######################################
+            # strictly solve TR given a radius :Δ
+            ######################################
+            λ = lb
+            try
+                alpha = -(_Q + λ .* _G) \ _c
+            catch e
+                println(lb)
+                printstyled(_Q)
+                println(_Q + λ .* _G)
+                throw(e)
+            end
 
-        s = sqrt(alpha' * _G * alpha) # size
+            s = sqrt(alpha' * _G * alpha) # size
 
-        if s <= Δ
-            # damped Newton step is OK
+            if s <= Δ
+                # damped Newton step is OK
+                state.λ = λ
+                return alpha
+            end
+            # else we must hit the boundary
+            while (ub - lb) > Δϵ
+                λ = (lb + ub) / 2
+                alpha = -(_Q + λ .* _G) \ _c
+                s = sqrt(alpha' * _G * alpha) # size
+                if s > Δ + Δϵ
+                    lb = λ
+                elseif s < Δ - Δϵ
+                    ub = λ
+                else
+                    # good enough
+                    break
+                end
+            end
             state.λ = λ
             return alpha
-        end
-        # else we must hit the boundary
-        while (ub - lb) > Δϵ
-            λ = (lb + ub) / 2
-            alpha = -(_Q + λ .* _G) \ _c
-            s = sqrt(alpha' * _G * alpha) # size
-            if s > Δ + Δϵ
-                lb = λ
-            elseif s < Δ - Δϵ
-                ub = λ
-            else
-                # good enough
-                break
-            end
-        end
-        state.λ = λ
-        return alpha
-    elseif mode == :free
-        ######################################
-        # the radius free mode
-        ######################################
-        # compute the Lagrangian multiplier 
-        # according to the adaptive :γ instead.
-        # see the paper for details.
-        ######################################
-        lb = max(0, -lmin)
-        lmax = max(lb, lmax) + 1e3
-        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-        try
-            alpha = -(_Q + state.λ .* _G) \ _c
-            return alpha
-        catch
+        elseif mode == :free
+            ######################################
+            # the radius free mode
+            ######################################
+            # compute the Lagrangian multiplier 
+            # according to the adaptive :γ instead.
+            # see the paper for details.
+            ######################################
+            lb = max(0, -lmin)
+            lmax = max(lb, lmax) + 1e3
+            state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
             try
-                # this means it is singular
-                # for example, some direction 
-                # a wild solution
-                alpha = -(Diagonal(_Q) + state.λ .* Diagonal(_G)) \ _c
+                alpha = -(_Q + state.λ .* _G) \ _c
                 return alpha
             catch
-                println(_Q)
-                println(_G)
-                println(_c)
-                println(state.λ)
-                error("failed at evaluate Q")
+                try
+                    # this means it is singular
+                    # for example, some direction 
+                    # a wild solution
+                    alpha = -(Diagonal(_Q) + state.λ .* Diagonal(_G)) \ _c
+                    return alpha
+                catch
+                    println(_Q)
+                    println(_G)
+                    println(_c)
+                    println(state.λ)
+                    error("failed at evaluate Q")
+                end
             end
+            return alpha
+
+        else
+            ex = ErrorException("Only support :tr, :reg, and :free")
+            throw(ex)
         end
-        return alpha
-    else
-        ex = ErrorException("Only support :tr, :reg, and :free")
-        throw(ex)
     end
 end
 
@@ -131,18 +136,20 @@ function TRStyleLineSearch(
     s::Tx,
     vHv::Real,
     vg::Real,
+    f₀::Real,
     γ₀::Real=1.0;
     ρ::Real=0.7,
     ψ::Real=0.8
 ) where {IterationType,Tx}
     it = 1
     γ = γ₀
+    fx = f₀
     while true
         # summarize
         x = z + s * γ
         fx = iter.f(x)
         dq = -γ^2 * vHv / 2 - γ * vg
-        df = fz - fx
+        df = f₀ - fx
         ro = df / dq
         acc = (ro > ρ && df > 0) || it <= iter.itermax
         if !acc
@@ -155,7 +162,7 @@ function TRStyleLineSearch(
     return γ, fx, it
 end
 
-function OneDLineSearch(
+function HagerZhangLineSearch(
     iter::IterationType,
     gx, fx,
     x::Tx,
@@ -164,12 +171,22 @@ function OneDLineSearch(
 
     ϕ(α) = iter.f(x .+ α .* s)
     function dϕ(α)
-        gv = iter.g(x + α .* s)
+        if iter.g !== nothing
+            gv = iter.g(x + α .* s)
+        else
+            gv = similar(s)
+            iter.ga(gv, x + α .* s)
+        end
         return dot(gv, s)
     end
     function ϕdϕ(α)
         phi = iter.f(x .+ α .* s)
-        gv = iter.g(x + α .* s)
+        if iter.g !== nothing
+            gv = iter.g(x + α .* s)
+        else
+            gv = similar(s)
+            iter.ga(gv, x + α .* s)
+        end
         dphi = dot(gv, s)
         return (phi, dphi)
     end

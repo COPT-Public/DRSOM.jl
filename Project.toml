@@ -1,7 +1,7 @@
 name = "DRSOM"
 uuid = "d175e27a-564a-485c-86b6-52e0284acaa2"
 authors = ["C. Zhang <chuwzhang@gmail.com>", "Y. Ye <yyye@stanford.edu>"]
-version = "0.2.0"
+version = "0.3.0"
 
 [deps]
 ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"

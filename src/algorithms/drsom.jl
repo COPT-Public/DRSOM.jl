@@ -1,26 +1,30 @@
+# DRSOM with gradient and momentum
+#   a new interface
+#
 
 using Base.Iterators
 using LinearAlgebra
 using Printf
 using Dates
 
-"""
-    DRSOMIteration(; <keyword-arguments>)
-"""
-
-
-Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
+LOG_SLOTS = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
+    "k", "f", "α₁", "α₂", "Δ", "|∇f|", "λ", "ρ", "kₜ", "t",
+)
+Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     x0::Tx            # initial point
     f::Tf             # f: smooth function
-    ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
-    rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
+    ϕ::Tϕ = nothing   # ϕ: nonsmooth part (not implemented yet)
     g::Tg = nothing   # gradient function
-    H::TH = nothing   # hessian function
-    cfg::Tc = nothing # gradient config
-    tp::Tt = nothing  # gradient tape
+    ga::Tr = nothing  # gradient function via forward or backward diff
+    hvp::Th = nothing # hvp function via forward or backward diff
+    H::Te = nothing   # hessian function
     t::Dates.DateTime = Dates.now()
     itermax::Int64 = 20
-    mode = :forward
+    fog = :forward
+    sog = :forward
+    LOG_SLOTS::String = LOG_SLOTS
+    ALIAS::String = "DRSOM2"
+    DESC::String = "DRSOM with gradient and momentum"
 end
 
 
@@ -32,14 +36,15 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     fz::R             # old value f at z: x(k-1)
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
-    ∇fb::Tx           # gradient buffer (for temporary use)
+    ∇hvp::Tx          # gradient buffer (for buffer use of hvps)
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    a1::R             # stepsize 1 parameter of gradient
-    a2::R             # stepsize 2 parameter of momentum
-    Q::Tq             # Q for trs
-    c::Tc             # c for trs
+    α₁::R             # stepsize 1 parameter of gradient
+    α₂::R             # stepsize 2 parameter of momentum
+    Q::Tq             # Q for low-dimensional QP
+    c::Tc             # c for low-dimensional QP
+    G::Tq             # c for low-dimensional QP
     Δ::R              # trs radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
@@ -48,81 +53,128 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     γ::R = 1e-16      # scaling parameter γ for λ
     ψ::R = 1.0        # 1-D linear search iteration #. if there is only one direction  
     λ::R = 1e-16      # dual λ
-    it::Int = 1       # inner iterations for trs adjustment
+    kₜ::Int = 1        # inner iterations for adjustment
     kf::Int = 0       # function evaluations
-    kg::Int = 0         # gradient evaluations
+    kg::Int = 0       # gradient evaluations
+    kh::Int = 0       # hvp      evaluations
+    kH::Int = 0       # hessian  evaluations
     t::R = 0.0        # running time
 end
 
+function construct_quadratic_model(
+    iter::DRSOMIteration,
+    gf::V, hvp::V, z::V
+) where {V<:VecOrMat}
+    if iter.fog == :direct
+        copy!(gf, iter.g(z))
+    else
+        iter.ga(gf, z)
+    end
+    if iter.sog ∈ (:forward, :backward)
+        ∇hvp = similar(hvp)
+        iter.hvp(z, gf, hvp, ∇hvp, gf)
+    elseif iter.sog == :hess
+        copy!(hvp, iter.H(z) * gf)
+    else
+        # wild treatment in the direct mode 
+        #   for the first iteration
+        hvp = LinearAlgebra.I * gf
+    end
+end
+
+function construct_quadratic_model(
+    iter::DRSOMIteration, state::DRSOMState
+)
+    if iter.fog == :direct
+        copy!(state.∇f, iter.g(state.x))
+    else
+        iter.ga(state.∇f, state.x)
+    end
+    gₙ = state.ϵ = norm(state.∇f)
+    dₙ = norm(state.d)
+
+    state.c = c = [-state.∇f'state.∇f / gₙ; state.∇f'state.d / dₙ]
+
+    if iter.sog == :direct
+        state.Q = Q = directional_interpolation(iter, state, [-state.∇f / gₙ, state.d / dₙ], c)
+    else
+        Hg = similar(state.∇f)
+        Hd = similar(state.∇f)
+        if iter.sog ∈ (:forward, :backward)
+            iter.hvp(state.x, state.∇f, Hg, state.∇hvp, state.∇f)
+            iter.hvp(state.x, state.d, Hd, state.∇hvp, state.∇f)
+        elseif iter.sog == :hess
+            H = iter.H(state.x)
+            Hg = H * state.∇f
+            Hd = H * state.d
+        end
+        gₙ = state.ϵ = norm(state.∇f)
+        dₙ = norm(state.d)
+
+        state.Q = Q = Symmetric(
+            [state.∇f'*Hg/gₙ^2 -state.∇f'*Hd/gₙ/dₙ; 0 state.d'*Hd/dₙ^2], :U
+        )
+    end
+    gg = state.∇f' * state.∇f / gₙ^2
+    gd = state.∇f' * state.d / gₙ / dₙ
+    dd = state.d' * state.d / dₙ^2
+    state.G = G = Symmetric([gg -gd; -gd dd])
+
+    return gₙ, dₙ, Q, c, G
+end
 
 function Base.iterate(iter::DRSOMIteration)
+    # first iteration of DRSOM
+    # use a line search algorithm to initialize
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
-    grad_f_x = similar(z)
-    grad_f_b = similar(z)
-    if iter.mode ∈ (:forward, false)
-        Hg, _ = iter.rh(iter.f, grad_f_x, z - z, z; cfg=iter.cfg)
-    elseif iter.mode ∈ (:backward, true)
-        Hg, _ = iter.rh(grad_f_x, grad_f_b, z - z, z; tp=iter.tp)
-    else
-        grad_f_x = iter.g(z)
-        H = LinearAlgebra.I # todo, change to interpolation
-        Hg = H * grad_f_x
-    end
-    ######################################
-    Q11 = grad_f_x' * Hg
-    c1 = -grad_f_x' * grad_f_x
+    gx = similar(z)
+    hvp = similar(z)
+
+    construct_quadratic_model(
+        iter, gx, hvp, z
+    )
+    Q11 = gx' * hvp
+    c1 = -gx' * gx
+
     # now use a LS to find the first iterate
-    a2 = 0.0
-    ls = 1.0
-    it = 1
-    while true
-        a1 = ls # Q11 > 0 ? -c1 / Q11 * ls : ls
-        dq = -a1 * Q11 * a1 / 2 - a1 * c1
-        y = z - a1 .* grad_f_x
-        # ######################################
-        # todo, eval proximal here?
-        #   - we should design special alg. for proximal case.
-        # evaluate TRS
-        fx = iter.f(y)
-        df = fz - fx
-        ro = df / dq
-        if (df > 0) || it == iter.itermax
-            t = (Dates.now() - iter.t).value / 1e3
-            d = y - z
-            state = DRSOMState(
-                x=y,
-                y=y,
-                z=z,
-                fx=fx,
-                fz=fz,
-                Q=Matrix{Float64}(undef, (1, 1)),
-                c=[c1],
-                ∇f=grad_f_x,
-                ∇fz=z,
-                ∇fb=grad_f_b,
-                a1=a1,
-                a2=a2,
-                d=d,
-                Δ=a1,
-                dq=dq,
-                df=df,
-                ρ=ro,
-                ϵ=norm(grad_f_x),
-                γ=1e-6,
-                λ=1e-6,
-                it=it,
-                t=t,
-                kf=getfield(iter.f, :counter),
-                kg=getfield(iter.g, :counter)
-            )
-            return state, state
-        else
-            ls *= 0.5
-            it += 1
-        end
-    end
+    s = -copy(gx)
+    α₁, fx, kₜ = HagerZhangLineSearch(iter, gx, fz, z, s)
+
+    dq = -α₁ * Q11 * α₁ / 2 - α₁ * c1
+    y = z - α₁ .* gx
+    df = fz - fx
+    ro = df / dq
+
+    t = (Dates.now() - iter.t).value / 1e3
+    d = y - z
+    state = DRSOMState(
+        x=y,
+        y=y,
+        z=z,
+        fx=fx,
+        fz=fz,
+        Q=Matrix{Float64}(undef, (1, 1)),
+        G=Matrix{Float64}(undef, (1, 1)),
+        c=[c1],
+        ∇f=gx,
+        ∇fz=z,
+        ∇hvp=hvp,
+        α₁=α₁,
+        α₂=0.0,
+        d=d,
+        Δ=α₁,
+        dq=dq,
+        df=df,
+        ρ=ro,
+        ϵ=norm(gx),
+        γ=1e-6,
+        λ=1e-6,
+        kₜ=kₜ,
+        t=t,
+    )
+    return state, state
 end
 
 
@@ -137,49 +189,11 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
-    # construct trs
-    if iter.mode == :direct
-        # use Hvp to calculate Q
-        state.∇f = iter.g(state.x)
-        gnorm = state.ϵ = norm(state.∇f)
-        dnorm = norm(state.d)
-        c1 = -state.∇f'state.∇f
-        c2 = state.∇f'state.d
-        state.c = c = [c1 / gnorm; c2 / dnorm]
-        state.Q = Q = simple_itp(iter, state, [-state.∇f / gnorm, state.d / dnorm], c)
-    else
-        if iter.mode ∈ (:forward, false)
-            Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
-        elseif iter.mode ∈ (:backward, true)
-            Hg, Hd = iter.rh(state; tp=iter.tp)
-        elseif iter.mode ∈ (:directhess)
-            H = iter.H(state.x)
-            Hg = H * state.∇f
-            Hd = H * state.d
-        end
 
-        gnorm = state.ϵ = norm(state.∇f)
-        dnorm = norm(state.d)
-
-        c1 = -state.∇f'state.∇f / gnorm
-        c2 = state.∇f'state.d / dnorm
-        state.c = c = [c1; c2]
-
-        Q11 = state.∇f' * Hg / gnorm^2
-        Q12 = -state.∇f' * Hd / gnorm / dnorm
-        Q22 = state.d' * Hd / dnorm^2
-        state.Q = Q = [Q11 Q12; Q12 Q22]
-    end
-
-
-    if gnorm <= 1e-10
+    gₙ, dₙ, Q, c, G = construct_quadratic_model(iter, state)
+    if gₙ <= 1e-10
         return state, state
     end
-
-    gg = state.∇f' * state.∇f / gnorm^2
-    gd = state.∇f' * state.d / gnorm / dnorm
-    dd = state.d' * state.d / dnorm^2
-    G = [gg -gd; -gd dd]
 
     # if the directions are too close (degenerate)
     #   you can do QR to find a proper subset of directions
@@ -187,15 +201,15 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
     # we simply use the gradient
     bool_tr = abs.(tril(G, -1)) |> maximum < 0.97
     # start inner iterations
-    it = 1
+    kₜ = 1
     if bool_tr
         while true
 
-            a1, a2 = TrustRegionSubproblem(Q, c, state; G=G, mode=:free)
+            α₁, α₂ = TrustRegionSubproblem(Q, c, state; G=state.G, mode=:free)
 
-            x = y = state.z - a1 .* state.∇f / gnorm + a2 .* state.d / dnorm
+            x = y = state.z - α₁ .* state.∇f / gₙ + α₂ .* state.d / dₙ
             fx = iter.f(x)
-            alp = [a1; a2]
+            alp = [α₁; α₂]
             dq = -alp' * Q * alp / 2 - alp' * c
             df = fz - fx
             ro = df / dq
@@ -204,9 +218,9 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
             elseif ro >= 0.5
                 state.γ = max(min(sqrt(state.γ), log(10, state.γ + 1)), 1e-16)
             end
-            if (ro > 0.05 && df > 0) || it == iter.itermax
-                state.a1 = a1
-                state.a2 = a2
+            if (ro > 0.05 && df > 0) || kₜ == iter.itermax
+                state.α₁ = α₁
+                state.α₂ = α₂
                 state.x = x
                 state.y = y
                 state.fx = fx
@@ -215,29 +229,27 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
                 state.df = df
                 state.d = x - z
                 state.Δ = sqrt(alp' * G * alp)
-                state.it = it
+                state.kₜ = kₜ
                 state.ϵ = norm(state.∇f)
                 state.t = (Dates.now() - iter.t).value / 1e3
-                state.kf = getfield(iter.f, :counter)
-                state.kg = getfield(iter.g, :counter)
+                counting(iter, state)
                 return state, state
             end
-            it += 1
+            kₜ += 1
         end
     else
         state.ψ += 1.0
         # univariate line search functions
         s = similar(state.∇f)
         s = -state.∇f
-        x = state.x
 
-        α, fx, lsa = OneDLineSearch(iter, state.∇f, state.fz, x, s)
+        α, fx, _ = HagerZhangLineSearch(iter, state.∇f, state.fz, state.x, s)
 
         # summary
         x = y = state.z - α .* state.∇f
-        gnorm = norm(state.∇f)
-        state.a1 = α
-        state.a2 = 0.0
+        gₙ = norm(state.∇f)
+        state.α₁ = α
+        state.α₂ = 0.0
         state.x = x
         state.y = y
         state.fx = fx
@@ -245,33 +257,31 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
         state.dq = 0.0
         state.df = fz - fx
         state.d = x - z
-        state.Δ = α * gnorm
-        state.ϵ = gnorm
-        state.it = it
+        state.Δ = α * gₙ
+        state.ϵ = gₙ
+        state.kₜ = kₜ
         state.t = (Dates.now() - iter.t).value / 1e3
         return state, state
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMState) =
-    (abs.([state.a1 state.a2]) |> maximum <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
+function counting(iter::T, state::S) where {T<:DRSOMIteration,S<:DRSOMState}
+    state.kf = getfield(iter.f, :counter)
+    state.kg = hasproperty(iter.g, :counter) ? getfield(iter.g, :counter) : getfield(iter.ga, :counter)
+    state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
+    state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
+end
+
+drsom_stopping_criterion(tol::Real, state::DRSOMState) =
+    (abs.([state.α₁ state.α₂]) |> maximum <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
-function drsom_display(it, state::DRSOMState)
-    if it == 1
-        log = @sprintf("%5s | %5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %6s | %2s | %6s \n",
-            "k", "ψ", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
-        )
-        format_header(log)
-        @printf("%s", log)
+function drsom_display(k::Int, state::DRSOMState)
+    if k == 1 || mod(k, 30) == 0
+        @printf("%s", LOG_SLOTS)
     end
-    if mod(it, 30) == 0
-        @printf("%5s | %5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %7s | %2s | %6s \n",
-            "k", "ψ", "f", "α1", "α2", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",
-        )
-    end
-    @printf("%5d | %5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
-        it, state.ψ, state.fx, state.a1, state.a2, state.Δ, state.ϵ, state.γ, state.λ, state.ρ, state.it, state.t
+    @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
+        k, state.fx, state.α₁, state.α₂, state.Δ, state.ϵ, state.λ, state.ρ, state.kₜ, state.t
     )
 end
 

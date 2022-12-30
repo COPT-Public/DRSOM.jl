@@ -89,7 +89,7 @@ function Base.iterate(iter::HSODMIteration)
         γ, fx, it = TRStyleLineSearch(iter, z, s, vHv, vg, 1.0)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
-        γ, fx, it = OneDLineSearch(iter, grad_f_x, fz, z, v)
+        γ, fx, it = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
     else
     end
     y = z + γ .* v
@@ -180,7 +180,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         # use Hager-Zhang line-search algorithm
         s = v
         x = state.x
-        state.γ, fx, it = OneDLineSearch(iter, state.∇f, state.fx, x, s)
+        state.γ, fx, it = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
     else
         throw(Error("unknown option of line-search $iter.linesearch"))
     end
