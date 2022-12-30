@@ -7,24 +7,24 @@ using KrylovKit
 using Distributions
 using LineSearches
 
-"""
-    HSODMIteration(; <keyword-arguments>)
-"""
-Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tr,Tg,TH,Tψ,Tc,Tt}
+LOG_SLOTS = @sprintf(
+    "%5s | %10s | %8s | %8s | %8s | %5s | %5s | %2s | %6s |\n",
+    "k", "f", "α", "Δ", "|∇f|", "λ", "kλ", "kₜ", "t"
+)
+Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     f::Tf             # f: smooth f
-    ψ::Tψ = nothing   # ψ: nonsmooth part (not implemented yet)
-    rh::Tr = nothing  # hessian-vector product function to produce [g, Hg, Hd]
+    ϕ::Tϕ = nothing   # ϕ: nonsmooth part (not implemented yet)
     g::Tg = nothing   # gradient function
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
-    cfg::Tc = nothing # gradient config
-    tp::Tt = nothing  # gradient tape
     t::Dates.DateTime = Dates.now()
     eigtol::Float64 = 1e-10
     itermax::Int64 = 20
-    mode = :forward
     direction = :cold
     linesearch = :hagerzhang
+    LOG_SLOTS::String = LOG_SLOTS
+    ALIAS::String = "HSODM"
+    DESC::String = "Homogeneous Second-order Descent Method"
 end
 
 
@@ -36,22 +36,24 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     fz::R             # old value f at z: x(k-1)
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
-    ∇fb::Tx           # gradient buffer (for temporary use)
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    α::Tx             # stepsizes for directions...
     Δ::R              # trs radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
     ϵ::R              # eps 2: residual for gradient 
-    γ::R = 1          # stepsize parameter γ
+    α::R = 1e-5       # step size
+    γ::R = 1e-5       # trust-region style parameter γ
     kλ::Int = 1       # krylov iterations
-    it::Int = 1       # inner iteration #. for trs adjustment
+    kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    ξ::Tx             #
+    ξ::Tx             # eigenvector
+    kf::Int = 0       # function evaluations
+    kg::Int = 0       # gradient evaluations
+    kH::Int = 0       # hessian  evaluations
 end
 
 
@@ -74,9 +76,8 @@ function Base.iterate(iter::HSODMIteration)
     ξ = vecs[1]
     v = reshape(ξ[1:end-1], n)
     t₀ = ξ[end]
-    if abs(t₀) > 1e-3
-        v = v / t₀
-    end
+    (abs(t₀) > 1e-3) && (v = v / t₀)
+
     vn = norm(v)
     vHv = (v'*H*v/2)[]
     vg = (v'*grad_f_x)[]
@@ -84,20 +85,20 @@ function Base.iterate(iter::HSODMIteration)
     # reverse this v if g'v > 0
     v = (-1)^bool_reverse_v * v
     vg = (-1)^bool_reverse_v * vg
-    # now use a LS to solve (state.γ)
-    if iter.linesearch == :rfree
-        γ, fx, it = TRStyleLineSearch(iter, z, s, vHv, vg, 1.0)
+    # now use a LS to solve (state.α)
+    if iter.linesearch == :trustregion
+        α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
-        γ, fx, it = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
+        α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
     else
     end
-    y = z + γ .* v
+    y = z + α .* v
     fx = iter.f(y)
-    dq = -γ^2 * vHv / 2 - γ * vg
+    dq = -α^2 * vHv / 2 - α * vg
     df = fz - fx
     ro = df / dq
-    Δ = vn * γ
+    Δ = vn * α
     t = (Dates.now() - iter.t).value / 1e3
     d = y - z
     state = HSODMState(
@@ -108,8 +109,7 @@ function Base.iterate(iter::HSODMIteration)
         fz=fz,
         ∇f=grad_f_x,
         ∇fz=z,
-        ∇fb=grad_f_b,
-        α=[γ],
+        α=α,
         d=d,
         Δ=Δ,
         dq=dq,
@@ -118,7 +118,7 @@ function Base.iterate(iter::HSODMIteration)
         ϵ=norm(grad_f_x, 2),
         γ=1e-6,
         kλ=kλ,
-        it=it,
+        kₜ=kₜ,
         t=t,
         ξ=ones(length(z) + 1),
         λ₁=λ₁
@@ -127,26 +127,14 @@ function Base.iterate(iter::HSODMIteration)
 end
 
 
-"""
-Solve an iteration using TRS to produce stepsizes,
-state.γha: extrapolation
-gamma: gradient step
-"""
+
 function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx}
 
     n = length(state.x)
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
-    # construct trs
-    # compute Hg, Hd first
-    # if iter.mode ∈ (:forward, false)
-    #     Hg, Hd = iter.rh(iter.f, state; cfg=iter.cfg)
-    # elseif iter.mode ∈ (:backward, true)
-    #     # todo, not ready yet.
-    #     # compute gradient first
-    #     Hg, Hd = iter.rh(state; tp=iter.tp)
-    # else
+
     state.∇f = iter.g(state.x)
     H = iter.H(state.x)
     gnorm = norm(state.∇f)
@@ -162,11 +150,8 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     ξ = vecs[1]
     v = reshape(ξ[1:end-1], n)
     t₀ = ξ[end]
-    if abs(t₀) > 1e-3
-        v = v / t₀
-    end
+    (abs(t₀) > 1e-3) && (v = v / t₀)
     vn = norm(v)
-
 
     vHv = (v'*H*v/2)[]
     vg = (v'*state.∇f)[]
@@ -174,23 +159,22 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     # reverse this v if g'v > 0
     v = (-1)^bool_reverse_v * v
     vg = (-1)^bool_reverse_v * vg
-    if iter.linesearch == :rfree
-        state.γ, fx, it = TRStyleLineSearch(iter, state.z, s, vHv, vg, 4 * state.Δ / vn)
+    if iter.linesearch == :trustregion
+        state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
         s = v
         x = state.x
-        state.γ, fx, it = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
+        state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
     else
-        throw(Error("unknown option of line-search $iter.linesearch"))
+        throw(Error("unknown option of line-search $(iter.linesearch)"))
     end
     # summarize
-    state.Δ = state.γ * vn
-    x = y = state.z + v * state.γ
-    dq = -state.γ^2 * vHv / 2 - state.γ * vg
+    state.Δ = state.α * vn
+    x = y = state.z + v * state.α
+    dq = -state.α^2 * vHv / 2 - state.α * vg
     df = fz - fx
     ro = df / dq
-    state.α = [state.γ]
     state.x = x
     state.y = y
     state.fx = fx
@@ -199,36 +183,41 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.df = df
     state.d = x - z
     state.kλ = kλ
-    state.it = it
+    state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
     state.ξ = ξ
     state.t = (Dates.now() - iter.t).value / 1e3
+    counting(iter, state)
     return state, state
 
 end
 
-drsom_stopping_criterion(tol, state::HSODMState) =
+hsodm_stopping_criterion(tol, state::HSODMState) =
     (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
+function counting(iter::T, state::S) where {T<:HSODMIteration,S<:HSODMState}
+    state.kf = getfield(iter.f, :counter)
+    state.kg = getfield(iter.g, :counter)
+    state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
+end
 
-function drsom_display(it, state::HSODMState)
-    sprintarray(arr) = join(map(x -> @sprintf("%+.1e", x), arr), ",")
-    if it == 1
-        log = @sprintf("%5s | %10s | %8s | %8s | %8s | %5s | %5s | %6s | %2s | %6s |\n",
-            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "λ", "kλ", "ρ", "kₜ", "t",
-        )
-        format_header(log)
-        @printf("%s", log)
-    end
-    if mod(it, 30) == 0
-        @printf("%5s | %10s | %8s | %8s | %8s | %5s | %5s | %6s | %2s | %6s |\n",
-            "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "λ", "kλ", "ρ", "kₜ", "t",
-        )
 
+function hsodm_display(k, state::HSODMState)
+    if k == 1 || mod(k, 30) == 0
+        @printf("%s", LOG_SLOTS)
     end
-    @printf("%5d | %+.3e | %8s | %.2e | %.1e | %+.0e | %.0e | %+.0e | %2d | %6.1f |\n",
-        it, state.fx, sprintarray(state.α[1:min(2, end)]), state.Δ, state.ϵ, state.λ₁, state.kλ, state.ρ, state.it, state.t
+    @printf("%5d | %+.3e | %.2e | %.2e | %.1e | %+.0e | %.0e | %2d | %6.1f |\n",
+        k, state.fx, state.α, state.Δ, state.ϵ, state.λ₁, state.kλ, state.kₜ, state.t
     )
 end
 
 default_solution(::HSODMIteration, state::HSODMState) = state.x
+
+
+
+
+HomogeneousSecondOrderDescentMethod(;
+    name=:HSODM,
+    stop=hsodm_stopping_criterion,
+    display=hsodm_display
+) = IterativeAlgorithm(HSODMIteration, HSODMState; name=name, stop=stop, display=display)

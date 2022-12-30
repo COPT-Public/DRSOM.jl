@@ -362,11 +362,11 @@ function contract(iter::DRSOMCIteration, state::DRSOMCState{R,Tx}, s::Float64; �
 end
 
 
-drsom_stopping_criterion(tol, state::DRSOMCState) =
+hsodm_stopping_criterion(tol, state::DRSOMCState) =
     (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 
-function drsom_display(it, state::DRSOMCState)
+function hsodm_display(it, state::DRSOMCState)
     if it == 1
         log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %6s | %2s | %6s \n",
             "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "σ", "λ", "ρ", "ρd", "kₜ", "t",

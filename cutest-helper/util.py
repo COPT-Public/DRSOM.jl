@@ -36,8 +36,21 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
     PARAM_GEOMETRIC_SCALER = 1
     NAME_TABLE = "result"
     PRIMARY_KEY = "id"
-    COLUMNS = ["name", "param", "n", "method", "k", "df", "fx", "t", "status"]
-    COLUMNS_PERF = ["k", "df", "fx", "t", "status"]
+    COLUMNS = [
+        "name",
+        "param",
+        "n",
+        "method",
+        "k",
+        "kf",
+        "kg",
+        "kh",
+        "df",
+        "fx",
+        "t",
+        "status",
+    ]
+    COLUMNS_PERF = ["k", "kf", "kg", "kh", "df", "fx", "t", "status"]
     COLUMNS_RENAMING = {
         "n": "$n$",
         "k": "$k$",
@@ -46,9 +59,15 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
         "fx": "$f$",
         # agg
         "kf": "$\\overline k$",
+        "kff": "$\\overline k^f$",
+        "kfg": "$\\overline k^g$",
+        "kfh": "$\\overline k^H$",
         "tf": "$\\overline t$",
         "nf": "$\\mathcal K$",
         "kg": "$\\overline k_G$",
+        "kgf": "$\\overline k_G^f$",
+        "kgg": "$\\overline k_G^g$",
+        "kgh": "$\\overline k_G^H$",
         "tg": "$\\overline t_G$",
     }
     COLUMNS_FULL_TABLE_LATEX_WT_FORMATTER = {
@@ -99,10 +118,9 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
 
 \begin{document}
 
-\input{perf}
-\input{perf.history}
-
 \begin{landscape}
+    \input{perf}
+    \input{perf.history}
     \scriptsize
     \input{complete.kt}
     \input{complete.fg}

@@ -1,5 +1,5 @@
+__precompile__()
 module DRSOM
-
 
 using Printf
 
@@ -15,6 +15,16 @@ include("utilities/trs.jl")
 include("utilities/counter.jl")
 include("utilities/interpolation.jl")
 
+
+# algorithm implementations
+include("algorithms/drsom_legacy.jl")
+include("algorithms/drsom.jl")
+include("algorithms/drsom_plus.jl")
+include("algorithms/drsom_l.jl")
+include("algorithms/drsom_c.jl")
+include("algorithms/drsom_f.jl")
+include("algorithms/hsodm.jl")
+
 # supplement copy
 Base.copy(x::T) where {T} = T([deepcopy(getfield(x, k)) for k ∈ fieldnames(T)]...)
 
@@ -27,10 +37,14 @@ end
 
 Base.@kwdef mutable struct Result{I,S,Int}
     k::Int
-    name::Symbol
+    name::Union{Symbol,String}
     state::S
     trajectory::Vector{S}
-    iter::I
+    iter::I = nothing
+end
+
+function Base.show(io::IO, r::Result{I,S,Int}) where {I,S,Int}
+    println(io, "Result<$(r.name)>")
 end
 
 IterativeAlgorithm(T, S; name, stop, display) =
@@ -45,8 +59,9 @@ function apply_counter(cf, kwds)
     end
 end
 
-function (alg::IterativeAlgorithm{IteratorType,StateType})(;
-    maxit=10000,
+#####################
+function (alg::IterativeAlgorithm{T,S})(;
+    maxiter=10000,
     maxtime=1e2,
     tol=1e-6,
     freq=10,
@@ -54,9 +69,9 @@ function (alg::IterativeAlgorithm{IteratorType,StateType})(;
     fog=:backward,
     sog=:direct,
     kwargs...
-) where {IteratorType,StateType}
+) where {T<:DRSOMIteration,S<:DRSOMState}
 
-    arr = Vector{StateType}()
+    arr = Vector{S}()
     kwds = Dict(kwargs...)
     x0 = get(kwds, :x0, nothing)
     x0 === nothing && throw(ErrorException("an initial point must be provided"))
@@ -89,31 +104,18 @@ function (alg::IterativeAlgorithm{IteratorType,StateType})(;
     for cf ∈ [:f :g :H :ga :hvp]
         apply_counter(cf, kwds)
     end
-    iter = IteratorType(; fog=fog, sog=sog, kwds...)
+    iter = T(; fog=fog, sog=sog, kwds...)
     verbose && show(iter)
     for (k, state) in enumerate(iter)
         push!(arr, copy(state))
-        if k >= maxit || state.t >= maxtime || alg.stop(tol, state)
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state)
             verbose && alg.display(k, state)
             verbose && summarize(k, iter, state)
             return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
         end
         verbose && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
     end
-
 end
-
-# algorithm implementations
-include("algorithms/drsom_legacy.jl")
-include("algorithms/drsom.jl")
-include("algorithms/drsom_plus.jl")
-include("algorithms/drsom_l.jl")
-include("algorithms/drsom_c.jl")
-include("algorithms/drsom_f.jl")
-include("algorithms/hsodm.jl")
-
-# Algorithm Aliases
-DRSOM2 = DimensionReducedSecondOrderMethod
 
 
 function Base.show(io::IO, t::T) where {T<:DRSOMIteration}
@@ -159,5 +161,74 @@ end
 
 summarize(k::Int, t::T, s::S) where {T<:DRSOMIteration,S<:DRSOMState} =
     summarize(stdout, k, t, s)
-export DRSOM2
+
+
+function (alg::IterativeAlgorithm{T,S})(;
+    maxiter=10000,
+    maxtime=1e2,
+    tol=1e-6,
+    freq=10,
+    verbose=true,
+    direction=:cold,
+    linesearch=:trustregion,
+    kwargs...
+) where {T<:HSODMIteration,S<:HSODMState}
+
+    arr = Vector{S}()
+    kwds = Dict(kwargs...)
+
+    for cf ∈ [:f :g :H]
+        apply_counter(cf, kwds)
+    end
+    iter = T(; linesearch=linesearch, direction=direction, kwds...)
+    verbose && show(iter)
+    for (k, state) in enumerate(iter)
+        push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state)
+            verbose && alg.display(k, state)
+            verbose && summarize(k, iter, state)
+            return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
+        end
+        verbose && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
+    end
+end
+
+
+function Base.show(io::IO, t::T) where {T<:HSODMIteration}
+    format_header(t.LOG_SLOTS)
+    @printf io " algorithm alias       := %s\n" t.ALIAS
+    @printf io " algorithm description := %s\n" t.DESC
+    @printf io " inner iteration limit := %s\n" t.itermax
+    @printf io " line-search algorithm := %s\n" t.linesearch
+
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODMState}
+    println(io, "-"^length(t.LOG_SLOTS))
+    println(io, "summary:")
+    @printf io " (main)          f       := %.2e\n" s.fx
+    @printf io " (first-order)  |g|      := %.2e\n" s.ϵ
+    println(io, "oracle calls:")
+    @printf io " (main)          k       := %d  \n" k
+    @printf io " (function)      f       := %d  \n" s.kf
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
+    @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (running time)  t       := %.3f  \n" s.t
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+summarize(k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODMState} =
+    summarize(stdout, k, t, s)
+
+
+
+# Algorithm Aliases
+DRSOM2 = DimensionReducedSecondOrderMethod
+HSODM = HomogeneousSecondOrderDescentMethod
+
+export Result
+export DRSOM2, HSODM
 end # module

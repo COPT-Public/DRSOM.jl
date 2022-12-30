@@ -33,36 +33,7 @@ naming(dirtype) = @sprintf("%s(%s)", basename, dirtype)
 # - run_drsomd: (direct mode), run DRSOM with provided g(⋅) and H(⋅)
 # - run_drsomd_traj: (direct mode) run add save trajactory
 
-function run_drsomb(x0, f_composite;
-    tol=1e-6, maxiter=100, maxtime=100, freq=1,
-    record=true, direction=:cold
-)
-    ########################################################
-    arr = Vector{DRSOM.HSODMState}()
-    rb = nothing
-    name = naming(direction)
-    @printf("%s\n", '#'^60)
-    @printf("running: %s with tol: %.3e\n", name, tol)
-    f_tape = ReverseDiff.GradientTape(f_composite, x0)
-    f_tape_compiled = ReverseDiff.compile(f_tape)
-    @printf("compile finished\n")
-    @printf("%s\n", '#'^60)
-    iter = DRSOM.HSODMIteration(
-        x0=x0, rh=DRSOM.hessba, f=f_composite, tp=f_tape_compiled,
-        mode=:backward, direction=direction
-    )
-    for (k, state::DRSOM.HSODMState) in enumerate(iter)
-        (record) && push!(arr, copy(state))
-        if k >= maxiter || state.t >= maxtime || DRSOM.drsom_stopping_criterion(tol, state)
-            rb = (state, k)
-            DRSOM.drsom_display(k, state)
-            break
-        end
-        (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
-    end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
-    return Result(name=name, state=rb[1], k=rb[2], traj=arr)
-end
+
 
 function run_drsomd(x0, f_composite,
     g, H; tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true, direction=:cold

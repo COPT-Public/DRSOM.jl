@@ -61,6 +61,52 @@ options_drsom = Dict(
     :freq => log_freq
 )
 
+
+# general options for Optim
+# GD and LBFGS, Trust Region Newton,
+options = Optim.Options(
+    g_tol=1e-6,
+    iterations=10000,
+    store_trace=true,
+    show_trace=true,
+    show_every=50,
+)
+
+# utilities
+getresultfield(x, y=:fx) = getfield.(getfield(x, :traj), y)
+getname(x) = getfield(x, :name)
+geteps(x) = x.g_norm
+
+Base.@kwdef mutable struct StateOptim
+    fx::Float64
+    ϵ::Float64
+    t::Float64
+    kf::Int = 0
+    kg::Int = 0
+    kH::Int = 0
+end
+function optim_to_result(rr, name)
+    traj = map(
+        (x) -> StateOptim(fx=x.value, ϵ=x.g_norm, t=rr.time_run), rr.trace
+    )
+    traj[end].kf = rr.f_calls
+    traj[end].kg = rr.g_calls
+    traj[end].kH = rr.h_calls
+    return Result(name=name, iter=rr, state=traj[end], k=rr.iterations, trajectory=traj)
+end
+
+function arc_to_result(nlp, stats, name)
+    state = StateOptim(
+        fx=stats.objective,
+        ϵ=NLPModels.grad(nlp, stats.solution) |> norm,
+        t=stats.elapsed_time
+    )
+    return Result(name=name, iter=stats, state=state, k=stats.iter, trajectory=[])
+end
+export StateOptim, optim_to_result, arc_to_result
+
+
+
 wrapper_gd(x, loss, g, H) =
     optim_to_result(
         Optim.optimize(
@@ -105,9 +151,12 @@ wrapper_newton(x, loss, g, H) =
             inplace=false
         ), "Newton+TR"
     )
+alg_drsom = DRSOM2()
 wrapper_drsom(x, loss, g, H) =
-    drsom_helper.run_drsomd(
-        copy(x), loss, g, H;
+    alg_drsom(;
+        x0=copy(x), f=loss, g=g, H=H,
+        fog=:direct,
+        sog=:direct,
         options_drsom...
     )
 wrapper_drsom_homo(x, loss, g, H) =
@@ -116,9 +165,11 @@ wrapper_drsom_homo(x, loss, g, H) =
         direction=:homokrylov,
         options_drsom...
     )
+alg_hsodm = HSODM()
 wrapper_hsodm(x, loss, g, H) =
-    hsodm_helper.run_drsomd(
-        copy(x), loss, g, H;
+    alg_hsodm(;
+        x0=copy(x), f=loss, g=g, H=H,
+        linesearch=:hagerzhang,
         direction=:warm,
         options_drsom...
     )
@@ -147,6 +198,7 @@ OPTIMIZERS = Dict(
     :HSODM => wrapper_hsodm,
     :CG => wrapper_cg
 )
+
 # solvers in AdaptiveRegularization.jl 
 OPTIMIZERS_NLP = Dict(
     :ARC => wrapper_arc

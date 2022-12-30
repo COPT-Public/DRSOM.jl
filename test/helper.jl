@@ -17,12 +17,6 @@ using LineSearches
 
 export getresultfield, getname, geteps
 
-Base.@kwdef mutable struct Result{StateType,Int}
-    name::String
-    state::StateType
-    k::Int
-    traj::Vector{StateType}
-end
 
 
 function run_drls(x0, f, g, L, σ, tol=1e-6, maxiter=100, maxtime=100, freq=1, record=true)
@@ -188,43 +182,5 @@ function run_drsom(x0, f_composite; g=Nothing, H=Nothing, tol=1e-6, maxiter=100,
     @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
     return Result(name=name, state=rb[1], k=rb[2], traj=arr)
 end
-
-
-# general options for Optim
-# GD and LBFGS, Trust Region Newton,
-options = Optim.Options(
-    g_tol=1e-6,
-    iterations=10000,
-    store_trace=true,
-    show_trace=true,
-    show_every=50,
-)
-
-# utilities
-getresultfield(x, y=:fx) = getfield.(getfield(x, :traj), y)
-getname(x) = getfield(x, :name)
-geteps(x) = x.g_norm
-
-Base.@kwdef mutable struct OptimState
-    fx::Float64
-    ϵ::Float64
-    t::Float64
-end
-function optim_to_result(rr, name)
-    traj = map(
-        (x) -> OptimState(fx=x.value, ϵ=x.g_norm, t=rr.time_run), rr.trace
-    )
-    return Result(name=name, state=traj[end], k=rr.iterations, traj=traj)
-end
-
-function arc_to_result(nlp, stats, name)
-    state = OptimState(
-        fx=stats.objective,
-        ϵ=NLPModels.grad(nlp, stats.solution) |> norm,
-        t=stats.elapsed_time
-    )
-    return Result(name=name, state=state, k=stats.iter, traj=[])
-end
-export OptimState, optim_to_result, arc_to_result
 
 end

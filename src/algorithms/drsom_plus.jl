@@ -258,11 +258,11 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMPlusState) =
+hsodm_stopping_criterion(tol, state::DRSOMPlusState) =
     (state.Δ <= 1e-16) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 sprintarray(arr) = join(map(x -> @sprintf("%+.0e", x), arr), ",")
-function drsom_display(it, state::DRSOMPlusState)
+function hsodm_display(it, state::DRSOMPlusState)
     if it == 1
         log = @sprintf("%5s | %10s | %13s | %7s | %7s | %5s | %5s | %6s | %2s | %6s |\n",
             "k", "f", "α ($(state.α |> length))", "Δ", "|∇f|", "γ", "λ", "ρ", "kₜ", "t",

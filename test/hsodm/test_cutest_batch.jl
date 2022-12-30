@@ -39,11 +39,7 @@ include("./hsodm_paper_test.jl")
     #     @test r.state.ϵ < 1e-4
     # end
     @testset "HSODM" begin
-        r = hsodm_helper.run_drsomd(
-            copy(x0), loss, g, H;
-            maxiter=10000, tol=1e-8, freq=50,
-            direction=:warm
-        )
+        r = wrapper_hsodm(x0, loss, g, H)
         @test r.state.ϵ < 1e-4
     end
     finalize(nlp)
@@ -51,7 +47,7 @@ end
 
 
 tables = []
-header = ["name", "param", "n", "method", "k", "df", "fx", "t", "status", "update"]
+header = ["name", "param", "n", "method", "k", "kf", "kg", "kh", "df", "fx", "t", "status", "update"]
 fstamp = Dates.format(Dates.now(), dateformat"yyyy/mm/dd HH:MM:SS")
 fstamppath = Dates.format(Dates.now(), dateformat"yyyymmddHHMM")
 csvfile = open("cutest-$fstamppath.csv", "w")
@@ -65,13 +61,13 @@ filter_cutest_problem(nlp) = true
 # large_test
 # filter_cutest_problem(nlp) = (200 < nlp.meta.nvar <= 5000)
 
-# filter_optimization_method(k) = k ∉ [:GD]
+filter_optimization_method(k) = k ∉ [:GD, :DRSOMHomo, :CG, :HSODM, :ARC]
 # filter_optimization_method(k) = k == :CG
 # filter_optimization_method(k) = k ∈ [:HSODM, :CG]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :CG]
 # filter_optimization_method(k) = k == :DRSOM
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
-filter_optimization_method(k) = k == :HSODM
+# filter_optimization_method(k) = k == :HSODM
 # filter_optimization_method(k) = k == :ARC
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :HSODM, :DRSOMHomo]
@@ -79,8 +75,8 @@ filter_optimization_method(k) = k == :HSODM
 
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104
-# PROBLEMS = UNC_PROBLEMS_4to200
-PROBLEMS = UNC_PROBLEMS_200to5000
+PROBLEMS = UNC_PROBLEMS_4to200
+# PROBLEMS = UNC_PROBLEMS_200to5000
 
 ##########################################
 # iteration
@@ -113,10 +109,18 @@ for (f, param_combination) in PROBLEMS
                 line = []
                 try
                     r = v(x0, loss, g, H)
-                    line = [nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k, r.k, r.state.ϵ, r.state.fx, r.state.t, r.state.ϵ < 1e-5]
+                    line = [
+                        nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
+                        r.k, r.state.kf, r.state.kg, r.state.kH,
+                        r.state.ϵ, r.state.fx, r.state.t, r.state.ϵ < 1e-5
+                    ]
 
                 catch e
-                    line = [nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k, NaN, NaN, NaN, NaN, false]
+                    line = [
+                        nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
+                        NaN, NaN, NaN, NaN,
+                        NaN, NaN, NaN, false
+                    ]
 
                     bt = catch_backtrace()
                     msg = sprint(showerror, e, bt)
@@ -141,10 +145,18 @@ for (f, param_combination) in PROBLEMS
                 line = []
                 try
                     r = v(nlp)
-                    line = [nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k, r.k, r.state.ϵ, r.state.fx, r.state.t, r.state.ϵ < 1e-5]
+                    line = [
+                        nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
+                        r.k, r.iter.f_calls, r.iter.g_calls, r.iter.h_calls,
+                        r.state.ϵ, r.state.fx, r.state.t, r.state.ϵ < 1e-5
+                    ]
 
                 catch e
-                    line = [nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k, NaN, NaN, NaN, NaN, false]
+                    line = [
+                        nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
+                        NaN, NaN, NaN, NaN,
+                        NaN, NaN, NaN, false
+                    ]
 
                     bt = catch_backtrace()
                     msg = sprint(showerror, e, bt)

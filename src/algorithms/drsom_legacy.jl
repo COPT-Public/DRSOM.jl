@@ -218,11 +218,11 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
     end
 end
 
-drsom_stopping_criterion(tol, state::DRSOMFreeState) =
+hsodm_stopping_criterion(tol, state::DRSOMFreeState) =
     (state.ϵ2 <= tol) || (state.ϵ1 <= tol) && abs(state.fz - state.fx) <= tol
 
 
-function drsom_display(it, state::DRSOMFreeState)
+function hsodm_display(it, state::DRSOMFreeState)
     if mod(it, 30) == 1
         @printf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %7s | %7s | %5s | %2s | %6s |\n",
             "k", "f", "α1", "α2", "Δ", "|d|", "|∇f|", "γ", "λ", "ρ", "it", "t",

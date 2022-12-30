@@ -7,7 +7,8 @@ using LinearAlgebra
 using Printf
 using Dates
 
-LOG_SLOTS = @sprintf("%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
+LOG_SLOTS = @sprintf(
+    "%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
     "k", "f", "α₁", "α₂", "Δ", "|∇f|", "λ", "ρ", "kₜ", "t",
 )
 Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
