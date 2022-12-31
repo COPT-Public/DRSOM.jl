@@ -64,11 +64,10 @@ else
     Xv = zeros(2, n - m)
 end
 
-state_rsom, k = SNL.rsom_nls(n, m, pp, Nx, Xv, 1e-6, 3e2, true)
-# state_fista, k = SNL.fista_nls(n, m, pp, Nx, Xv, 1e-6, 3e3, true)
+state_drsom, k = SNL.drsom_nls_legacy(n, m, pp, Nx, Xv, 1e-6, 3e2, true)
 state_grad, k = SNL.gd_nls(n, m, pp, Nx, Xv, 1e-6, 3e3, true)
 
-Xvr = reshape(state_rsom.x, 2, n - m)
+Xvr = reshape(state_drsom.x, 2, n - m)
 # Xvf = reshape(state_fista.x, 2, n - m)
 Xvg = reshape(state_grad.minimizer, 2, n - m)
 
@@ -106,7 +105,8 @@ if option_plot_js
         fig, Xvg[1, :], Xvg[2, :], markerstrokecolor=[:purple],
         markercolor="grey99", fillstyle=nothing, markershape=:circle, label="GD"
     )
-
+    name = @sprintf("rsom_snl_%d_%d_%d", n, m, option_use_sdr)
+    savefig(fig, @sprintf("/tmp/%s.html", name))
 else
     # publication
     pgfplotsx()
