@@ -7,7 +7,7 @@ using KrylovKit
 using Distributions
 using LineSearches
 
-LOG_SLOTS = @sprintf(
+const HSODM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %8s | %5s | %5s | %2s | %6s |\n",
     "k", "f", "α", "Δ", "|∇f|", "λ", "kλ", "kₜ", "t"
 )
@@ -22,7 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     itermax::Int64 = 20
     direction = :cold
     linesearch = :hagerzhang
-    LOG_SLOTS::String = LOG_SLOTS
+    LOG_SLOTS::String = HSODM_LOG_SLOTS
     ALIAS::String = "HSODM"
     DESC::String = "Homogeneous Second-order Descent Method"
 end
@@ -204,7 +204,7 @@ end
 
 function hsodm_display(k, state::HSODMState)
     if k == 1 || mod(k, 30) == 0
-        @printf("%s", LOG_SLOTS)
+        @printf("%s", HSODM_LOG_SLOTS)
     end
     @printf("%5d | %+.3e | %.2e | %.2e | %.1e | %+.0e | %.0e | %2d | %6.1f |\n",
         k, state.fx, state.α, state.Δ, state.ϵ, state.λ₁, state.kλ, state.kₜ, state.t

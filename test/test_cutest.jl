@@ -21,7 +21,6 @@ include("tools.jl")
 using ProximalOperators
 using LineSearches
 using Optim
-using DRSOM
 using ProximalAlgorithms
 using Random
 using Distributions
@@ -36,17 +35,11 @@ using Statistics
 using LinearOperators
 using ArgParse
 using Optim
-using .LP
-using .drsom_helper
-using .drsom_helper_plus
-using .drsom_helper_l
-using .drsom_helper_c
-using .drsom_helper_f
-using .hsodm_helper
-
-
 using CUTEst
 using NLPModels
+
+using DRSOM
+
 #######################################################
 # examples
 # nlp = CUTEstModel("BROYDN7D", "-param", "N/2=2500")
@@ -113,33 +106,13 @@ res4 = Optim.optimize(loss, g, H, x0,
 
 
 
-r = drsom_helper.run_drsomd(
-    copy(x0), loss, g, H;
+r = DRSOM2()(;
+    x0=copy(x0), f=loss, g=g,
     maxiter=10000, tol=1e-6, freq=1
 )
 
-rpk = drsom_helper_plus.run_drsomd(
-    copy(x0), loss, g, H;
-    maxiter=10000, tol=1e-6, freq=20,
-    direction=:homokrylov
-)
-
-# rpft = drsom_helper_f.run_drsomd(
-#     copy(x0), loss, g, H;
-#     maxiter=10000, tol=1e-6, freq=10,
-#     direction=:undef,
-#     direction_style=:truncate
-# )
-
-# rpff = drsom_helper_f.run_drsomd(
-#     copy(x0), loss, g, H;
-#     maxiter=10000, tol=1e-6, freq=10,
-#     direction=:undef,
-#     direction_style=:full
-# )
-
-rh = hsodm_helper.run_drsomd(
-    copy(x0), loss, g, H;
+rh = HSODM()(;
+    x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm
 )
@@ -151,11 +124,7 @@ results = [
     optim_to_result(res3, "Newton-TR"),
     optim_to_result(res4, "CG"),
     r,
-    rpk,
-    # rpft,
-    # rpff,
     rh,
-    # rarc
 ]
 
 if bool_plotting

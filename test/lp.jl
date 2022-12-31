@@ -1,4 +1,18 @@
-
+@doc raw"""
+file: lp.jl
+author: Chuwen Zhang
+-----
+last Modified: Sat Dec 31 2022
+modified By: Chuwen Zhang
+-----
+(c) 2022 Chuwen Zhang
+-----
+Module for testing Lp sparse minimization problems
+see the papers:
+1. Chen, X.: Smoothing methods for nonsmooth, nonconvex minimization. Math. Program. 134, 71–99 (2012). https://doi.org/10.1007/s10107-012-0569-0
+2. Chen, X., Ge, D., Wang, Z., Ye, Y.: Complexity of unconstrained $L_2-L_p$ minimization. Math. Program. 143, 371–383 (2014). https://doi.org/10.1007/s10107-012-0613-0
+3. Ge, D., Jiang, X., Ye, Y.: A note on the complexity of Lp minimization. Mathematical Programming. 129, 285–299 (2011). https://doi.org/10.1007/s10107-011-0470-2
+"""
 module LP
 using ArgParse
 using HTTP

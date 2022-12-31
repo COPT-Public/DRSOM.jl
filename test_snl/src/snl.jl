@@ -1,34 +1,27 @@
-###############
-# file: snl.jl
-# project: SNL
-# created Date: Apr 2022
-# author: Chuwen Zhang
-# -----
-# last Modified: Wed Apr 20 2022
-# modified By: Chuwen Zhang
-# -----
-# (c) 2022 Chuwen Zhang, Yinyu Ye
-# -----
-# HISTORY:
-# Date      	By	Comments
-# ----------	---	---------------------------------------------------------
-
-# Module for modeling Sensor Network Localization using SDP relaxation and RSOM to minimize the second-stage nonlinear least-square.
-# We suggest the user to go through [1] for complete description of this problem.
-#
-# References:
-# 1. Wang, Z., Zheng, S., Ye, Y., Boyd, S.: Further relaxations of the semidefinite programming approach to sensor network localization. SIAM Journal on Optimization. 19, 655–673 (2008)
-# 2. Biswas, P., Lian, T.-C., Wang, T.-C., Ye, Y.: Semidefinite programming based algorithms for sensor network localization. ACM Transactions on Sensor Networks (TOSN). 2, 188–220 (2006)
-# 3. Biswas, P., Liang, T.-C., Toh, K.-C., Ye, Y., Wang, T.-C.: Semidefinite programming approaches for sensor network localization with noisy distance measurements. IEEE transactions on automation science and engineering. 3, 360–371 (2006)
-# 4. Biswas, P., Ye, Y.: Semidefinite programming for ad hoc wireless sensor network localization. In: Third International Symposium on Information Processing in Sensor Networks, IPSN 2004. pp. 46–54 (2004)
-# 
-###############
-
-
-
 __precompile__()
 
+"""
+file: snl.jl
+project: SNL
+created Date: Apr 2022
+author: Chuwen Zhang
+-----
+last Modified: Wed Apr 20 2022
+modified By: Chuwen Zhang
+-----
+(c) 2022 Chuwen Zhang, Yinyu Ye
+-----
+Module for modeling Sensor Network Localization problem using SDP relaxation and DRSOM to minimize the second-stage nonlinear least-square problem
+We suggest the user to go through [1] for complete description of this problem.
+
+References:
+1. Wang, Z., Zheng, S., Ye, Y., Boyd, S.: Further relaxations of the semidefinite programming approach to sensor network localization. SIAM Journal on Optimization. 19, 655–673 (2008)
+2. Biswas, P., Lian, T.-C., Wang, T.-C., Ye, Y.: Semidefinite programming based algorithms for sensor network localization. ACM Transactions on Sensor Networks (TOSN). 2, 188–220 (2006)
+3. Biswas, P., Liang, T.-C., Toh, K.-C., Ye, Y., Wang, T.-C.: Semidefinite programming approaches for sensor network localization with noisy distance measurements. IEEE transactions on automation science and engineering. 3, 360–371 (2006)
+4. Biswas, P., Ye, Y.: Semidefinite programming for ad hoc wireless sensor network localization. In: Third International Symposium on Information Processing in Sensor Networks, IPSN 2004. pp. 46–54 (2004)
+"""
 module SNL
+
 using MAT
 using DRSOM
 using Random

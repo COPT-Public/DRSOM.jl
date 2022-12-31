@@ -7,7 +7,7 @@ using LinearAlgebra
 using Printf
 using Dates
 
-LOG_SLOTS = @sprintf(
+const DRSOM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
     "k", "f", "α₁", "α₂", "Δ", "|∇f|", "λ", "ρ", "kₜ", "t",
 )
@@ -23,7 +23,7 @@ Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     itermax::Int64 = 20
     fog = :forward
     sog = :forward
-    LOG_SLOTS::String = LOG_SLOTS
+    LOG_SLOTS::String = DRSOM_LOG_SLOTS
     ALIAS::String = "DRSOM2"
     DESC::String = "DRSOM with gradient and momentum"
 end
@@ -274,7 +274,7 @@ drsom_stopping_criterion(tol::Real, state::DRSOMState) =
 
 function drsom_display(k::Int, state::DRSOMState)
     if k == 1 || mod(k, 30) == 0
-        @printf("%s", LOG_SLOTS)
+        @printf("%s", DRSOM_LOG_SLOTS)
     end
     @printf("%5d | %+.3e | %+.1e | %+.1e | %.1e | %.1e | %.1e | %+.0e | %2d | %6.1f \n",
         k, state.fx, state.α₁, state.α₂, state.Δ, state.ϵ, state.λ, state.ρ, state.kₜ, state.t

@@ -2,22 +2,10 @@
 __precompile__()
 
 
-
-include("../helper.jl")
-include("../helper_plus.jl")
-include("../helper_l.jl")
-include("../helper_c.jl")
-include("../helper_f.jl")
-include("../helper_h.jl")
-include("../lp.jl")
+include("lp.jl")
 
 using .LP
-using .drsom_helper
-using .drsom_helper_c
-using .drsom_helper_f
-using .drsom_helper_l
-using .drsom_helper_plus
-using .hsodm_helper
+
 using AdaptiveRegularization
 using ArgParse
 using CUTEst
@@ -73,7 +61,7 @@ options = Optim.Options(
 )
 
 # utilities
-getresultfield(x, y=:fx) = getfield.(getfield(x, :traj), y)
+getresultfield(x, y=:fx) = getfield.(getfield(x, :trajectory), y)
 getname(x) = getfield(x, :name)
 geteps(x) = x.g_norm
 
@@ -163,12 +151,6 @@ wrapper_drsom(x, loss, g, H) =
         sog=:direct,
         options_drsom...
     )
-wrapper_drsom_homo(x, loss, g, H) =
-    drsom_helper_plus.run_drsomd(
-        copy(x), loss, g, H;
-        direction=:homokrylov,
-        options_drsom...
-    )
 alg_hsodm = HSODM()
 wrapper_hsodm(x, loss, g, H) =
     alg_hsodm(;
@@ -177,6 +159,12 @@ wrapper_hsodm(x, loss, g, H) =
         direction=:warm,
         options_drsom...
     )
+# wrapper_drsom_homo(x, loss, g, H) =
+#     drsom_helper_plus.run_drsomd(
+#         copy(x), loss, g, H;
+#         direction=:homokrylov,
+#         options_drsom...
+#     )
 function wrapper_arc(nlp)
     reset!(nlp)
     stats = ARCqKOp(
@@ -199,7 +187,7 @@ OPTIMIZERS = Dict(
     :LBFGS => wrapper_lbfgs,
     :NewtonTR => wrapper_newton,
     :DRSOM => wrapper_drsom,
-    :DRSOMHomo => wrapper_drsom_homo,
+    # :DRSOMHomo => wrapper_drsom_homo,
     :HSODM => wrapper_hsodm,
     :CG => wrapper_cg
 )
