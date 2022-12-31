@@ -179,14 +179,9 @@ function Base.iterate(iter::DRSOMIteration)
 end
 
 
-"""
-Solve an iteration using TRS to produce stepsizes,
-alpha: extrapolation
-gamma: gradient step
-"""
-function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx}
 
-    n = length(state.x)
+function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
+
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
@@ -210,8 +205,8 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
 
             x = y = state.z - α₁ .* state.∇f / gₙ + α₂ .* state.d / dₙ
             fx = iter.f(x)
-            alp = [α₁; α₂]
-            dq = -alp' * Q * alp / 2 - alp' * c
+            α = [α₁; α₂]
+            dq = -α' * Q * α / 2 - α' * c
             df = fz - fx
             ro = df / dq
             if (df < 0) || (ro <= 0.1)
@@ -229,7 +224,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
                 state.dq = dq
                 state.df = df
                 state.d = x - z
-                state.Δ = sqrt(alp' * G * alp)
+                state.Δ = sqrt(α' * G * α)
                 state.kₜ = kₜ
                 state.ϵ = norm(state.∇f)
                 state.t = (Dates.now() - iter.t).value / 1e3
@@ -244,7 +239,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState{R,Tx}) where {R,Tx
         s = similar(state.∇f)
         s = -state.∇f
 
-        α, fx, _ = HagerZhangLineSearch(iter, state.∇f, state.fz, state.x, s)
+        α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fz, state.x, s)
 
         # summary
         x = y = state.z - α .* state.∇f

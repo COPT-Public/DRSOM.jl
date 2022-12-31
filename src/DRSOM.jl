@@ -17,12 +17,8 @@ include("utilities/interpolation.jl")
 
 
 # algorithm implementations
-include("algorithms/drsom_legacy.jl")
+include("algorithms/legacy/drsom_legacy.jl")
 include("algorithms/drsom.jl")
-include("algorithms/drsom_plus.jl")
-include("algorithms/drsom_l.jl")
-include("algorithms/drsom_c.jl")
-include("algorithms/drsom_f.jl")
 include("algorithms/hsodm.jl")
 
 # supplement copy
@@ -150,9 +146,9 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:DRSOMIteration,S<:DRSOM
     println(io, "oracle calls:")
     @printf io " (main)          k       := %d  \n" k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
+    @printf io " (first-order)   g       := %d  \n" s.kg
     @printf io " (first-order)  hvp      := %d  \n" s.kh
-    @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (second-order)  h       := %d  \n" s.kH
     @printf io " (line-search)   ψ       := %d  \n" s.ψ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))

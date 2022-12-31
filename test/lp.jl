@@ -58,12 +58,6 @@ function parse_commandline()
     return LP.LPMinimizationParams(; _args...)
 end
 
-function load_diabetes_dataset()
-    res = HTTP.request("GET", "https://www4.stat.ncsu.edu/~boos/var.select/diabetes.tab.txt")
-    lines = res.body |> String |> strip |> splitlines
-    return hcat((line |> splitfields .|> parsefloat64 for line in lines[2:end])...)'
-end
-
 linear_model(wb, input) = input * wb[1:end-1] .+ wb[end]
 
 function standardized_linear_model(wb, input, input_loc, input_scale)

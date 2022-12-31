@@ -33,14 +33,22 @@ DRSOM.jl now includes a bunch of algorithms, including the variants of original 
 ## Reference
 You are welcome to cite our paper :), [see](https://arxiv.org/abs/2208.00208)
 ```bibtex
-@misc{zhang2022drsom,
-      title={DRSOM: A Dimension Reduced Second-Order Method and Preliminary Analyses}, 
-      author={Chuwen Zhang and Dongdong Ge and Bo Jiang and Yinyu Ye},
-      year={2022},
-      eprint={2208.00208},
-      archivePrefix={arXiv},
-      primaryClass={math.OC}
+
+@misc{zhang_drsom_2022,
+	title = {{DRSOM}: {A} {Dimension} {Reduced} {Second}-{Order} {Method} and {Preliminary} {Analyses}},
+	copyright = {All rights reserved},
+	shorttitle = {{DRSOM}},
+	url = {http://arxiv.org/abs/2208.00208},
+	language = {en},
+	urldate = {2022-08-12},
+	publisher = {arXiv},
+	author = {Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
+	month = jul,
+	year = {2022},
+	note = {arXiv:2208.00208 [cs, math]},
+	keywords = {Computer Science - Machine Learning, Mathematics - Optimization and Control},
 }
+
 
 @misc{zhang_homogenous_2022,
 	title = {A {Homogenous} {Second}-{Order} {Descent} {Method} for {Nonconvex} {Optimization}},

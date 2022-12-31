@@ -101,6 +101,10 @@ function arc_to_result(nlp, stats, name)
         ϵ=NLPModels.grad(nlp, stats.solution) |> norm,
         t=stats.elapsed_time
     )
+    state.kf = neval_obj(nlp) # return number of f call
+    state.kg = neval_grad(nlp) # return number of gradient call
+    state.kH = neval_hess(nlp) + neval_hprod(nlp) # return number of Hessian call
+
     return Result(name=name, iter=stats, state=state, k=stats.iter, trajectory=[])
 end
 export StateOptim, optim_to_result, arc_to_result
@@ -174,6 +178,7 @@ wrapper_hsodm(x, loss, g, H) =
         options_drsom...
     )
 function wrapper_arc(nlp)
+    reset!(nlp)
     stats = ARCqKOp(
         nlp,
         max_time=max_time,

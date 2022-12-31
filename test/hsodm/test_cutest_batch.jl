@@ -61,14 +61,14 @@ filter_cutest_problem(nlp) = true
 # large_test
 # filter_cutest_problem(nlp) = (200 < nlp.meta.nvar <= 5000)
 
-filter_optimization_method(k) = k ∉ [:GD, :DRSOMHomo, :CG, :HSODM, :ARC]
+# filter_optimization_method(k) = k ∉ [:GD, :DRSOMHomo, :CG, :HSODM, :ARC]
 # filter_optimization_method(k) = k == :CG
 # filter_optimization_method(k) = k ∈ [:HSODM, :CG]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :CG]
 # filter_optimization_method(k) = k == :DRSOM
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
 # filter_optimization_method(k) = k == :HSODM
-# filter_optimization_method(k) = k == :ARC
+filter_optimization_method(k) = k == :ARC
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo, :LBFGS, :NewtonTR, :ARC]
@@ -147,7 +147,7 @@ for (f, param_combination) in PROBLEMS
                     r = v(nlp)
                     line = [
                         nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
-                        r.k, r.iter.f_calls, r.iter.g_calls, r.iter.h_calls,
+                        r.k, r.state.kf, r.state.kg, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t, r.state.ϵ < 1e-5
                     ]
 
