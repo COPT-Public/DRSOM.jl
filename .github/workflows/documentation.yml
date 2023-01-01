@@ -2,8 +2,9 @@ name: Documentation
 
 on:
   push:
-    branches:
-      - main # update to match your development branch (master, main, dev, trunk, ...)
+    branches: # update to match your development branch (master, main, dev, trunk, ...)
+      - main
+      - dev
     tags: '*'
   pull_request:
 
