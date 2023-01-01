@@ -44,6 +44,7 @@
 # Display flags are represented as a bitfield
 # (not exported, but can use via LineSearches.ITER, for example)
 using Parameters
+
 const one64 = convert(UInt64, 1)
 const FINAL = one64
 const ITER = one64 << 1
