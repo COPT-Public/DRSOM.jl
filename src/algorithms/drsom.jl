@@ -1,6 +1,6 @@
+
 # DRSOM with gradient and momentum
 #   a new interface
-#
 
 using Base.Iterators
 using LinearAlgebra
@@ -11,6 +11,9 @@ const DRSOM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
     "k", "f", "α₁", "α₂", "Δ", "|∇f|", "λ", "ρ", "kₜ", "t",
 )
+@doc raw"""
+Iteration object for DRSOM
+"""
 Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     x0::Tx            # initial point
     f::Tf             # f: smooth function

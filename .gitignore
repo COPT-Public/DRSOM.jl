@@ -17,6 +17,8 @@ third-party
 *.bcf
 docs/*.pdf
 
+docs/build/
+
 # projects
 fig
 instances
