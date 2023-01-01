@@ -38,5 +38,5 @@ makedocs(
 deploydocs(
     repo="https://github.com/brentian/DRSOM.jl.git",
     push_preview=true,
-    devbranch="main",
+    versions=["stable" => "v^", "v#.#", devurl => devurl],
 )
