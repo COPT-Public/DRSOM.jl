@@ -1,7 +1,13 @@
 # DRSOM: A Dimension-Reduced Second-Order Method for Convex and Nonconvex Optimization
+<!-- | **Documentation** | | -->
+[![docs-stable][docs-stable-img]][docs-stable-url] [![docs-dev][docs-dev-img]][docs-dev-url] 
 
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-purple.svg
-<!-- [docs-dev-url]: https://JuliaSmoothOptimizers.github.io/AdaptiveRegularization.jl/dev -->
+<!-- [docs-stable-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/stable -->
+<!-- [docs-dev-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/dev -->
+[docs-stable-url]: https://brentian.github.io/DRSOM.jl/stable
+[docs-dev-url]: https://brentian.github.io/DRSOM.jl/dev
 
 
 DRSOM.jl is a Julia implementation of the Dimension-Reduced Second-Order Method for unconstrained smooth optimization. The DRSOM works with the following iteration:
