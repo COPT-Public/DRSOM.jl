@@ -1,4 +1,14 @@
 # DRSOM: A Dimension-Reduced Second-Order Method for Convex and Nonconvex Optimization
+<!-- | **Documentation** | | -->
+[![docs-stable][docs-stable-img]][docs-stable-url] [![docs-dev][docs-dev-img]][docs-dev-url] 
+
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-dev-img]: https://img.shields.io/badge/docs-dev-purple.svg
+<!-- [docs-stable-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/stable -->
+<!-- [docs-dev-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/dev -->
+[docs-stable-url]: https://brentian.github.io/DRSOM.jl/stable
+[docs-dev-url]: https://brentian.github.io/DRSOM.jl/dev
+
 
 DRSOM.jl is a Julia implementation of the Dimension-Reduced Second-Order Method for unconstrained smooth optimization. The DRSOM works with the following iteration:
 
@@ -10,35 +20,10 @@ $$
 where  $m_k^\alpha(\alpha)$ is a 2-dimensional quadratic approximation to $f(x)$ using gradient $g_k$ and Hessian information $H_k$.
 
 - The differentiation is done by `ForwardDiff` and `ReverseDiff` using finite-difference.
-- Notably, **DRSOM does not have to compute** Hessian $H_k$; instead, it only requires Hessian-vector products.
--  Alternatively, you may provide $g_k, H_k$ directly. 
+- Notably, **DRSOM does not have to compute** Hessian $H_k$; instead, it only requires Hessian-vector products or uses interpolation to contruct the quadratic model.
+- Of course, you may provide $g_k, H_k$ directly. 
 
-## Examples
-We provide easy examples for DRSOM.jl. All examples are listed in `examples/` directory. To run an example, start at the root directory of DRSOM.jl.
-
-### Nonconvex Logistic
-
-<img src="assets/new.gif" alt="drawing" width="30"/> 
-
-```bash
-julia -i --project=./ test_ncvx_logistic.jl
-```
-
-### L2 regression for diabetes dataset
-
-```bash
-julia -i --project=./ test/test_l2_diabetes.jl
-```
-
-### Sensor network localization
-
-You can change parameters
-```bash
-julia -i --project=./ test/test_snl.jl
-```
-
-
-If everything works, it should output a `.html` for visualization results (see the [example](example/snl.default.html))
+DRSOM.jl now includes a bunch of algorithms, including the variants of original DRSOM and the HSODM: *Homogeneous Second-order Descent Method*.
 
 ## Known issues
 `DRSOM.jl` is still under active development. Please add issues on GitHub.
@@ -50,15 +35,40 @@ If everything works, it should output a `.html` for visualization results (see t
 
 - Special thanks go to the COPT team and Tianyi Lin [(Darren)](https://tydlin.github.io/) for helpful suggestions.
 
+## Developer
+
+- Chuwen Zhang <chuwzhang@gmail.com>
+- Yinyu Ye     <yyye@stanford.edu>
+
 ## Reference
 You are welcome to cite our paper :), [see](https://arxiv.org/abs/2208.00208)
 ```bibtex
-@misc{zhang2022drsom,
-      title={DRSOM: A Dimension Reduced Second-Order Method and Preliminary Analyses}, 
-      author={Chuwen Zhang and Dongdong Ge and Bo Jiang and Yinyu Ye},
-      year={2022},
-      eprint={2208.00208},
-      archivePrefix={arXiv},
-      primaryClass={math.OC}
+
+@misc{zhang_drsom_2022,
+	title = {{DRSOM}: {A} {Dimension} {Reduced} {Second}-{Order} {Method} and {Preliminary} {Analyses}},
+	copyright = {All rights reserved},
+	shorttitle = {{DRSOM}},
+	url = {http://arxiv.org/abs/2208.00208},
+	language = {en},
+	urldate = {2022-08-12},
+	publisher = {arXiv},
+	author = {Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
+	month = jul,
+	year = {2022},
+	note = {arXiv:2208.00208 [cs, math]},
+	keywords = {Computer Science - Machine Learning, Mathematics - Optimization and Control},
+}
+
+
+@misc{zhang_homogenous_2022,
+	title = {A {Homogenous} {Second}-{Order} {Descent} {Method} for {Nonconvex} {Optimization}},
+	url = {http://arxiv.org/abs/2211.08212},
+	urldate = {2022-11-16},
+	publisher = {arXiv},
+	author = {Zhang, Chuwen and Ge, Dongdong and He, Chang and Jiang, Bo and Jiang, Yuntian and Xue, Chenyu and Ye, Yinyu},
+	month = nov,
+	year = {2022},
+	note = {arXiv:2211.08212 [math]},
+	keywords = {Mathematics - Optimization and Control}
 }
 ```
