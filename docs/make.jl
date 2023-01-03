@@ -36,7 +36,7 @@ makedocs(
 
 
 deploydocs(
-    repo="https://github.com/brentian/DRSOM.jl.git",
+    repo="github.com/COPT-Public/DRSOM.jl.git",
     push_preview=true,
     devbranch="dev",
     devurl="dev",
