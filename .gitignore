@@ -1,5 +1,4 @@
 # extras
-third-party
 # doc
 *.xdv
 *.toc
@@ -26,7 +25,6 @@ instances_pr
 draft/*.pdf
 docs/report/*.pdf
 docs/sections/*.pdf
-
 
 notes
 data/

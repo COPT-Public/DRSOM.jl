@@ -166,7 +166,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     freq=10,
     verbose=true,
     direction=:cold,
-    linesearch=:trustregion,
+    linesearch=:hagerzhang,
     kwargs...
 ) where {T<:HSODMIteration,S<:HSODMState}
 

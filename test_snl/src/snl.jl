@@ -182,19 +182,11 @@ function drsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float
     end
     x0 = vec(Xv)
     g(x) = DRSOM.ReverseDiff.gradient(loss, x)
-    iter = DRSOM.DRSOMIteration(x0=x0, f=loss, g=g, H=Nothing(), mode=:direct)
-    rb = nothing
-    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
-
-        if k >= max_iter || state.t >= max_time || DRSOM.drsom_stopping_criterion(tol, state)
-            rb = (state, k)
-            DRSOM.drsom_display(k, state)
-            break
-        end
-        verbose && (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
-    end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
-    return rb
+    r = DRSOM2()(;
+        x0=copy(x0), f=loss, g=g,
+        verbose=verbose, maxtime=max_time, maxiter=max_iter, tol=tol, freq=freq
+    )
+    return r.state, r.k
 end
 
 

@@ -1,0 +1,34 @@
+name = "AdaptiveRegularization"
+uuid = "79adfba0-1eab-50d9-8528-0589417a2bfe"
+authors = ["Dussault, Jean-Pierre <Jean-Pierre.Dussault@usherbrooke.ca >, Goyette, Samuel <samuel.goyette@usherbrooke.ca>, Migot, Tangi <tangi.migot@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearOperators = "5c8ed15e-5a4c-59e4-a42b-c7e8811fb125"
+NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
+SolverCore = "ff4d7338-4cf1-434d-91df-b86cb86fb843"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SparseMatricesCOO = "fa32481b-f100-4b48-8dc8-c62f61b13870"
+Stopping = "c4fe5a9e-e7fb-5c3d-89d5-7f405ab2214f"
+StoppingInterface = "53949629-e8ff-437b-b6e7-14da1a85bf25"
+
+[compat]
+Krylov = "^0.8.2"
+LinearOperators = "1, 2"
+NLPModels = "0.18, 0.19"
+SolverCore = "0.2, 0.3"
+SparseMatricesCOO = "0.1, 0.2"
+Stopping = "0.6"
+StoppingInterface = "0.3, 0.4, 0.5"
+julia = "^1.6"
+
+[extras]
+ADNLPModels = "54578032-b7ea-4c30-94aa-7cbd1cce6c9a"
+OptimizationProblems = "5049e819-d29b-5fba-b941-0eee7e64c1c6"
+SolverTest = "4343dc35-3317-4c6e-8877-f0cc8502c90e"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["ADNLPModels", "OptimizationProblems", "SolverTest", "Test"]

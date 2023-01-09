@@ -69,7 +69,7 @@ function Base.iterate(iter::HSODMIteration)
     H = iter.H(z)
     n = length(z)
     # construct homogeneous system
-    B = [H grad_f_x; grad_f_x' -1e-3]
+    B = Symmetric([H grad_f_x; grad_f_x' -1e-3])
     vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
     kλ = info.numops
     λ₁ = vals[1]
@@ -139,7 +139,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     H = iter.H(state.x)
     gnorm = norm(state.∇f)
     # construct homogeneous system
-    B = [H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0]
+    B = Symmetric([H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0])
     if iter.direction == :cold
         vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
     else
