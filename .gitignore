@@ -20,7 +20,6 @@ docs/build/
 
 # projects
 fig
-instances
 instances_pr
 draft/*.pdf
 docs/report/*.pdf
