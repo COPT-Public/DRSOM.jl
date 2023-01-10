@@ -142,14 +142,17 @@ function create_neighborhood(n, m, pp, radius, nf, degree)
 
 end
 
+
+
 function least_square(n, m, points, pp, Nx::NeighborVector)
-    val = 0
-    for nx in Nx
+
+    function _least_square(nx::Neighbor)
         i, j = nx.edge
         xij = j < n - m + 1 ? points[:, i] - points[:, j] : points[:, i] - pp[:, j]
         dh = xij .^ 2 |> sum
-        val += (dh - nx.distn^2)^2
+        return (dh - nx.distn^2)^2
     end
+    val = _least_square.(Nx) |> sum
     return val
 end
 

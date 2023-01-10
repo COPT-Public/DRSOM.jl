@@ -2,10 +2,6 @@
 __precompile__()
 
 
-include("lp.jl")
-
-using .LP
-
 using AdaptiveRegularization
 using ArgParse
 using DRSOM
