@@ -2,13 +2,8 @@
 __precompile__()
 
 
-include("lp.jl")
-
-using .LP
-
 using AdaptiveRegularization
 using ArgParse
-using CUTEst
 using DRSOM
 using Dates
 using Distributions
@@ -62,7 +57,7 @@ options = Optim.Options(
 
 # utilities
 getresultfield(x, y=:fx) = getfield.(getfield(x, :trajectory), y)
-getname(x) = getfield(x, :name)
+getname(x) = getfield(x, :name) |> string
 geteps(x) = x.g_norm
 
 Base.@kwdef mutable struct StateOptim

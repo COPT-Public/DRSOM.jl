@@ -69,7 +69,7 @@ function Base.iterate(iter::HSODMIteration)
     H = iter.H(z)
     n = length(z)
     # construct homogeneous system
-    B = [H grad_f_x; grad_f_x' -1e-3]
+    B = Symmetric([H grad_f_x; grad_f_x' -1e-3])
     vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
     kλ = info.numops
     λ₁ = vals[1]
@@ -91,6 +91,10 @@ function Base.iterate(iter::HSODMIteration)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
         α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
+    elseif iter.linesearch == :none
+        α = 1.0
+        fx = iter.f(z + v * α)
+        kₜ = 1
     else
     end
     y = z + α .* v
@@ -139,7 +143,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     H = iter.H(state.x)
     gnorm = norm(state.∇f)
     # construct homogeneous system
-    B = [H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0]
+    B = Symmetric([H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0])
     if iter.direction == :cold
         vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
     else
@@ -166,6 +170,10 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         s = v
         x = state.x
         state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
+    elseif iter.linesearch == :none
+        state.α = 1.0
+        fx = iter.f(state.z + v * state.α)
+        kₜ = 1
     else
         throw(Error("unknown option of line-search $(iter.linesearch)"))
     end

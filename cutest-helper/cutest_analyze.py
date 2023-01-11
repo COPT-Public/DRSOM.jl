@@ -4,15 +4,17 @@ import pandas as pd
 
 from util import *
 
+
+UNSELECT_METHOD = r"('\\drsomh')"
 # from csv
 # df = pd.read_csv("./cutest-2022111217.csv")
 # df = df.set_index(["name", "n", "method"])
 # from sql
 # query last
-sql_query_all = """
+sql_query_all = f"""
     WITH ranked_messages AS (
     SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-    FROM cutest.result AS m
+    FROM cutest.result AS m where method not in {UNSELECT_METHOD}
     )
     select *
     from ranked_messages
@@ -20,7 +22,8 @@ sql_query_all = """
     and df <= 1e-5 # status = 1
     and t <= 100
     and n <= 200
-    and rn = 1;
+    and rn = 1
+    and method not in {UNSELECT_METHOD};
     """
 engine, trans = CUTEST_UTIL.establish_connection()
 df = pd.read_sql(
@@ -125,8 +128,9 @@ latex_geo_sum_str = df_geo_perf.rename(
     sparsify=True,
 )
 
+
 df_geo_perf = pd.read_sql(
-    """WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+    f"""WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
                          FROM cutest.result AS m)
 select t.method,
        t.nf,
@@ -154,6 +158,7 @@ from (select method,
         and t <= 100
         and n <= 200
         and rn = 1
+        and method not in {UNSELECT_METHOD}
       group by method, rn)
          as t
          left join (select method,

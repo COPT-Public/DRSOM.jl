@@ -35,7 +35,7 @@ function julia_main()::Cint
         snldata = matread(_args[:fp])
     end
     n, m, nf, pp = snldata["n"], snldata["m"], snldata["nf"], snldata["PP"]
-    @printf("finished loading")
+    @printf("finished loading\n")
     Nx = SNL.create_neighborhood(
         snldata["n"], snldata["m"], snldata["PP"], snldata["r"], snldata["nf"], snldata["deg"]
     )
