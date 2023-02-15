@@ -149,14 +149,14 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     # construct homogeneous system
     B = Symmetric([H state.∇f; state.∇f' state.δ])
-    bool_acc, kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param)
+    kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param)
 
-    if !bool_acc
-        # direct return
-        state.t = (Dates.now() - iter.t).value / 1e3
-        counting(iter, state)
-        return state, state
-    end
+    # if !bool_acc
+    #     # direct return
+    #     state.t = (Dates.now() - iter.t).value / 1e3
+    #     counting(iter, state)
+    #     return state, state
+    # end
     if iter.linesearch == :trustregion
         state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
     elseif iter.linesearch == :hagerzhang

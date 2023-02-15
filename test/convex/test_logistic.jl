@@ -77,7 +77,7 @@ options = Optim.Options(
     iterations=10000,
     store_trace=true,
     show_trace=true,
-    show_every=10,
+    show_every=1,
     time_limit=500
 )
 
@@ -93,13 +93,23 @@ r_newton = Optim.optimize(
         linesearch=LineSearches.HagerZhang()), options;
     inplace=false
 )
+
 r = HSODM()(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
     maxtime=10000,
-    direction=:warm, linesearch=:none,
-    adaptive=:ar
+    direction=:warm, linesearch=:hagerzhang,
+    adaptive=:none
 )
+
+# r = HSODM()(;
+#     x0=copy(x0), f=loss, g=g, H=H,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     maxtime=10000,
+#     direction=:warm, linesearch=:none,
+#     adaptive=:ar
+# )
+
 
 
 results = [

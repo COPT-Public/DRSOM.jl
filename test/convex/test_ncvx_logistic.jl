@@ -14,8 +14,8 @@
 ###############
 
 
-include("lp.jl")
-include("tools.jl")
+include("../lp.jl")
+include("../tools.jl")
 
 using .LP
 
@@ -45,9 +45,9 @@ using Test
 using LIBSVMFileIO
 
 
-name = "sonar"
+name = "splice"
 # Load data
-X, y = libsvmread("instances/$name.libsvm"; dense=true)
+X, y = libsvmread("test/instances/$name.libsvm"; dense=true)
 y = max.(y, 0)
 # loss
 λ = 1e-5
@@ -82,37 +82,39 @@ options = Optim.Options(
     iterations=10000,
     store_trace=true,
     show_trace=true,
-    show_every=10,
+    show_every=1,
     time_limit=500
 )
 
 
-# res1 = Optim.optimize(f_composite, g, x0, GradientDescent(;
+# res1 = Optim.optimize(
+#     loss, x0, GradientDescent(;
 #         alphaguess=LineSearches.InitialHagerZhang(),
-#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-# res2 = Optim.optimize(f_composite, g, H, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()), options; inplace=false)
-# res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
-
-res1 = Optim.optimize(
-    loss, x0, GradientDescent(;
-        alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()
-    ), options;
-    autodiff=:forward)
-res2 = Optim.optimize(
-    loss, x0, LBFGS(;
-        linesearch=LineSearches.StrongWolfe()
-    ), options;
-    autodiff=:forward)
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options;
+#     autodiff=:forward)
+# res2 = Optim.optimize(
+#     loss, x0, LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options;
+#     autodiff=:forward)
 res3 = Optim.optimize(
     loss, x0, NewtonTrustRegion(), options;
     autodiff=:forward
 )
-rh = HSODM()(;
+# r = HSODM()(;
+#     x0=copy(x0), f=loss, g=g, H=H,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     maxtime=10000,
+#     direction=:warm, linesearch=:hagerzhang
+#     # adaptive=:ar
+# )
+r = HSODM()(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, linesearch=:none
+    maxtime=10000,
+    direction=:warm, linesearch=:none,
+    adaptive=:ar
 )
 
 results = [
