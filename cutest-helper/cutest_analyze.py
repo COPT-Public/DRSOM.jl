@@ -5,7 +5,7 @@ import pandas as pd
 from util import *
 
 
-UNSELECT_METHOD = r"('\\drsomh')"
+UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
 # from csv
 # df = pd.read_csv("./cutest-2022111217.csv")
 # df = df.set_index(["name", "n", "method"])

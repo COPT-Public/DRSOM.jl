@@ -116,6 +116,12 @@ rh = HSODM()(;
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm
 )
+rha = HSODM(name=:HSODM_adaptive)(;
+    x0=copy(x0), f=loss, g=g, H=H,
+    maxiter=10000, tol=1e-6, freq=1,
+    direction=:warm, adaptive=:angle,
+    maxtime=10000
+)
 
 # rarc = wrapper_arc(nlp)
 results = [
@@ -125,6 +131,7 @@ results = [
     optim_to_result(res4, "CG"),
     r,
     rh,
+    rha,
 ]
 
 if bool_plotting

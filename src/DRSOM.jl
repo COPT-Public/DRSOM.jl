@@ -14,6 +14,7 @@ include("utilities/display_tools.jl")
 include("utilities/trs.jl")
 include("utilities/counter.jl")
 include("utilities/interpolation.jl")
+include("utilities/adaptive.jl")
 
 
 # algorithm implementations
@@ -167,6 +168,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     verbose=true,
     direction=:cold,
     linesearch=:hagerzhang,
+    adaptive=:none,
     kwargs...
 ) where {T<:HSODMIteration,S<:HSODMState}
 
@@ -176,7 +178,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     for cf ∈ [:f :g :H]
         apply_counter(cf, kwds)
     end
-    iter = T(; linesearch=linesearch, direction=direction, kwds...)
+    iter = T(; linesearch=linesearch, adaptive=adaptive, direction=direction, kwds...)
     verbose && show(iter)
     for (k, state) in enumerate(iter)
         push!(arr, copy(state))
@@ -196,6 +198,7 @@ function Base.show(io::IO, t::T) where {T<:HSODMIteration}
     @printf io " algorithm description := %s\n" t.DESC
     @printf io " inner iteration limit := %s\n" t.itermax
     @printf io " line-search algorithm := %s\n" t.linesearch
+    @printf io "    adaptive  strategy := %s\n" t.adaptive
 
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

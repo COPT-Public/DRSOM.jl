@@ -8,8 +8,8 @@ using Distributions
 using LineSearches
 
 const HSODM_LOG_SLOTS = @sprintf(
-    "%5s | %10s | %8s | %8s | %8s | %5s | %5s | %2s | %6s |\n",
-    "k", "f", "α", "Δ", "|∇f|", "λ", "kλ", "kₜ", "t"
+    "%5s | %10s | %8s | %8s | %8s | %6s | %6s | %5s | %2s | %6s |\n",
+    "k", "f", "α", "Δ", "|∇f|", "λ", "δ", "k₂", "kₜ", "t"
 )
 Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     f::Tf             # f: smooth f
@@ -22,6 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     itermax::Int64 = 20
     direction = :cold
     linesearch = :hagerzhang
+    adaptive = :none
     LOG_SLOTS::String = HSODM_LOG_SLOTS
     ALIAS::String = "HSODM"
     DESC::String = "Homogeneous Second-order Descent Method"
@@ -46,14 +47,17 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     ϵ::R              # eps 2: residual for gradient 
     α::R = 1e-5       # step size
     γ::R = 1e-5       # trust-region style parameter γ
-    kλ::Int = 1       # krylov iterations
+    σ::R = 1e3        # adaptive arc style parameter σ
+    kᵥ::Int = 1       # krylov iterations
     kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
+    δ::Float64 = 0.0  # smallest curvature if available
     ξ::Tx             # eigenvector
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
-    kH::Int = 0       # hessian  evaluations
+    kH::Int = 0       #  hessian evaluations
+    k₂::Int = 0       #   oracle evaluations
 end
 
 
@@ -71,7 +75,7 @@ function Base.iterate(iter::HSODMIteration)
     # construct homogeneous system
     B = Symmetric([H grad_f_x; grad_f_x' -1e-3])
     vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
-    kλ = info.numops
+    kᵥ = info.numops
     λ₁ = vals[1]
     ξ = vecs[1]
     v = reshape(ξ[1:end-1], n)
@@ -121,9 +125,10 @@ function Base.iterate(iter::HSODMIteration)
         ρ=ro,
         ϵ=norm(grad_f_x, 2),
         γ=1e-6,
-        kλ=kλ,
+        kᵥ=kᵥ,
         kₜ=kₜ,
         t=t,
+        δ=0.0,
         ξ=ones(length(z) + 1),
         λ₁=λ₁
     )
@@ -132,37 +137,26 @@ end
 
 
 
+const adaptive_param = AR() # todo
 function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx}
 
-    n = length(state.x)
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
 
     state.∇f = iter.g(state.x)
     H = iter.H(state.x)
-    gnorm = norm(state.∇f)
-    # construct homogeneous system
-    B = Symmetric([H/gnorm state.∇f/gnorm; state.∇f'/gnorm 0])
-    if iter.direction == :cold
-        vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
-    else
-        vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
-    end
-    kλ = info.numops
-    state.λ₁ = vals[1]
-    ξ = vecs[1]
-    v = reshape(ξ[1:end-1], n)
-    t₀ = ξ[end]
-    (abs(t₀) > 1e-3) && (v = v / t₀)
-    vn = norm(v)
 
-    vHv = (v'*H*v/2)[]
-    vg = (v'*state.∇f)[]
-    bool_reverse_v = vg > 0
-    # reverse this v if g'v > 0
-    v = (-1)^bool_reverse_v * v
-    vg = (-1)^bool_reverse_v * vg
+    # construct homogeneous system
+    B = Symmetric([H state.∇f; state.∇f' state.δ])
+    bool_acc, kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param)
+
+    if !bool_acc
+        # direct return
+        state.t = (Dates.now() - iter.t).value / 1e3
+        counting(iter, state)
+        return state, state
+    end
     if iter.linesearch == :trustregion
         state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
     elseif iter.linesearch == :hagerzhang
@@ -190,14 +184,14 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.dq = dq
     state.df = df
     state.d = x - z
-    state.kλ = kλ
+    state.kᵥ = kᵥ
+    state.k₂ = k₂
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
-    state.ξ = ξ
+
     state.t = (Dates.now() - iter.t).value / 1e3
     counting(iter, state)
     return state, state
-
 end
 
 hsodm_stopping_criterion(tol, state::HSODMState) =
@@ -214,8 +208,8 @@ function hsodm_display(k, state::HSODMState)
     if k == 1 || mod(k, 30) == 0
         @printf("%s", HSODM_LOG_SLOTS)
     end
-    @printf("%5d | %+.3e | %.2e | %.2e | %.1e | %+.0e | %.0e | %2d | %6.1f |\n",
-        k, state.fx, state.α, state.Δ, state.ϵ, state.λ₁, state.kλ, state.kₜ, state.t
+    @printf("%5d | %+.3e | %.2e | %.2e | %.2e | %+.0e | %+.0e | %.0e | %.0e | %6.1f |\n",
+        k, state.fx, state.α, state.Δ, state.ϵ, state.λ₁, state.δ, state.k₂, state.ρ, state.t
     )
 end
 
