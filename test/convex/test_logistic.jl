@@ -102,13 +102,13 @@ r = HSODM()(;
     adaptive=:none
 )
 
-# r = HSODM()(;
-#     x0=copy(x0), f=loss, g=g, H=H,
-#     maxiter=10000, tol=1e-6, freq=1,
-#     maxtime=10000,
-#     direction=:warm, linesearch=:none,
-#     adaptive=:ar
-# )
+r = HSODM()(;
+    x0=copy(x0), f=loss, g=g, H=H,
+    maxiter=10000, tol=1e-6, freq=1,
+    maxtime=10000,
+    direction=:warm, linesearch=:none,
+    adaptive=:ar
+)
 
 
 

@@ -92,18 +92,20 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
         if !bool_acc
             # you should increase regularization, 
             # by decrease delta
-            adaptive_param.σ = max(adaptive_param.σ, hv) * adaptive_param.γ₂
+            # adaptive_param.σ = max(adaptive_param.σ, hv) * adaptive_param.γ₂
+            adaptive_param.σ = adaptive_param.σ * adaptive_param.γ₂
             bool_adj = true
-            adaptive_param.l = state.δ - 1e6
+            adaptive_param.l = state.δ - 1e4
             adaptive_param.u = state.δ
             adaptive_param.lₖ = adaptive_param.σ
             adaptive_param.uₖ = adaptive_param.σ * 2
 
         elseif adaptive_param.ρ >= adaptive_param.η₂
-            adaptive_param.σ = min(adaptive_param.σ, hv) / adaptive_param.γ₁
+            # adaptive_param.σ = min(adaptive_param.σ, hv) / adaptive_param.γ₁
+            adaptive_param.σ = adaptive_param.σ / adaptive_param.γ₁
             bool_adj = true
             adaptive_param.l = state.δ
-            adaptive_param.u = state.δ + 1e3
+            adaptive_param.u = state.δ + 1e8
             adaptive_param.lₖ = 0
             adaptive_param.uₖ = adaptive_param.σ
         else

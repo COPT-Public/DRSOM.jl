@@ -52,7 +52,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    δ::Float64 = 0.0  # smallest curvature if available
+    δ::Float64 = -1.0  # smallest curvature if available
     ξ::Tx             # eigenvector
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations

@@ -98,10 +98,10 @@ options = Optim.Options(
 #         linesearch=LineSearches.StrongWolfe()
 #     ), options;
 #     autodiff=:forward)
-res3 = Optim.optimize(
-    loss, x0, NewtonTrustRegion(), options;
-    autodiff=:forward
-)
+# res3 = Optim.optimize(
+#     loss, x0, NewtonTrustRegion(), options;
+#     autodiff=:forward
+# )
 # r = HSODM()(;
 #     x0=copy(x0), f=loss, g=g, H=H,
 #     maxiter=10000, tol=1e-6, freq=1,
