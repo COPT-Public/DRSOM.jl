@@ -41,8 +41,8 @@ Base.@kwdef mutable struct AR
     u::Float64 = 0.1
     lₖ::Float64 = 0.1
     uₖ::Float64 = 0.1
-    η₁::Float64 = 0.15
-    η₂::Float64 = 0.9
+    η₁::Float64 = 0.25
+    η₂::Float64 = 0.95
     ρ::Float64 = 0.0
     γ₁::Float64 = 1.1
     γ₂::Float64 = 1.3
@@ -56,7 +56,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
     kᵥ = 1
     k₂ = 1
 
-    _, λ₁, ξ, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
+    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
 
     if iter.adaptive === :none
@@ -64,13 +64,16 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
         state.ξ = ξ
         return kᵥ, k₂, v, vn, vg, vHv
     end
+    # h(t, θ) = sqrt(t^2 / (1 - t^2)) * max(θ, 0)
+
     h(t, θ) = sqrt(t^2 / (1 - t^2)) * θ
 
     while true
-        hv = h(ξ[end], -λ₁)
+        hv = h(t₀, -λ₁)
         fx₊ = iter.f(state.z + v)
         # model ratio
         adaptive_param.ρ = state.ρ = (fx₊ - state.fz) / (vg + vHv / 2 + hv / 6 * vn^3)
+        # adaptive_param.ρ = state.ρ = -(fx₊ - state.fz) / vn^3
         bool_acc = (fx₊ < state.fz) && (adaptive_param.ρ >= adaptive_param.η₁)
         bool_adj = false
         if (kᵥ == 1) && EXTRA_VERBOSE
@@ -78,7 +81,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
         end
         if EXTRA_VERBOSE
             @printf("       |--- t:%+.0e, Δf:%+.0e, m:%+.0e, ρ:%+.0e\n",
-                ξ[end], fx₊ - state.fz, vg + vHv / 2 + hv / 6 * vn^3, state.ρ
+                t₀, fx₊ - state.fz, vg + vHv / 2 + hv / 6 * vn^3, state.ρ
             )
             @printf("       |--- δ:%+.0e, θ:%.0e, |d|:%.0e, h:%.0e (σ:%+.0e)\n",
                 state.δ, -λ₁, vn,
@@ -101,12 +104,14 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
             adaptive_param.uₖ = adaptive_param.σ * 2
 
         elseif adaptive_param.ρ >= adaptive_param.η₂
-            # adaptive_param.σ = min(adaptive_param.σ, hv) / adaptive_param.γ₁
-            adaptive_param.σ = adaptive_param.σ / adaptive_param.γ₁
-            bool_adj = true
-            adaptive_param.l = state.δ
-            adaptive_param.u = state.δ + 1e8
-            adaptive_param.lₖ = 0
+            adaptive_param.σ = max(adaptive_param.σ, 1e1) / adaptive_param.γ₁
+            # adaptive_param.σ = adaptive_param.σ / adaptive_param.γ₁
+            adaptive_param.l = state.δ - 1e2
+            adaptive_param.u = state.δ + 1e2
+            if abs(adaptive_param.u - adaptive_param.l) > 1e1
+                bool_adj = true
+            end
+            adaptive_param.lₖ = 0 # max(adaptive_param.σ - 1e4, -1e1)
             adaptive_param.uₖ = adaptive_param.σ
         else
             # remain unchanged
@@ -115,44 +120,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
 
         if bool_adj
             # search for proper δ
-            l = adaptive_param.l
-            u = adaptive_param.u
-            if EXTRA_VERBOSE
-                @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
-                    l, u, adaptive_param.lₖ, adaptive_param.uₖ
-                )
-            end
-            ls = 0
-            while true
-                δ = (l + u) / 2
-                B[end, end] = δ
-                _, λ₁, ξ, __unused__ = homogeneous_eigenvalue(B, iter, state)
-                hv = h(ξ[end], -λ₁)
-                k₂ += 1
-                ls += 1
-                if hv > adaptive_param.uₖ
-                    # too small, increase 
-                    l = δ
-                elseif hv < adaptive_param.lₖ
-                    u = δ
-                else
-                    if EXTRA_VERBOSE
-                        @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                            δ, ls, hv
-                        )
-                    end
-                    state.δ = δ
-                    break
-                end
-                if abs(l - u) < 1e-2
-                    if EXTRA_VERBOSE
-                        @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                            δ, ls, hv
-                        )
-                    end
-                    throw(error("The Line-search on δ failed"))
-                end
-            end
+            k₂ += linesearch(h, adaptive_param, B, iter, state)
         end
 
         if bool_acc
@@ -160,9 +128,9 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
         end
         B[end, end] = state.δ
         if EXTRA_VERBOSE
-            @printf("       |--- B:%s", B[end-1:end, end-1:end])
+            @printf("       |--- B:%s\n", B[end-1:end, end-1:end])
         end
-        _, λ₁, ξ, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
+        _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
         k₂ += 1
         kᵥ += 1
     end
@@ -170,27 +138,77 @@ end
 
 function homogeneous_eigenvalue(B, iter, state)
     n = length(state.x)
-    if iter.direction == :cold
-        vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
-    else
-        vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
-    end
+    vals, vecs, info = eigenvalue(B, iter, state)
     λ₁ = vals[1]
     ξ = vecs[1]
 
     v = reshape(ξ[1:end-1], n)
     t₀ = ξ[end]
-    vg = (v'*state.∇f)[]
-    bool_reverse_v = vg > 0
+    t₀ = (t₀ > 0 ? max(t₀, 1e-4) : min(t₀, -1e-4))
+
     # scale v if t₀ is big enough
     # reverse this v if g'v > 0
-    v = v / max(abs(t₀), 1e-4)
+    v = v / t₀
+    vg = (v'*state.∇f)[]
+    bool_reverse_v = vg > 0
     v = (-1)^bool_reverse_v * v
     vg = (-1)^bool_reverse_v * vg
     vn = norm(v)
     vHv = v' * B[1:end-1, 1:end-1] * v
 
-    return info.numops, λ₁, ξ, v, vn, vg, vHv
+    return info.numops, λ₁, ξ, t₀, v, vn, vg, vHv
 end
 
 
+function eigenvalue(B, iter, state)
+    if iter.direction == :cold
+        vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
+    else
+        vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
+    end
+    return vals, vecs, info
+end
+
+function linesearch(h, adaptive_param, B, iter, state)
+    l = adaptive_param.l
+    u = adaptive_param.u
+    if EXTRA_VERBOSE
+        @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
+            l, u, adaptive_param.lₖ, adaptive_param.uₖ
+        )
+    end
+    ls = 0
+    k₂ = 0
+    while true
+        δ = (l + u) / 2
+        B[end, end] = δ
+        _, λ₁, ξ, t₀, __unused__ = homogeneous_eigenvalue(B, iter, state)
+        hv = h(t₀, -λ₁)
+        k₂ += 1
+        ls += 1
+        if hv > adaptive_param.uₖ
+            # too small, increase 
+            l = δ
+        elseif hv < adaptive_param.lₖ
+            u = δ
+        else
+            if EXTRA_VERBOSE
+                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
+                    δ, ls, hv
+                )
+            end
+            state.δ = δ
+            break
+        end
+        if abs(l - u) < 1e-2
+            if EXTRA_VERBOSE
+                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
+                    δ, ls, hv
+                )
+            end
+            throw(error("The Line-search on δ failed"))
+            break
+        end
+    end
+    return k₂
+end

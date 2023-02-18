@@ -45,33 +45,46 @@ using Test
 using LIBSVMFileIO
 
 
-name = "splice"
+name = "a1a"
 # Load data
 X, y = libsvmread("test/instances/$name.libsvm"; dense=true)
 y = max.(y, 0)
 # loss
-λ = 1e-5
-x0 = zeros(X[1] |> size)
+λ = 1e-2
+x0 = 4 * ones(X[1] |> size)
 function loss(w)
     loss_single(x, y) = (1 / (1 + exp(-w' * x)) - y)^2
     _pure = loss_single.(X, y) |> sum
     return _pure / 2 + λ / 2 * w' * w
 end
+
+
+function _gx(w, x)
+    ff = exp(-w' * x)
+    qq = 1 / (1 + exp(-w' * x))
+    return (qq)^2 * (ff) * x
+end
+
 function g(w)
     function _g(x, y)
-        ff = exp(-y * w' * x)
-        return -ff / (1 + ff) * y * x
+        # ff = exp(-w' * x)
+        qq = 1 / (1 + exp(-w' * x))
+        return (qq - y) * _gx(w, x)
     end
     _pure = _g.(X, y) |> sum
-    return _pure
+    return _pure + λ * w
 end
 function H(w)
+    n = length(w)
     function _H(x, y)
-        ff = exp(-y * w' * x)
-        return ff / (1 + ff)^2 * y^2 * x * x'
+        ff = exp(-w' * x)
+        qq = 1 / (1 + exp(-w' * x))
+
+        Hh = (3 * (qq)^2 - 2 * y * qq) * _gx(w, x) * ff * x' + (qq - y) * qq^2 * (ff * I(n) - ff * x * x')
+        return Hh
     end
     _pure = _H.(X, y) |> sum
-    return _pure
+    return _pure + λ * I(n)
 end
 #######
 iter_scale = 0
@@ -88,41 +101,49 @@ options = Optim.Options(
 
 
 # res1 = Optim.optimize(
-#     loss, x0, GradientDescent(;
+#     loss, g, x0, GradientDescent(;
 #         alphaguess=LineSearches.InitialHagerZhang(),
-#         linesearch=LineSearches.StrongWolfe()
+#         linesearch=LineSearches.HagerZhang()
 #     ), options;
-#     autodiff=:forward)
-# res2 = Optim.optimize(
-#     loss, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()
-#     ), options;
-#     autodiff=:forward)
-# res3 = Optim.optimize(
-#     loss, x0, NewtonTrustRegion(), options;
-#     autodiff=:forward
+#     inplace=false
 # )
-# r = HSODM()(;
-#     x0=copy(x0), f=loss, g=g, H=H,
-#     maxiter=10000, tol=1e-6, freq=1,
-#     maxtime=10000,
-#     direction=:warm, linesearch=:hagerzhang
-#     # adaptive=:ar
-# )
+res2 = Optim.optimize(
+    loss, g, x0, LBFGS(;
+        alphaguess=LineSearches.InitialHagerZhang(),
+        linesearch=LineSearches.HagerZhang()
+    ), options;
+    inplace=false
+)
+res3 = Optim.optimize(
+    loss, g, H, x0,
+    NewtonTrustRegion(;
+    # alphaguess=LineSearches.InitialStatic(),
+    # linesearch=LineSearches.HagerZhang()
+    ), options;
+    inplace=false
+)
 r = HSODM()(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
+    maxtime=10000,
+    direction=:warm, linesearch=:hagerzhang
+    # adaptive=:ar
+)
+ra = HSODM(; name=:HSODMArC)(;
+    x0=copy(x0), f=loss, g=g, H=H,
+    maxiter=10000, tol=1e-7, freq=1,
     maxtime=10000,
     direction=:warm, linesearch=:none,
     adaptive=:ar
 )
 
 results = [
-    optim_to_result(res1, "GD+Wolfe"),
-    optim_to_result(res2, "LBFGS+Wolfe"),
+    # optim_to_result(res1, "GD+Wolfe"),
+    optim_to_result(res2, "LBFGS+HZ"),
     optim_to_result(res3, "Newton-TR*(Analytic)"),
     r,
-    rpc,
+    ra
+    # rpc,
     # rpk, rpg,
     # rlr,
     # rl,
@@ -140,7 +161,7 @@ for metric in (:ϵ, :fx)
     @printf("plotting results\n")
 
     pgfplotsx()
-    title = L"\min _{w \in {R}^{d}} \frac{1}{2} \sum_{i=1}^{n}\left(\frac{1}{1+e^{-w^{\top} x_{i}}}-y_{i}\right)^{2}+\frac{\alpha}{2}\|w\|^{2}"
+    title = L"\min _{w \in {R}^{d}} \frac{1}{2} \sum_{i=1}^{n}\left(\frac{1}{1+e^{-w^T x_{i}}}-y_{i}\right)^{2}+\frac{\lambda}{2}\|w\|^{2}"
     fig = plot(
         1:(method_objval_ragged|>size|>first),
         method_objval_ragged,

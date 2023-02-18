@@ -182,7 +182,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     verbose && show(iter)
     for (k, state) in enumerate(iter)
         push!(arr, copy(state))
-        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state)
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
             verbose && alg.display(k, state)
             verbose && summarize(k, iter, state)
             return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
