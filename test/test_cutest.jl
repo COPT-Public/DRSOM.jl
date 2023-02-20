@@ -47,15 +47,20 @@ using DRSOM
 # nlp = CUTEstModel("SCURLY10", "-param", "N=10")
 # nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
+# nlp = CUTEstModel("BRYBND", "-param", "N=100")
+# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+# nlp = CUTEstModel("CURLY20", "-param", "N=100")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+nlp = CUTEstModel("COSINE", "-param", "N=100")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
 # nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
 #######################################################
 
 bool_plotting = true
-name, param = ARGS[1:2]
+# name, param = ARGS[1:2]
+# name, param = ["CHAINWOO" "NS=49"]
+# nlp = CUTEstModel(name, "-param", param)
 
 function get_needed_entry(r)
     return @sprintf("%d,%.1e,%.3f", r.k, r.state.ϵ, r.state.t)
@@ -66,7 +71,6 @@ function get_needed_entry_optim(r)
 end
 
 
-nlp = CUTEstModel(name, "-param", param)
 
 name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
 x0 = nlp.meta.x0
@@ -85,11 +89,11 @@ options = Optim.Options(
     time_limit=500
 )
 
-res1 = Optim.optimize(loss, g, x0,
-    GradientDescent(;
-        alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()
-    ), options; inplace=false)
+# res1 = Optim.optimize(loss, g, x0,
+#     GradientDescent(;
+#         alphaguess=LineSearches.InitialHagerZhang(),
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options; inplace=false)
 res2 = Optim.optimize(loss, g, H, x0,
     LBFGS(;
         linesearch=LineSearches.StrongWolfe()
@@ -98,38 +102,41 @@ res3 = Optim.optimize(loss, g, H, x0,
     NewtonTrustRegion(
     ), options; inplace=false)
 
-res4 = Optim.optimize(loss, g, H, x0,
-    ConjugateGradient(;
-        alphaguess=LineSearches.InitialStatic(),
-        linesearch=LineSearches.HagerZhang()
-    ), options; inplace=false)
+# res4 = Optim.optimize(loss, g, H, x0,
+#     ConjugateGradient(;
+#         alphaguess=LineSearches.InitialStatic(),
+#         linesearch=LineSearches.HagerZhang()
+#     ), options; inplace=false)
 
+# # arc = wrapper_arc(nlp)
 
+# r = DRSOM2()(;
+#     x0=copy(x0), f=loss, g=g,
+#     maxiter=10000, tol=1e-6, freq=1
+# )
 
-r = DRSOM2()(;
-    x0=copy(x0), f=loss, g=g,
-    maxiter=10000, tol=1e-6, freq=1
-)
-
-rh = HSODM()(;
+rh = HSODM(; name=:HSODMLS)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm
 )
-rha = HSODM(name=:HSODM_adaptive)(;
+rha = HSODM(; name=:HSODMArC)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, adaptive=:angle,
+    direction=:warm, adaptive=:arc,
     maxtime=10000
 )
 
+finalize(nlp)
+
 # rarc = wrapper_arc(nlp)
 results = [
-    optim_to_result(res1, "GD+Wolfe"),
+    # optim_to_result(res1, "GD+Wolfe"),
     optim_to_result(res2, "LBFGS+Wolfe"),
     optim_to_result(res3, "Newton-TR"),
-    optim_to_result(res4, "CG"),
-    r,
+    # optim_to_result(res4, "CG"),
+    # arc,
+    # r,
     rh,
     rha,
 ]
@@ -167,4 +174,4 @@ if bool_plotting
     end
 
 end
-finalize(nlp)
+

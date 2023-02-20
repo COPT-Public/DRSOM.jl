@@ -1,7 +1,7 @@
 # beta: adaptive hsodm subproblem
 
 # Base.@kwdef mutable struct AdaptiveHomogeneousSubproblem
-const EXTRA_VERBOSE::Bool = parse(Bool, get(ENV, "HSODM_EXTRA_VERBOSE", "0"))
+
 adaptive_rule_angle(vg, gnorm, vn) = (vg |> abs) < (min(gnorm, 1) * vn / 5)
 
 function adaptive(vg::Float64, gnorm::Float64, vn::Float64, mode; kwds...)
@@ -46,13 +46,16 @@ Base.@kwdef mutable struct AR
     ρ::Float64 = 0.0
     γ₁::Float64 = 1.1
     γ₂::Float64 = 1.3
-    γ₃::Float64 = 2 # interval for σ
+    γ₃::Float64 = 2
+    # interval for σ
+    lₛ::Float64 = 1
+    uₛ::Float64 = 1e5
 end
 
 
 
 # arc style
-function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
+function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; EXTRA_VERBOSE::Bool=false)
     kᵥ = 1
     k₂ = 1
 
@@ -64,9 +67,8 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
         state.ξ = ξ
         return kᵥ, k₂, v, vn, vg, vHv
     end
-    # h(t, θ) = sqrt(t^2 / (1 - t^2)) * max(θ, 0)
 
-    h(t, θ) = sqrt(t^2 / (1 - t^2)) * θ
+    h(t, θ) = sqrt(t^2 / (1 - t^2)) * max(θ, 0)
 
     while true
         hv = h(t₀, -λ₁)
@@ -96,18 +98,23 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
             # you should increase regularization, 
             # by decrease delta
             # adaptive_param.σ = max(adaptive_param.σ, hv) * adaptive_param.γ₂
-            adaptive_param.σ = adaptive_param.σ * adaptive_param.γ₂
+            if hv < adaptive_param.lₛ
+                adaptive_param.σ = max(adaptive_param.σ, adaptive_param.lₛ) * adaptive_param.γ₂
+            else
+                adaptive_param.σ = max(adaptive_param.σ, hv) * adaptive_param.γ₂
+            end
             bool_adj = true
             adaptive_param.l = state.δ - 1e4
             adaptive_param.u = state.δ
-            adaptive_param.lₖ = adaptive_param.σ
+            adaptive_param.lₖ = max(adaptive_param.σ, hv)
             adaptive_param.uₖ = adaptive_param.σ * 2
 
         elseif adaptive_param.ρ >= adaptive_param.η₂
-            adaptive_param.σ = max(adaptive_param.σ, 1e1) / adaptive_param.γ₁
+            adaptive_param.σ = max(adaptive_param.σ, 1e1, hv) / adaptive_param.γ₁
             # adaptive_param.σ = adaptive_param.σ / adaptive_param.γ₁
-            adaptive_param.l = state.δ - 1e2
-            adaptive_param.u = state.δ + 1e2
+            adaptive_param.l = state.δ - 1e4
+            adaptive_param.u = state.δ + 1e4
+            println(adaptive_param.l, adaptive_param.u)
             if abs(adaptive_param.u - adaptive_param.l) > 1e1
                 bool_adj = true
             end
@@ -120,10 +127,10 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR)
 
         if bool_adj
             # search for proper δ
-            k₂ += linesearch(h, adaptive_param, B, iter, state)
+            k₂ += linesearch(h, adaptive_param, B, iter, state; EXTRA_VERBOSE=EXTRA_VERBOSE)
         end
 
-        if bool_acc
+        if bool_acc || kᵥ >= 20
             return kᵥ, k₂, v, vn, vg, vHv
         end
         B[end, end] = state.δ
@@ -143,8 +150,8 @@ function homogeneous_eigenvalue(B, iter, state)
     ξ = vecs[1]
 
     v = reshape(ξ[1:end-1], n)
-    t₀ = ξ[end]
-    t₀ = (t₀ > 0 ? max(t₀, 1e-4) : min(t₀, -1e-4))
+    t₀ = abs(ξ[end])
+    t₀ = min(max(t₀, 1e-4), 1 - 1e-4)
 
     # scale v if t₀ is big enough
     # reverse this v if g'v > 0
@@ -169,7 +176,7 @@ function eigenvalue(B, iter, state)
     return vals, vecs, info
 end
 
-function linesearch(h, adaptive_param, B, iter, state)
+function linesearch(h, adaptive_param, B, iter, state; EXTRA_VERBOSE::Bool=false)
     l = adaptive_param.l
     u = adaptive_param.u
     if EXTRA_VERBOSE
@@ -183,6 +190,7 @@ function linesearch(h, adaptive_param, B, iter, state)
         δ = (l + u) / 2
         B[end, end] = δ
         _, λ₁, ξ, t₀, __unused__ = homogeneous_eigenvalue(B, iter, state)
+
         hv = h(t₀, -λ₁)
         k₂ += 1
         ls += 1
@@ -206,7 +214,7 @@ function linesearch(h, adaptive_param, B, iter, state)
                     δ, ls, hv
                 )
             end
-            throw(error("The Line-search on δ failed"))
+            @warn("The Line-search on δ failed")
             break
         end
     end

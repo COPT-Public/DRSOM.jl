@@ -165,7 +165,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     maxtime=1e2,
     tol=1e-6,
     freq=10,
-    verbose=true,
+    verbose=1,
     direction=:cold,
     linesearch=:hagerzhang,
     adaptive=:none,
@@ -178,16 +178,16 @@ function (alg::IterativeAlgorithm{T,S})(;
     for cf ∈ [:f :g :H]
         apply_counter(cf, kwds)
     end
-    iter = T(; linesearch=linesearch, adaptive=adaptive, direction=direction, kwds...)
-    verbose && show(iter)
+    iter = T(; linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    (verbose >= 1) && show(iter)
     for (k, state) in enumerate(iter)
         push!(arr, copy(state))
         if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
-            verbose && alg.display(k, state)
-            verbose && summarize(k, iter, state)
+            (verbose >= 1) && alg.display(k, state)
+            (verbose >= 1) && summarize(k, iter, state)
             return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
         end
-        verbose && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
+        (verbose >= 1) && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
     end
 end
 
@@ -214,6 +214,7 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODM
     @printf io " (function)      f       := %d  \n" s.kf
     @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
     @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (sub-problem)   P       := %d  \n" s.k₂
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

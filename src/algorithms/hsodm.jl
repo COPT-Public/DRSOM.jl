@@ -18,11 +18,13 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
+    adaptive_param = AR() # todo
     eigtol::Float64 = 1e-10
     itermax::Int64 = 20
     direction = :cold
     linesearch = :hagerzhang
     adaptive = :none
+    verbose::Int64 = 1
     LOG_SLOTS::String = HSODM_LOG_SLOTS
     ALIAS::String = "HSODM"
     DESC::String = "Homogeneous Second-order Descent Method"
@@ -138,7 +140,6 @@ end
 
 
 
-const adaptive_param = AR() # todo
 function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx}
     try
         state.z = z = state.x
@@ -151,7 +152,9 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         # construct homogeneous system
         B = Symmetric([H state.∇f; state.∇f' state.δ])
 
-        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param)
+        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+            B, iter, state, iter.adaptive_param; EXTRA_VERBOSE=iter.verbose > 1
+        )
 
 
         # if !bool_acc

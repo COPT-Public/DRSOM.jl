@@ -132,9 +132,8 @@ r = HSODM()(;
 ra = HSODM(; name=:HSODMArC)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-7, freq=1,
-    maxtime=10000,
-    direction=:warm, linesearch=:none,
-    adaptive=:ar
+    maxtime=10000, direction=:warm, linesearch=:none,
+    adaptive=:arc, verbose=2
 )
 
 results = [

@@ -154,6 +154,15 @@ wrapper_hsodm(x, loss, g, H) =
         direction=:warm,
         options_drsom...
     )
+alg_hsodm_arc = HSODM(; name=:HSODMArC)
+wrapper_hsodm_arc(x, loss, g, H) =
+    alg_hsodm_arc(;
+        x0=copy(x), f=loss, g=g, H=H,
+        linesearch=:none,
+        direction=:warm,
+        adaptive=:arc,
+        options_drsom...
+    )
 # wrapper_drsom_homo(x, loss, g, H) =
 #     drsom_helper_plus.run_drsomd(
 #         copy(x), loss, g, H;
@@ -184,6 +193,7 @@ OPTIMIZERS = Dict(
     :DRSOM => wrapper_drsom,
     # :DRSOMHomo => wrapper_drsom_homo,
     :HSODM => wrapper_hsodm,
+    :HSODMArC => wrapper_hsodm_arc,
     :CG => wrapper_cg
 )
 

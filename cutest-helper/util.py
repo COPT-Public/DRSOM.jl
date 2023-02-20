@@ -81,6 +81,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
         "NewtonTR": r"\newtontr",
         "HSODM": r"\hsodm",
         "DRSOMHomo": r"\drsomh",
+        "HSODMArC": r"\hsodmarc",
         "LBFGS": r"\lbfgs",
         "CG": r"\cg",
         "ARC": r"\arc",
@@ -108,6 +109,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
 \usepackage{booktabs,caption}
 
 \newcommand{\hsodm}{\textrm{HSODM}}
+\newcommand{\hsodmarc}{\textrm{HSODMArC}}
 \newcommand{\drsom}{\textrm{DRSOM}}
 \newcommand{\drsomh}{\textrm{DRSOM-H}}
 \newcommand{\lbfgs}{\textrm{LBFGS}}
