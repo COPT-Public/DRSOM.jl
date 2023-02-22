@@ -21,7 +21,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     adaptive_param = AR() # todo
     eigtol::Float64 = 1e-10
     itermax::Int64 = 20
-    direction = :cold
+    direction = :warm
     linesearch = :hagerzhang
     adaptive = :none
     verbose::Int64 = 1
@@ -153,7 +153,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         B = Symmetric([H state.∇f; state.∇f' state.δ])
 
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
-            B, iter, state, iter.adaptive_param; EXTRA_VERBOSE=iter.verbose > 1
+            B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
         )
 
 

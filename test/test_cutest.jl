@@ -49,9 +49,10 @@ using DRSOM
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
-# nlp = CUTEstModel("CURLY20", "-param", "N=100")
+# nlp = CUTEstModel("CURLY10", "-param", "N=100")
+# nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
-nlp = CUTEstModel("COSINE", "-param", "N=100")
+# nlp = CUTEstModel("COSINE", "-param", "N=100")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
 # nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
@@ -94,13 +95,13 @@ options = Optim.Options(
 #         alphaguess=LineSearches.InitialHagerZhang(),
 #         linesearch=LineSearches.StrongWolfe()
 #     ), options; inplace=false)
-res2 = Optim.optimize(loss, g, H, x0,
-    LBFGS(;
-        linesearch=LineSearches.StrongWolfe()
-    ), options; inplace=false)
-res3 = Optim.optimize(loss, g, H, x0,
-    NewtonTrustRegion(
-    ), options; inplace=false)
+# res2 = Optim.optimize(loss, g, H, x0,
+#     LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options; inplace=false)
+# res3 = Optim.optimize(loss, g, H, x0,
+#     NewtonTrustRegion(
+#     ), options; inplace=false)
 
 # res4 = Optim.optimize(loss, g, H, x0,
 #     ConjugateGradient(;
@@ -115,11 +116,11 @@ res3 = Optim.optimize(loss, g, H, x0,
 #     maxiter=10000, tol=1e-6, freq=1
 # )
 
-rh = HSODM(; name=:HSODMLS)(;
-    x0=copy(x0), f=loss, g=g, H=H,
-    maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm
-)
+# rh = HSODM(; name=:HSODMLS)(;
+#     x0=copy(x0), f=loss, g=g, H=H,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     direction=:warm, linesearch=:hagerzhang
+# )
 rha = HSODM(; name=:HSODMArC)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
@@ -130,48 +131,48 @@ rha = HSODM(; name=:HSODMArC)(;
 finalize(nlp)
 
 # rarc = wrapper_arc(nlp)
-results = [
-    # optim_to_result(res1, "GD+Wolfe"),
-    optim_to_result(res2, "LBFGS+Wolfe"),
-    optim_to_result(res3, "Newton-TR"),
-    # optim_to_result(res4, "CG"),
-    # arc,
-    # r,
-    rh,
-    rha,
-]
+# results = [
+#     # optim_to_result(res1, "GD+Wolfe"),
+#     optim_to_result(res2, "LBFGS+Wolfe"),
+#     optim_to_result(res3, "Newton-TR"),
+#     # optim_to_result(res4, "CG"),
+#     # arc,
+#     # r,
+#     rh,
+#     rha,
+# ]
 
-if bool_plotting
+# if bool_plotting
 
-    for metric in (:fx, :ϵ)
-        method_objval_ragged = rstack([
-                getresultfield.(results, metric)...
-            ]; fill=NaN
-        )
-        method_names = getname.(results)
+#     for metric in (:fx, :ϵ)
+#         method_objval_ragged = rstack([
+#                 getresultfield.(results, metric)...
+#             ]; fill=NaN
+#         )
+#         method_names = getname.(results)
 
 
-        @printf("plotting results\n")
+#         @printf("plotting results\n")
 
-        pgfplotsx()
-        title = "CUTEst model name := $(name)"
-        fig = plot(
-            1:(method_objval_ragged|>size|>first),
-            method_objval_ragged,
-            label=permutedims(method_names),
-            xscale=:log2,
-            yscale=:log10,
-            xlabel="Iteration",
-            ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
-            title=title,
-            size=(1280, 720),
-            yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
-            xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-            dpi=1000,
-        )
+#         pgfplotsx()
+#         title = "CUTEst model name := $(name)"
+#         fig = plot(
+#             1:(method_objval_ragged|>size|>first),
+#             method_objval_ragged,
+#             label=permutedims(method_names),
+#             xscale=:log2,
+#             yscale=:log10,
+#             xlabel="Iteration",
+#             ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
+#             title=title,
+#             size=(1280, 720),
+#             yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+#             xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+#             dpi=1000,
+#         )
 
-        savefig(fig, @sprintf("/tmp/CUTEst-%s-%s.pdf", name, metric))
-    end
+#         savefig(fig, @sprintf("/tmp/CUTEst-%s-%s.pdf", name, metric))
+#     end
 
-end
+# end
 
