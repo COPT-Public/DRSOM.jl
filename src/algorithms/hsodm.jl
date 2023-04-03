@@ -28,6 +28,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     LOG_SLOTS::String = HSODM_LOG_SLOTS
     ALIAS::String = "HSODM"
     DESC::String = "Homogeneous Second-order Descent Method"
+    error::Union{Nothing,Exception} = nothing
 end
 
 
@@ -60,7 +61,8 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
     kH::Int = 0       #  hessian evaluations
-    k₂::Int = 0       #   oracle evaluations
+    kh::Int = 0       #      hvp evaluations
+    k₂::Int = 0       # 2 oracle evaluations
 end
 
 
@@ -97,7 +99,7 @@ function Base.iterate(iter::HSODMIteration)
         α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
-        α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
+        α, fx, kₜ, y = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
     elseif iter.linesearch == :none
         α = 1.0
         fx = iter.f(z + v * α)
@@ -141,79 +143,79 @@ end
 
 
 function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx}
-    try
-        state.z = z = state.x
-        state.fz = fz = state.fx
-        state.∇fz = state.∇f
 
-        state.∇f = iter.g(state.x)
-        H = iter.H(state.x)
+    state.z = z = state.x
+    state.fz = fz = state.fx
+    state.∇fz = state.∇f
 
-        # construct homogeneous system
-        B = Symmetric([H state.∇f; state.∇f' state.δ])
+    state.∇f = iter.g(state.x)
+    H = iter.H(state.x)
 
-        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
-            B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
-        )
+    # construct homogeneous system
+    B = Symmetric([H state.∇f; state.∇f' state.δ])
 
+    kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+        B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+    )
 
-        # if !bool_acc
-        #     # direct return
-        #     state.t = (Dates.now() - iter.t).value / 1e3
-        #     counting(iter, state)
-        #     return state, state
-        # end
-        if iter.linesearch == :trustregion
-            state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
-        elseif iter.linesearch == :hagerzhang
-            # use Hager-Zhang line-search algorithm
-            s = v
-            x = state.x
-            state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
-        elseif iter.linesearch == :none
-            state.α = 1.0
-            fx = iter.f(state.z + v * state.α)
-            kₜ = 1
-        else
-            throw(Error("unknown option of line-search $(iter.linesearch)"))
-        end
-        # summarize
-        state.Δ = state.α * vn
-        x = y = state.z + v * state.α
-        dq = -state.α^2 * vHv / 2 - state.α * vg
-        df = fz - fx
-        ro = df / dq
-        state.x = x
-        state.y = y
-        state.fx = fx
-        state.ρ = ro
-        state.dq = dq
-        state.df = df
-        state.d = x - z
-        state.kᵥ = kᵥ
-        state.k₂ += k₂
-        state.kₜ = kₜ
-        state.ϵ = norm(state.∇f)
+    # add line search over computed direction 
+    if iter.linesearch == :trustregion
+        state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
 
-        state.t = (Dates.now() - iter.t).value / 1e3
-        counting(iter, state)
-        state.status = true
-        return state, state
-    catch e
-        println(e)
+    elseif iter.linesearch == :hagerzhang
+        # use Hager-Zhang line-search algorithm
+        s = v
+        x = state.x
+        state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
+
+    elseif iter.linesearch == :none
+        state.α = 1.0
+        fx = iter.f(state.z + v * state.α)
+        kₜ = 1
+
+    else
         state.status = false
-        showerror(e)
+        iter.error = ErrorException(
+            "unknown option of line-search $(iter.linesearch)"
+        )
         return state, state
     end
+    # summarize
+    state.Δ = state.α * vn
+    x = y = state.z + v * state.α
+    dq = -state.α^2 * vHv / 2 - state.α * vg
+    df = fz - fx
+    ro = df / dq
+    state.x = x
+    state.y = y
+    state.fx = fx
+    state.ρ = ro
+    state.dq = dq
+    state.df = df
+    state.d = x - z
+    state.kᵥ = kᵥ
+    state.k₂ += k₂
+    state.kₜ = kₜ
+    state.ϵ = norm(state.∇f)
+
+    state.t = (Dates.now() - iter.t).value / 1e3
+    counting(iter, state)
+    state.status = true
+    return state, state
+
 end
 
 hsodm_stopping_criterion(tol, state::HSODMState) =
     (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol
 
 function counting(iter::T, state::S) where {T<:HSODMIteration,S<:HSODMState}
-    state.kf = getfield(iter.f, :counter)
-    state.kg = getfield(iter.g, :counter)
-    state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
+    try
+        state.kf = getfield(iter.f, :counter)
+        state.kg = getfield(iter.g, :counter)
+        state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
+        state.kh = 0 # todo, accept hvp iterative in the future
+    catch
+    end
 end
 
 

@@ -24,7 +24,7 @@ using Optim
 using ProximalAlgorithms
 using Random
 using Distributions
-using Plots
+# using Plots
 using Printf
 using LazyStack
 using KrylovKit
@@ -48,19 +48,18 @@ using DRSOM
 # nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
-# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
 # nlp = CUTEstModel("COSINE", "-param", "N=100")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
-# nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
+# nlp = CUTEstModel("INDEF", "-param", "ALPHA=0.5,N=50")
 #######################################################
 
 bool_plotting = true
 # name, param = ARGS[1:2]
-# name, param = ["CHAINWOO" "NS=49"]
 # nlp = CUTEstModel(name, "-param", param)
 
 function get_needed_entry(r)
@@ -78,6 +77,7 @@ x0 = nlp.meta.x0
 loss(x) = NLPModels.obj(nlp, x)
 g(x) = NLPModels.grad(nlp, x)
 H(x) = NLPModels.hess(nlp, x)
+hvp(x, v, Hv) = NLPModels.hprod!(nlp, x, v, Hv)
 
 
 # compare with GD and LBFGS, Trust region newton,
@@ -90,11 +90,11 @@ options = Optim.Options(
     time_limit=500
 )
 
-# res1 = Optim.optimize(loss, g, x0,
-#     GradientDescent(;
-#         alphaguess=LineSearches.InitialHagerZhang(),
-#         linesearch=LineSearches.StrongWolfe()
-#     ), options; inplace=false)
+res1 = Optim.optimize(loss, g, x0,
+    GradientDescent(;
+        alphaguess=LineSearches.InitialHagerZhang(),
+        linesearch=LineSearches.StrongWolfe()
+    ), options; inplace=false)
 # res2 = Optim.optimize(loss, g, H, x0,
 #     LBFGS(;
 #         linesearch=LineSearches.StrongWolfe()
@@ -111,10 +111,11 @@ options = Optim.Options(
 
 # # arc = wrapper_arc(nlp)
 
-# r = DRSOM2()(;
-#     x0=copy(x0), f=loss, g=g,
-#     maxiter=10000, tol=1e-6, freq=1
-# )
+r = DRSOM2()(;
+    x0=copy(x0), f=loss, g=g,
+    maxiter=10000, tol=1e-6, freq=1,
+    sog=:prov, hvp=hvp
+)
 
 # rh = HSODM(; name=:HSODMLS)(;
 #     x0=copy(x0), f=loss, g=g, H=H,
@@ -123,8 +124,10 @@ options = Optim.Options(
 # )
 rha = HSODM(; name=:HSODMArC)(;
     x0=copy(x0), f=loss, g=g, H=H,
-    maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, adaptive=:arc,
+    maxiter=10, tol=1e-6, freq=1,
+    direction=:warm,
+    linesearch=:hagerzhang,
+    # adaptive=:arc,
     maxtime=10000
 )
 

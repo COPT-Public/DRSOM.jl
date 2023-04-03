@@ -47,6 +47,34 @@ function TrustRegionSubproblem(
         ######################################
         alpha = -(_Q + λ .* _G) \ _c
         return alpha
+    elseif (mode == :free) && (length(_c) == 2)
+        ######################################
+        # the radius free mode
+        ######################################
+        # @special treatment for d = 2 (DRSOM 2D)
+        # when it is small, 
+        #   use more simple ways to calculate eigvalues.
+        a = _Q[1, 1]
+        b = _Q[1, 2]
+        d = _Q[2, 2]
+        t = a + d
+        s = a * d - b^2
+        lmin = t / 2 - (t^2 / 4 - s)^0.5
+        lmax = t / 2 + (t^2 / 4 - s)^0.5
+        # eigvalues = eigvals(_Q, _G)
+        # sort!(eigvalues)
+        # lmin, lmax = eigvalues
+        lb = max(1e-8, -lmin)
+        ub = max(lb, lmax) + Δl
+        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
+        _QG = _Q + state.λ .* _G
+        a = _QG[1, 1]
+        b = _QG[1, 2]
+        d = _QG[2, 2]
+        s = a * d - b^2
+        K = [d/s -b/s; -b/s a/s]
+        alpha = -K * _c
+        return alpha
     else
         eigvalues = eigvals(_Q, _G)
         sort!(eigvalues)
@@ -57,7 +85,8 @@ function TrustRegionSubproblem(
             ######################################
             # the strict radius mode
             ######################################
-            # strictly solve TR given a radius :Δ
+            # strictly solve TR given a radius :Δ 
+            #   via bisection
             ######################################
             λ = lb
             try
@@ -194,7 +223,13 @@ function HagerZhangLineSearch(
 
     dϕ_0 = dot(s, gx)
     lsa = HagerZhangEx()
-    α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
-    return α, fx, it
+    try
+        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        return α, fx, it
+    catch y
+        isa(y, LineSearchException) # && println() # todo
+        return 0.1, fx, 1
+    end
+
 end
 

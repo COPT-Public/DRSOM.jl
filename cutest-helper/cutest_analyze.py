@@ -5,27 +5,27 @@ import pandas as pd
 from util import *
 
 
-UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
+engine, trans = CUTEST_UTIL.establish_connection()
+# UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
+SELECT_METHOD = r"('\\arc', '\\hsodmarc', '\\drsomh', '\\hsodm')"
 # from csv
-# df = pd.read_csv("./cutest-2022111217.csv")
-# df = df.set_index(["name", "n", "method"])
+
 # from sql
 # query last
 sql_query_all = f"""
     WITH ranked_messages AS (
     SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-    FROM cutest.result AS m where method not in {UNSELECT_METHOD}
+    FROM cutest.result AS m where method in {SELECT_METHOD}
     )
     select *
     from ranked_messages
     where k is not null
-    and df <= 1e-5 # status = 1
+    status = 1
     and t <= 100
     and n <= 200
     and rn = 1
-    and method not in {UNSELECT_METHOD};
+    and method in {SELECT_METHOD};
     """
-engine, trans = CUTEST_UTIL.establish_connection()
 df = pd.read_sql(
     sql_query_all,
     con=engine,
@@ -93,15 +93,15 @@ from (select method,
              avg(kg)      as kfg,
              avg(kh)      as kfh
       from ranked_messages
-      where k is not null
-        and df <= 1e-5 # status = 1
+      where k <= 5000
+        and status = 1
         and t <= 100
         and n <= 200
       group by method, rn)
          as t
          left join (select method,
                            rn                        as version,
-                           exp(avg(ln(t + 5))) - 5   as tg,
+                           exp(avg(ln(t + 1))) - 1    as tg,
                            exp(avg(ln(k + 50))) - 50 as kg,
                            exp(avg(ln(kf + 50))) - 50 as kgf,
                            exp(avg(ln(kg + 50))) - 50 as kgg,
@@ -153,17 +153,73 @@ from (select method,
              avg(kg)      as kfg,
              avg(kh)      as kfh
       from ranked_messages
-      where k is not null
-        and df <= 1e-5 # status = 1
+      where k <= 5000
+        and status = 1
         and t <= 100
         and n <= 200
         and rn = 1
-        and method not in {UNSELECT_METHOD}
+        and method in {SELECT_METHOD}
       group by method, rn)
          as t
          left join (select method,
                            rn                        as version,
-                           exp(avg(ln(t + 5))) - 5   as tg,
+                           exp(avg(ln(t + 1))) - 1    as tg,
+                           exp(avg(ln(k + 50))) - 50 as kg,
+                           exp(avg(ln(kf + 50))) - 50 as kgf,
+                           exp(avg(ln(kg + 50))) - 50 as kgg,
+                           exp(avg(ln(kh + 50))) - 50 as kgh
+                    from ranked_messages
+                    where t <= 100
+                      and n <= 200
+                      and rn = 1
+                    group by method, rn) as tt
+                   on tt.method = t.method and tt.version = t.version;
+    """,
+    con=engine,
+).set_index("method")
+latex_geo_sum_str = df_geo_perf.rename(
+    columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
+).to_latex(
+    longtable=True,
+    escape=False,
+    caption=COMMENTS,
+    buf=os.path.join(fdir, "perf.geo.tex"),
+    float_format="%.2f",
+    sparsify=True,
+)
+
+# geometric mean only
+
+df_geo_perf = pd.read_sql(
+    f"""WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+                         FROM cutest.result AS m)
+select t.method,
+       t.nf,
+       tt.tg,
+       tt.kg,
+       tt.kgf,
+       tt.kgg,
+       tt.kgh
+from (select method,
+             rn          as version,
+             sum(status) as nf,
+             avg(t)      as tf,
+             avg(k)      as kf,
+             avg(kf)      as kff,
+             avg(kg)      as kfg,
+             avg(kh)      as kfh
+      from ranked_messages
+      where k <= 5000
+        and status = 1
+        and t <= 100
+        and n <= 200
+        and rn = 1
+        and method in {SELECT_METHOD}
+      group by method, rn)
+         as t
+         left join (select method,
+                           rn                        as version,
+                           exp(avg(ln(t + 1))) - 1   as tg,
                            exp(avg(ln(k + 50))) - 50 as kg,
                            exp(avg(ln(kf + 50))) - 50 as kgf,
                            exp(avg(ln(kg + 50))) - 50 as kgg,
@@ -190,6 +246,15 @@ latex_geo_sum_str = df_geo_perf.rename(
 
 
 print(
-    INFO_CUTEST_RESULT.QUICK_VIEW,
+    inFO_CUTEST_RESULT.QUICK_VIEW,
     file=open(os.path.join(fdir, f"{version_number}_view.tex"), "w"),
 )
+
+
+print("*" * 50)
+print(f"results dump to: \n {version_number}/{version_number}_view.tex")
+print(
+    f"compile using: \n latexmk -xelatex -cd  {version_number}/{version_number}_view.tex"
+)
+
+print("*" * 50)

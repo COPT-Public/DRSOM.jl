@@ -48,7 +48,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
         hv = log(h(t₀, -λ₁) + 1) - log(p + 1)
         return hv
     end
-    tracker = Roots.Tracks()
+
     # start iteration
     while true
         hv = h(t₀, -λ₁)
@@ -152,6 +152,7 @@ homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
 function eigenvalue(B, iter, state)
     if iter.direction == :cold
+        n = length(state.x)
         vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
     else
         vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)

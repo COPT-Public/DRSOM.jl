@@ -37,6 +37,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
     NAME_TABLE = "result"
     PRIMARY_KEY = "id"
     COLUMNS = [
+        "precision",
         "name",
         "param",
         "n",
@@ -122,6 +123,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
 
 \begin{landscape}
     \input{perf}
+    \input{perf.geo}
     \input{perf.history}
     \scriptsize
     \input{complete.kt}

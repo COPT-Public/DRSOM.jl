@@ -49,6 +49,7 @@ Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     LOG_SLOTS::String = DRSOM_LOG_SLOTS
     ALIAS::String = "DRSOM2"
     DESC::String = "DRSOM with gradient and momentum"
+    error::Union{Nothing,Exception} = nothing
 end
 
 Base.IteratorSize(::Type{<:DRSOMIteration}) = Base.IsInfinite()
@@ -117,6 +118,7 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     kh::Int = 0       # hvp      evaluations
     kH::Int = 0       # hessian  evaluations
     t::R = 0.0        # running time
+    status = true
 end
 
 function construct_quadratic_model(
@@ -133,6 +135,10 @@ function construct_quadratic_model(
         iter.hvp(z, gf, hvp, ∇hvp, gf)
     elseif iter.sog == :hess
         copy!(hvp, iter.H(z) * gf)
+    elseif iter.sog == :prov
+        # means the hvp is provided,
+        #   e.g. in the NLPModels
+        iter.hvp(z, gf, hvp)
     else
         # wild treatment in the direct mode 
         #   for the first iteration
@@ -165,6 +171,11 @@ function construct_quadratic_model(
             H = iter.H(state.x)
             Hg = H * state.∇f
             Hd = H * state.d
+        elseif iter.sog == :prov
+            # means the hvp is provided,
+            #   e.g. in the NLPModels
+            iter.hvp(state.x, state.∇f, Hg)
+            iter.hvp(state.x, state.d, Hd)
         end
         gₙ = state.ϵ = norm(state.∇f)
         dₙ = norm(state.d)
@@ -297,7 +308,6 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
         s = -state.∇f
 
         α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fz, state.x, s)
-
         # summary
         x = y = state.z - α .* state.∇f
         gₙ = norm(state.∇f)

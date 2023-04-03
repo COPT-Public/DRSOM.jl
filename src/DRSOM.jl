@@ -97,6 +97,12 @@ function (alg::IterativeAlgorithm{T,S})(;
         throw(ErrorException("""function g must be provided, you must specify g directly
          or a correct first-order oracle mode via keyword :fog"""))
     end
+    # 
+    if sog == :prov
+        hvp = get(kwds, :hvp, nothing)
+        hvp === nothing && throw(ErrorException("hvp function must be provided if you choose sog==:prov"))
+        kwds[:hvp] = hvp
+    end
 
     for cf ∈ [:f :g :H :ga :hvp]
         apply_counter(cf, kwds)
@@ -104,6 +110,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     iter = T(; fog=fog, sog=sog, kwds...)
     verbose && show(iter)
     for (k, state) in enumerate(iter)
+
         push!(arr, copy(state))
         if k >= maxiter || state.t >= maxtime || alg.stop(tol, state)
             verbose && alg.display(k, state)
@@ -132,6 +139,8 @@ function Base.show(io::IO, t::T) where {T<:DRSOMIteration}
         @printf io "use interpolation\n"
     elseif t.sog == :hess
         @printf io "use provided Hessian\n"
+    elseif t.sog == :prov
+        @printf io "use provided Hessian-vector product\n"
     else
         throw(ErrorException("unknown differentiation mode\n"))
     end
@@ -181,6 +190,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     iter = T(; linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
     (verbose >= 1) && show(iter)
     for (k, state) in enumerate(iter)
+
         push!(arr, copy(state))
         if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
             (verbose >= 1) && alg.display(k, state)
