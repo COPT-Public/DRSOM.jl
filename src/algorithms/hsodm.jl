@@ -99,7 +99,7 @@ function Base.iterate(iter::HSODMIteration)
         α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
-        α, fx, kₜ, y = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
+        α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
     elseif iter.linesearch == :none
         α = 1.0
         fx = iter.f(z + v * α)
