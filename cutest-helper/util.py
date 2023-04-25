@@ -86,6 +86,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
         "LBFGS": r"\lbfgs",
         "CG": r"\cg",
         "ARC": r"\arc",
+        "GD": r"\gd",
         "TRACE": r"\itrace",  # avoid conflicts with amsmath
     }
 
@@ -118,11 +119,13 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
 \newcommand{\cg}{\textrm{CG}}
 \newcommand{\arc}{\textrm{ARC}}
 \newcommand{\itrace}{\textrm{TRACE}}
+\newcommand{\gd}{\textrm{GD}}
 
 \begin{document}
 
 \begin{landscape}
     \input{perf}
+    \input{perf.alg}
     \input{perf.geo}
     \input{perf.history}
     \scriptsize

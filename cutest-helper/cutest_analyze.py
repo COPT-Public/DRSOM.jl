@@ -6,25 +6,52 @@ from util import *
 
 
 engine, trans = CUTEST_UTIL.establish_connection()
-# UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
-SELECT_METHOD = r"('\\arc', '\\hsodmarc', '\\drsomh', '\\hsodm')"
-# from csv
+UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
 
+FILTER = """
+    where k <= 5000000
+        and status = 1
+        and t <= 100
+        and n <= 200
+        and `precision` = 1e-5
+"""
+AGG_RESULT = f"""
+    (select method,
+             rn          as version,
+             sum(status) as nf,
+             avg(t)      as tf,
+             avg(k)      as kf,
+             avg(kf)     as kff,
+             avg(kg)     as kfg,
+             avg(kh)     as kfh
+      from ranked_messages
+      {FILTER}
+      group by method, rn)
+         as t
+         left join (select method,
+                           rn                         as version,
+                           exp(avg(ln(t + 1))) - 1   as tg,
+                           exp(avg(ln(k + 50))) - 50  as kg,
+                           exp(avg(ln(kf + 50))) - 50 as kgf,
+                           exp(avg(ln(kg + 50))) - 50 as kgg,
+                           exp(avg(ln(kh + 50))) - 50 as kgh
+                    from ranked_messages
+                    {FILTER}
+                    group by method, rn) as tt
+                   on tt.method = t.method and tt.version = t.version
+"""
 # from sql
 # query last
 sql_query_all = f"""
     WITH ranked_messages AS (
     SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-    FROM cutest.result AS m where method in {SELECT_METHOD}
+    FROM cutest.result AS m where method not in {UNSELECT_METHOD}
     )
     select *
     from ranked_messages
-    where k is not null
-    status = 1
-    and t <= 100
-    and n <= 200
+    {FILTER}
     and rn = 1
-    and method in {SELECT_METHOD};
+    and method not in {UNSELECT_METHOD};
     """
 df = pd.read_sql(
     sql_query_all,
@@ -69,7 +96,8 @@ COMMENTS = r"""Performance of different algorithms on the CUTEst dataset.
     If an instance is the failed, its iteration number and solving time are set to $20,000$. 
 """
 df_geo_perf = pd.read_sql(
-    """WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+    f"""
+WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
                          FROM cutest.result AS m)
 select t.method,
        t.nf,
@@ -84,33 +112,7 @@ select t.method,
        tt.kgg,
        tt.kgh,
        tt.version
-from (select method,
-             rn          as version,
-             sum(status) as nf,
-             avg(t)      as tf,
-             avg(k)      as kf,
-             avg(kf)      as kff,
-             avg(kg)      as kfg,
-             avg(kh)      as kfh
-      from ranked_messages
-      where k <= 5000
-        and status = 1
-        and t <= 100
-        and n <= 200
-      group by method, rn)
-         as t
-         left join (select method,
-                           rn                        as version,
-                           exp(avg(ln(t + 1))) - 1    as tg,
-                           exp(avg(ln(k + 50))) - 50 as kg,
-                           exp(avg(ln(kf + 50))) - 50 as kgf,
-                           exp(avg(ln(kg + 50))) - 50 as kgg,
-                           exp(avg(ln(kh + 50))) - 50 as kgh
-                    from ranked_messages
-                    where t <= 100
-                      and n <= 200
-                    group by method, rn) as tt
-                   on tt.method = t.method and tt.version = t.version;
+from {AGG_RESULT}
     """,
     con=engine,
 ).set_index(["method", "version"])
@@ -128,9 +130,71 @@ latex_geo_sum_str = df_geo_perf.rename(
     sparsify=True,
 )
 
+df_geo_perf = pd.read_sql(
+    f"""
+WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+                         FROM cutest.result AS m)
+select t.method,
+       tt.tg,
+       tt.kg,
+       tt.kgf,
+       tt.kgg,
+       tt.kgh,
+       tt.version
+from {AGG_RESULT}
+where tt.version=1;
+    """,
+    con=engine,
+).set_index(["method", "version"])
+
+latex_geo_sum_str = df_geo_perf.rename(
+    columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
+).to_latex(
+    longtable=True,
+    escape=False,
+    multirow=True,
+    caption=COMMENTS,
+    label="tab.perf.geocutest",
+    buf=os.path.join(fdir, "perf.geo.tex"),
+    float_format="%.2f",
+    sparsify=True,
+)
 
 df_geo_perf = pd.read_sql(
-    f"""WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+    f"""
+WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+                         FROM cutest.result AS m)
+select t.method,
+       t.nf,
+       t.tf,
+       t.kf,
+       t.kff,
+       t.kfg,
+       t.kfh,
+       tt.version
+from {AGG_RESULT}
+where tt.version=1;
+    """,
+    con=engine,
+).set_index(["method", "version"])
+
+latex_geo_sum_str = df_geo_perf.rename(
+    columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
+).to_latex(
+    longtable=True,
+    escape=False,
+    multirow=True,
+    caption=COMMENTS,
+    label="tab.perf.geocutest",
+    buf=os.path.join(fdir, "perf.alg.tex"),
+    float_format="%.2f",
+    sparsify=True,
+)
+
+
+df_geo_perf = pd.read_sql(
+    f"""
+WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
                          FROM cutest.result AS m)
 select t.method,
        t.nf,
@@ -143,93 +207,10 @@ select t.method,
        tt.kg,
        tt.kgf,
        tt.kgg,
-       tt.kgh
-from (select method,
-             rn          as version,
-             sum(status) as nf,
-             avg(t)      as tf,
-             avg(k)      as kf,
-             avg(kf)      as kff,
-             avg(kg)      as kfg,
-             avg(kh)      as kfh
-      from ranked_messages
-      where k <= 5000
-        and status = 1
-        and t <= 100
-        and n <= 200
-        and rn = 1
-        and method in {SELECT_METHOD}
-      group by method, rn)
-         as t
-         left join (select method,
-                           rn                        as version,
-                           exp(avg(ln(t + 1))) - 1    as tg,
-                           exp(avg(ln(k + 50))) - 50 as kg,
-                           exp(avg(ln(kf + 50))) - 50 as kgf,
-                           exp(avg(ln(kg + 50))) - 50 as kgg,
-                           exp(avg(ln(kh + 50))) - 50 as kgh
-                    from ranked_messages
-                    where t <= 100
-                      and n <= 200
-                      and rn = 1
-                    group by method, rn) as tt
-                   on tt.method = t.method and tt.version = t.version;
-    """,
-    con=engine,
-).set_index("method")
-latex_geo_sum_str = df_geo_perf.rename(
-    columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
-).to_latex(
-    longtable=True,
-    escape=False,
-    caption=COMMENTS,
-    buf=os.path.join(fdir, "perf.geo.tex"),
-    float_format="%.2f",
-    sparsify=True,
-)
-
-# geometric mean only
-
-df_geo_perf = pd.read_sql(
-    f"""WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-                         FROM cutest.result AS m)
-select t.method,
-       t.nf,
-       tt.tg,
-       tt.kg,
-       tt.kgf,
-       tt.kgg,
-       tt.kgh
-from (select method,
-             rn          as version,
-             sum(status) as nf,
-             avg(t)      as tf,
-             avg(k)      as kf,
-             avg(kf)      as kff,
-             avg(kg)      as kfg,
-             avg(kh)      as kfh
-      from ranked_messages
-      where k <= 5000
-        and status = 1
-        and t <= 100
-        and n <= 200
-        and rn = 1
-        and method in {SELECT_METHOD}
-      group by method, rn)
-         as t
-         left join (select method,
-                           rn                        as version,
-                           exp(avg(ln(t + 1))) - 1   as tg,
-                           exp(avg(ln(k + 50))) - 50 as kg,
-                           exp(avg(ln(kf + 50))) - 50 as kgf,
-                           exp(avg(ln(kg + 50))) - 50 as kgg,
-                           exp(avg(ln(kh + 50))) - 50 as kgh
-                    from ranked_messages
-                    where t <= 100
-                      and n <= 200
-                      and rn = 1
-                    group by method, rn) as tt
-                   on tt.method = t.method and tt.version = t.version;
+       tt.kgh,
+       tt.version
+from {AGG_RESULT}
+where tt.version=1;
     """,
     con=engine,
 ).set_index("method")
@@ -246,7 +227,7 @@ latex_geo_sum_str = df_geo_perf.rename(
 
 
 print(
-    inFO_CUTEST_RESULT.QUICK_VIEW,
+    INFO_CUTEST_RESULT.QUICK_VIEW,
     file=open(os.path.join(fdir, f"{version_number}_view.tex"), "w"),
 )
 
