@@ -233,3 +233,37 @@ function HagerZhangLineSearch(
 
 end
 
+function HagerZhangLineSearch(
+    f, g,
+    gx, fx,
+    x::Tx,
+    s::Tx,
+) where {Tx}
+
+    ϕ(α) = f(x .+ α .* s)
+    function dϕ(α)
+
+        gv = g(x + α .* s)
+
+        return dot(gv, s)
+    end
+    function ϕdϕ(α)
+        phi = f(x .+ α .* s)
+        gv = g(x + α .* s)
+        dphi = dot(gv, s)
+        return (phi, dphi)
+    end
+
+
+    dϕ_0 = dot(s, gx)
+    lsa = HagerZhangEx()
+    try
+        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        return α, fx, it
+    catch y
+        isa(y, LineSearchException) # && println() # todo
+        return 0.1, fx, 1
+    end
+
+end
+

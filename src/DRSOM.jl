@@ -21,6 +21,7 @@ include("utilities/adaptive.jl")
 include("algorithms/legacy/drsom_legacy.jl")
 include("algorithms/drsom.jl")
 include("algorithms/hsodm.jl")
+include("algorithms/pathfollowing.jl")
 
 # supplement copy
 Base.copy(x::T) where {T} = T([deepcopy(getfield(x, k)) for k ∈ fieldnames(T)]...)
@@ -56,7 +57,9 @@ function apply_counter(cf, kwds)
     end
 end
 
-#####################
+####################################################################################################
+# DRSOM
+####################################################################################################
 function (alg::IterativeAlgorithm{T,S})(;
     maxiter=10000,
     maxtime=1e2,
@@ -168,7 +171,9 @@ end
 summarize(k::Int, t::T, s::S) where {T<:DRSOMIteration,S<:DRSOMState} =
     summarize(stdout, k, t, s)
 
-
+####################################################################################################
+# HSODM
+####################################################################################################
 function (alg::IterativeAlgorithm{T,S})(;
     maxiter=10000,
     maxtime=1e2,
@@ -234,11 +239,81 @@ summarize(k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODMState} =
     summarize(stdout, k, t, s)
 
 
+####################################################################################################
+# Path-Following HSODM
+####################################################################################################
+function (alg::IterativeAlgorithm{T,S})(;
+    maxiter=10000,
+    maxtime=1e2,
+    tol=1e-6,
+    freq=10,
+    verbose=1,
+    direction=:cold,
+    linesearch=:none,
+    adaptive=:none,
+    μ₀=0.1,
+    kwargs...
+) where {T<:PFHIteration,S<:PFHState}
+
+    arr = Vector{S}()
+    kwds = Dict(kwargs...)
+
+    for cf ∈ [:f :g :H]
+        apply_counter(cf, kwds)
+    end
+    iter = T(; μ₀=μ₀, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    (verbose >= 1) && show(iter)
+    for (k, state) in enumerate(iter)
+
+        push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
+            (verbose >= 1) && alg.display(k, state)
+            (verbose >= 1) && summarize(k, iter, state)
+            return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
+        end
+        (verbose >= 1) && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
+    end
+end
+
+
+function Base.show(io::IO, t::T) where {T<:PFHIteration}
+    format_header(t.LOG_SLOTS)
+    @printf io " algorithm alias       := %s\n" t.ALIAS
+    @printf io " algorithm description := %s\n" t.DESC
+    @printf io " inner iteration limit := %s\n" t.itermax
+    @printf io " line-search algorithm := %s\n" t.linesearch
+    @printf io "   adaptive μ strategy := %s\n" t.adaptive
+
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+function summarize(io::IO, k::Int, t::T, s::S) where {T<:PFHIteration,S<:PFHState}
+    println(io, "-"^length(t.LOG_SLOTS))
+    println(io, "summary:")
+    @printf io " (main)          f       := %.2e\n" s.fx
+    @printf io " (first-order)  |g|      := %.2e\n" s.ϵ
+    println(io, "oracle calls:")
+    @printf io " (main)          k       := %d  \n" k
+    @printf io " (function)      f       := %d  \n" s.kf
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
+    @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (running time)  t       := %.3f  \n" s.t
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+summarize(k::Int, t::T, s::S) where {T<:PFHIteration,S<:PFHState} =
+    summarize(stdout, k, t, s)
+
+
 
 # Algorithm Aliases
 DRSOM2 = DimensionReducedSecondOrderMethod
 HSODM = HomogeneousSecondOrderDescentMethod
+PFH = PathFollowingHSODM
 
 export Result
-export DRSOM2, HSODM
+export DRSOM2, HSODM, PFH
 end # module

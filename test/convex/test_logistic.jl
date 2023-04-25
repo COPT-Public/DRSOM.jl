@@ -41,13 +41,14 @@ using .LP
 using LIBSVMFileIO
 
 
-name = "sonar"
+name = "a1a"
 # Load data
-X, y = libsvmread("test/instances/$name.libsvm"; dense=true)
+X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=true)
 # y = max.(y, 0)
 # loss
 λ = 1e-5
-x0 = zeros(X[1] |> size)
+x0 = 10 * ones(X[1] |> size)
+# x0 = zeros(X[1] |> size)
 function loss(w)
     loss_single(x, y) = log(1 + exp(-y * w' * x))
     _pure = loss_single.(X, y) |> sum
@@ -90,9 +91,16 @@ options = Optim.Options(
 r_newton = Optim.optimize(
     loss, g, H, x0,
     Newton(; alphaguess=LineSearches.InitialStatic(),
-        linesearch=LineSearches.HagerZhang()), options;
+        linesearch=LineSearches.BackTracking()), options;
     inplace=false
 )
+
+# r_lbfgs = Optim.optimize(
+#     loss, g, H, x0,
+#     LBFGS(; alphaguess=LineSearches.InitialStatic(),
+#         linesearch=LineSearches.BackTracking()), options;
+#     inplace=false
+# )
 
 r = HSODM()(;
     x0=copy(x0), f=loss, g=g, H=H,
@@ -102,12 +110,11 @@ r = HSODM()(;
     adaptive=:none
 )
 
-r = HSODM()(;
+r = PFH()(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
     maxtime=10000,
-    direction=:warm, linesearch=:none,
-    adaptive=:ar
+    direction=:warm
 )
 
 

@@ -198,9 +198,14 @@ end
 
 
 
-
+function NewtonStep(H, μ, g, state; verbose::Bool=false)
+    d = -((H + μ * I) \ g)
+    return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
+end
 ###############################################################################
 # a vanilla bisection
+###############################################################################
+
 function bisection(h, adaptive_param, B, iter, state; verbose::Bool=false)
     throw(ErrorException("This is a vanilla version of bisection, use line-search instead"))
     l = adaptive_param.l
