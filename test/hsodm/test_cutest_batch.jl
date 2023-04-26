@@ -53,7 +53,7 @@ for (f, param_combination) in PROBLEMS
             # compute g(x₀)
             g₀ = g(x0) |> norm
             # if too large then stop at a relative measure
-            this_tol = g₀ > 1e10 ? tol_grad * g₀ : tol_grad
+            this_tol = g₀ > 1e15 ? tol_grad * g₀ : tol_grad
             for (k, v) in MY_OPTIMIZERS
 
                 # general options for my optimizers,
@@ -74,7 +74,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        min(r.state.ϵ, r.state.ϵ / g₀) < precision
+                        r.state.ϵ <= precision
                     ]
 
                 catch e
@@ -121,7 +121,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        min(r.state.ϵ, r.state.ϵ / g₀) < precision
+                        r.state.ϵ <= precision
                     ]
 
                 catch e
@@ -158,7 +158,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        min(r.state.ϵ, r.state.ϵ / g₀) < precision
+                        r.state.ϵ <= precision
                     ]
 
                 catch e

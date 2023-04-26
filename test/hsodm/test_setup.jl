@@ -6,7 +6,7 @@ log_freq = 200
 precision = tol_grad = 1e-5
 max_iter = 20000
 max_time = 200.0
-test_before_start = true
+test_before_start = false
 
 
 ##########################################
@@ -20,12 +20,14 @@ filter_cutest_problem(nlp) = true
 # filter_cutest_problem(nlp) = (200 < nlp.meta.nvar <= 5000)
 
 
-filter_optimization_method(k) = true
+# filter_optimization_method(k) = true
 # filter_optimization_method(k) = k == :CG
 # filter_optimization_method(k) = k ∉ [:GD, :DRSOMHomo, :CG, :HSODM, :ARC]
 # filter_optimization_method(k) = k == :CG
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOM, :CG]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :CG]
+# filter_optimization_method(k) = k ∈ [:LBFGS, :NewtonTR]
+filter_optimization_method(k) = k ∈ [:LBFGS]
 # filter_optimization_method(k) = k == :DRSOM
 # filter_optimization_method(k) = k == :LBFGS
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]

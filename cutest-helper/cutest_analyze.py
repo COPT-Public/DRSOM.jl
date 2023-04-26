@@ -6,11 +6,11 @@ from util import *
 
 
 engine, trans = CUTEST_UTIL.establish_connection()
-UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
+# UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
+UNSELECT_METHOD = r"('\\hsodm', '\\drsomh', '\\hsodmarc', '\\arc')"
 
 FILTER = """
     where k <= 5000000
-        and status = 1
         and t <= 100
         and n <= 200
         and `precision` = 1e-5
@@ -40,13 +40,14 @@ AGG_RESULT = f"""
                     group by method, rn) as tt
                    on tt.method = t.method and tt.version = t.version
 """
+RANKING = f"""WITH ranked_messages AS (
+    SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
+    FROM cutest.result AS m where method not in {UNSELECT_METHOD})
+"""
 # from sql
 # query last
 sql_query_all = f"""
-    WITH ranked_messages AS (
-    SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-    FROM cutest.result AS m where method not in {UNSELECT_METHOD}
-    )
+    {RANKING}
     select *
     from ranked_messages
     {FILTER}
@@ -97,8 +98,7 @@ COMMENTS = r"""Performance of different algorithms on the CUTEst dataset.
 """
 df_geo_perf = pd.read_sql(
     f"""
-WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-                         FROM cutest.result AS m)
+{RANKING}
 select t.method,
        t.nf,
        t.tf,
@@ -132,8 +132,7 @@ latex_geo_sum_str = df_geo_perf.rename(
 
 df_geo_perf = pd.read_sql(
     f"""
-WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-                         FROM cutest.result AS m)
+{RANKING}
 select t.method,
        tt.tg,
        tt.kg,
@@ -145,12 +144,12 @@ from {AGG_RESULT}
 where tt.version=1;
     """,
     con=engine,
-).set_index(["method", "version"])
+).set_index(["method"])
 
 latex_geo_sum_str = df_geo_perf.rename(
     columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
 ).to_latex(
-    longtable=True,
+    longtable=False,
     escape=False,
     multirow=True,
     caption=COMMENTS,
@@ -162,26 +161,24 @@ latex_geo_sum_str = df_geo_perf.rename(
 
 df_geo_perf = pd.read_sql(
     f"""
-WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-                         FROM cutest.result AS m)
+{RANKING}
 select t.method,
        t.nf,
        t.tf,
        t.kf,
        t.kff,
        t.kfg,
-       t.kfh,
-       tt.version
+       t.kfh
 from {AGG_RESULT}
 where tt.version=1;
     """,
     con=engine,
-).set_index(["method", "version"])
+).set_index(["method"])
 
 latex_geo_sum_str = df_geo_perf.rename(
     columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
 ).to_latex(
-    longtable=True,
+    longtable=False,
     escape=False,
     multirow=True,
     caption=COMMENTS,
@@ -194,8 +191,7 @@ latex_geo_sum_str = df_geo_perf.rename(
 
 df_geo_perf = pd.read_sql(
     f"""
-WITH ranked_messages AS (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY name,param,method ORDER BY `update` DESC) AS rn
-                         FROM cutest.result AS m)
+{RANKING}
 select t.method,
        t.nf,
        t.tf,
