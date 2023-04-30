@@ -89,6 +89,15 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
         "GD": r"\gd",
         "TRACE": r"\itrace",  # avoid conflicts with amsmath
     }
+    METHODS_RENAMING_REV = {
+        "\\drsom": "DRSOM",
+        "\\newtontr": "NewtonTR",
+        "\\hsodm": "HSODM",
+        "\\lbfgs": "LBFGS",
+        "\\cg": "CG",
+        "\\arc": "ARC",
+        "\\gd": "GD",
+    }
 
     @staticmethod
     def produce_latex_long_table(df: pd.DataFrame, keys, caption, label, path):

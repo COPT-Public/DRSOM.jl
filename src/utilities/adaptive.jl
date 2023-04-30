@@ -3,6 +3,14 @@
 # Base.@kwdef mutable struct AdaptiveHomogeneousSubproblem
 
 using Roots
+using SparseArrays
+try
+    using MKL
+catch e
+    @warn("Unable to import MKL")
+    @warn(" fall back to BLAS")
+end
+
 Base.@kwdef mutable struct AR
     ALIAS::String = "AR"
     DESC::String = "AdaptiveRegularization"
@@ -22,6 +30,10 @@ Base.@kwdef mutable struct AR
     # interval for σ
     lₛ::Float64 = 1
     uₛ::Float64 = 1e5
+end
+
+Base.@kwdef mutable struct MKLInfo
+    k::Int = 0
 end
 
 
@@ -150,12 +162,18 @@ end
 
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
-function eigenvalue(B, iter, state)
-    if iter.direction == :cold
-        n = length(state.x)
-        vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
-    else
-        vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
+function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:krylov)
+    if bg == :direct
+        cc = LinearAlgebra.eigen(B, 1:1)
+        return cc.values, cc.vectors, MKLInfo(k=1)
+    end
+    if bg == :krylov
+        if iter.direction == :cold
+            n = length(state.x)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
+        else
+            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
+        end
     end
     return vals, vecs, info
 end

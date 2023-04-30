@@ -6,6 +6,7 @@ using KrylovKit
 using Distributions
 
 include("./hagerzhang.jl")
+include("./backtracking.jl")
 """
 # Solving `TrustRegionSubproblem`` via a given regularizer or a radius or radius-free 
 
@@ -21,6 +22,15 @@ you may find other popular methods like
   which are the most practical TRS solvers, as far as I know,
   you can find their implementations in GLTR and GLRT in GALAHAD library.  
 """
+const lsa::HagerZhangEx = HagerZhangEx(
+    linesearchmax=10
+)
+const lsb::BackTrackingEx = BackTrackingEx(
+    ρ_hi=0.8,
+    ρ_lo=0.1,
+    order=2
+)
+
 function TrustRegionSubproblem(
     Q,
     c::Vector{Float64},
@@ -191,6 +201,82 @@ function TRStyleLineSearch(
     return γ, fx, it
 end
 
+
+function BacktrackLineSearch(
+    iter::IterationType,
+    gx, fx,
+    x::Tx,
+    s::Tx,
+) where {IterationType,Tx}
+
+    ϕ(α) = iter.f(x .+ α .* s)
+    function dϕ(α)
+        if iter.g !== nothing
+            gv = iter.g(x + α .* s)
+        else
+            gv = similar(s)
+            iter.ga(gv, x + α .* s)
+        end
+        return dot(gv, s)
+    end
+    function ϕdϕ(α)
+        phi = iter.f(x .+ α .* s)
+        if iter.g !== nothing
+            gv = iter.g(x + α .* s)
+        else
+            gv = similar(s)
+            iter.ga(gv, x + α .* s)
+        end
+        dphi = dot(gv, s)
+        return (phi, dphi)
+    end
+
+
+    dϕ_0 = dot(s, gx)
+
+    try
+        α, fx, it = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        return α, fx, it
+    catch y
+        isa(y, LineSearchException) # && println() # todo
+        return 0.1, fx, 1
+    end
+end
+
+function BacktrackLineSearch(
+    f, g,
+    gx, fx,
+    x::Tx,
+    s::Tx,
+) where {Tx}
+
+    ϕ(α) = f(x .+ α .* s)
+    function dϕ(α)
+
+        gv = g(x + α .* s)
+
+        return dot(gv, s)
+    end
+    function ϕdϕ(α)
+        phi = f(x .+ α .* s)
+        gv = g(x + α .* s)
+        dphi = dot(gv, s)
+        return (phi, dphi)
+    end
+
+
+    dϕ_0 = dot(s, gx)
+    try
+        α, fx, it = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        return α, fx, it
+    catch y
+        isa(y, LineSearchException) # && println() # todo
+        return 0.1, fx, 1
+    end
+
+end
+
+
 function HagerZhangLineSearch(
     iter::IterationType,
     gx, fx,
@@ -222,7 +308,7 @@ function HagerZhangLineSearch(
 
 
     dϕ_0 = dot(s, gx)
-    lsa = HagerZhangEx()
+
     try
         α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
         return α, fx, it
@@ -230,7 +316,6 @@ function HagerZhangLineSearch(
         isa(y, LineSearchException) # && println() # todo
         return 0.1, fx, 1
     end
-
 end
 
 function HagerZhangLineSearch(
@@ -256,7 +341,6 @@ function HagerZhangLineSearch(
 
 
     dϕ_0 = dot(s, gx)
-    lsa = HagerZhangEx()
     try
         α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
         return α, fx, it

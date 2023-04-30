@@ -111,25 +111,27 @@ res1 = Optim.optimize(loss, g, x0,
 
 # # arc = wrapper_arc(nlp)
 
-r = DRSOM2()(;
-    x0=copy(x0), f=loss, g=g,
+# r = DRSOM2()(;
+#     x0=copy(x0), f=loss, g=g,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     sog=:prov, hvp=hvp
+# )
+
+rh = HSODM(; name=:HSODMLS)(;
+    x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    sog=:prov, hvp=hvp
+    direction=:warm, linesearch=:hagerzhang
 )
 
-# rh = HSODM(; name=:HSODMLS)(;
+
+# rha = HSODM(; name=:HSODMArC)(;
 #     x0=copy(x0), f=loss, g=g, H=H,
-#     maxiter=10000, tol=1e-6, freq=1,
-#     direction=:warm, linesearch=:hagerzhang
+#     maxiter=10, tol=1e-6, freq=1,
+#     direction=:warm,
+#     # linesearch=:hagerzhang,
+#     adaptive=:arc,
+#     maxtime=10000
 # )
-rha = HSODM(; name=:HSODMArC)(;
-    x0=copy(x0), f=loss, g=g, H=H,
-    maxiter=10, tol=1e-6, freq=1,
-    direction=:warm,
-    linesearch=:hagerzhang,
-    # adaptive=:arc,
-    maxtime=10000
-)
 
 finalize(nlp)
 

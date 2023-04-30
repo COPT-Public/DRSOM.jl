@@ -6,6 +6,7 @@ using Dates
 using KrylovKit
 using Distributions
 using LineSearches
+using SparseArrays
 
 const HSODM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %8s | %6s | %6s | %5s | %6s | %6s |\n",
@@ -78,7 +79,7 @@ function Base.iterate(iter::HSODMIteration)
     H = iter.H(z)
     n = length(z)
     # construct homogeneous system
-    B = Symmetric([H grad_f_x; grad_f_x' -1e-3])
+    B = Symmetric([H grad_f_x; SparseArrays.spzeros(n)' -1e-3])
     vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
     kᵥ = info.numops
     λ₁ = vals[1]
@@ -100,6 +101,9 @@ function Base.iterate(iter::HSODMIteration)
     elseif iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
         α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
+    elseif iter.linesearch == :backtrack
+        # use Hager-Zhang line-search algorithm
+        α, fx, kₜ = BacktrackLineSearch(iter, grad_f_x, fz, z, v)
     elseif iter.linesearch == :none
         α = 1.0
         fx = iter.f(z + v * α)
@@ -150,9 +154,9 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     state.∇f = iter.g(state.x)
     H = iter.H(state.x)
-
+    n = state.∇f |> length
     # construct homogeneous system
-    B = Symmetric([H state.∇f; state.∇f' state.δ])
+    B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
 
     kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
         B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
@@ -167,6 +171,12 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         s = v
         x = state.x
         state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
+
+    elseif iter.linesearch == :backtrack
+        # use Hager-Zhang line-search algorithm
+        s = v
+        x = state.x
+        state.α, fx, kₜ = BacktrackLineSearch(iter, state.∇f, state.fx, x, s)
 
     elseif iter.linesearch == :none
         state.α = 1.0

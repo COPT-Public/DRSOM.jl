@@ -3,18 +3,10 @@ import os
 import pandas as pd
 
 from util import *
-
+from setup import *
 
 engine, trans = CUTEST_UTIL.establish_connection()
-# UNSELECT_METHOD = r"('\\drsomh', '\\drsom')"
-UNSELECT_METHOD = r"('\\hsodm', '\\drsomh', '\\hsodmarc', '\\arc')"
 
-FILTER = """
-    where k <= 5000000
-        and t <= 100
-        and n <= 200
-        and `precision` = 1e-5
-"""
 AGG_RESULT = f"""
     (select method,
              rn          as version,
@@ -227,6 +219,76 @@ print(
     file=open(os.path.join(fdir, f"{version_number}_view.tex"), "w"),
 )
 
+
+# standard profiling
+import plotly.graph_objects as go
+
+layout = go.Layout(
+    plot_bgcolor="rgba(255, 255, 255, 1)",
+    xaxis=dict(
+        title=f"α",
+        color="black",
+    ),
+    xaxis_type="log",
+    font=dict(family="Latin Modern Roman", size=15),
+    legend=dict(
+        bordercolor="black",
+        borderwidth=0.8,
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1,
+    ),
+)
+
+
+df_b = (
+    df.reset_index()
+    .groupby(["name", "n"])
+    .agg({"k": min, "t": min})
+    .rename(columns={"k": "kb", "t": "tb"})
+)
+
+df_rho = (
+    df.query("status==1")
+    .join(df_b)
+    .assign(rho_k=lambda df: df["k"] / df["kb"], rho_t=lambda df: df["t"] / df["tb"])
+)
+scale = df_rho.reset_index()[["name", "param"]].drop_duplicates().shape[0]
+methods = df_rho.index.get_level_values(2).unique().to_list()
+metrics = {"rho_k": "k", "rho_t": "t"}
+for m in metrics:
+    data = []
+    for method in methods:
+        sr = df_rho[m][:, :, method]
+        dist = sr.reset_index().groupby(m).count().cumsum()["n"]
+        dist = dist / scale
+        line = go.Line(
+            x=dist.index,
+            y=dist.values,
+            name=INFO_CUTEST_RESULT.METHODS_RENAMING_REV[method],
+            line=dict(width=1.5),
+        )
+        print(m, method)
+        data.append(line)
+
+    fig = go.Figure(data=data, layout=layout)
+    style_grid = dict(
+        showline=True,
+        linewidth=1.2,
+        linecolor="black",
+        showgrid=True,
+        gridwidth=0.5,
+        gridcolor="grey",
+        griddash="dashdot",
+    )
+    fig.update_xaxes(style_grid)
+    fig.update_yaxes(style_grid)
+    fig.write_image(f"{version_number}/{version_number}-{m}.png", scale=3)
+    fig.write_html(f"{version_number}/{version_number}-{m}.html")
+
+##############################################################################################
 
 print("*" * 50)
 print(f"results dump to: \n {version_number}/{version_number}_view.tex")
