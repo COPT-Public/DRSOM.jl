@@ -23,7 +23,7 @@ you may find other popular methods like
   you can find their implementations in GLTR and GLRT in GALAHAD library.  
 """
 const lsa::HagerZhangEx = HagerZhangEx(
-    linesearchmax=10
+# linesearchmax=10
 )
 const lsb::BackTrackingEx = BackTrackingEx(
     ρ_hi=0.8,

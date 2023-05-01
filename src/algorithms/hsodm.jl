@@ -22,7 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-6
+    eigtol::Float64 = 1e-12
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang
@@ -328,10 +328,10 @@ function Base.show(io::IO, t::T) where {T<:HSODMIteration}
     @printf io " inner iteration limit := %s\n" t.itermax
     @printf io " line-search algorithm := %s\n" t.linesearch
     @printf io "    adaptive  strategy := %s\n" t.adaptive
-    if t.H !== nothing
-        @printf io "     second-order info := using provided Hessian matrix\n"
-    elseif t.hvp !== nothing
+    if t.hvp !== nothing
         @printf io "     second-order info := using provided Hessian-vector product\n"
+    elseif t.H !== nothing
+        @printf io "     second-order info := using provided Hessian matrix\n"
     else
         @printf io " unknown mode to compute Hessian info\n"
         throw(ErrorException("unknown differentiation mode\n"))
