@@ -48,12 +48,12 @@ using DRSOM
 # nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
-nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
 # nlp = CUTEstModel("COSINE", "-param", "N=100")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
 # nlp = CUTEstModel("INDEF", "-param", "ALPHA=0.5,N=50")
 #######################################################
@@ -118,7 +118,7 @@ res1 = Optim.optimize(loss, g, x0,
 # )
 
 rh = HSODM(; name=:HSODMLS)(;
-    x0=copy(x0), f=loss, g=g, H=H,
+    x0=copy(x0), f=loss, g=g, hvp=hvp,
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm, linesearch=:hagerzhang
 )

@@ -27,7 +27,7 @@ filter_cutest_problem(nlp) = true
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOM, :CG]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :CG]
 # filter_optimization_method(k) = k ∈ [:LBFGS, :NewtonTR]
-filter_optimization_method(k) = k ∈ [:LBFGS]
+# filter_optimization_method(k) = k ∈ [:LBFGS]
 # filter_optimization_method(k) = k == :DRSOM
 # filter_optimization_method(k) = k == :LBFGS
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
@@ -38,6 +38,7 @@ filter_optimization_method(k) = k ∈ [:LBFGS]
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo, :LBFGS, :NewtonTR, :ARC]
+filter_optimization_method(k) = k ∈ [:NewtonTR, :ARC]
 
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104

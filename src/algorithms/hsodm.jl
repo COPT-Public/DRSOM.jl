@@ -12,15 +12,17 @@ const HSODM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %8s | %6s | %6s | %5s | %6s | %6s |\n",
     "k", "f", "α", "Δ", "|∇f|", "λ", "δ", "k₂", "ρ", "t"
 )
-Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH}
+Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     f::Tf             # f: smooth f
     ϕ::Tϕ = nothing   # ϕ: nonsmooth part (not implemented yet)
     g::Tg = nothing   # gradient function
     H::TH = nothing   # hessian function
+    hvp::Th = nothing # hessian-vector product
+    fvp::Union{Function,Nothing} = nothing # hessian-vector product of Fk (defined from hvp)
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-10
+    eigtol::Float64 = 1e-6
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang
@@ -42,6 +44,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     fz::R             # old value f at z: x(k-1)
     ∇f::Tx            # gradient of f at x
     ∇fz::Tx           # gradient of f at z
+    ∇fb::Tx           # buffer of hvps
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
@@ -73,14 +76,32 @@ function Base.iterate(iter::HSODMIteration)
     z = copy(iter.x0)
     fz = iter.f(z)
     grad_f_x = similar(z)
-    grad_f_b = similar(z)
-
     grad_f_x = iter.g(z)
-    H = iter.H(z)
     n = length(z)
-    # construct homogeneous system
-    B = Symmetric([H grad_f_x; SparseArrays.spzeros(n)' -1e-3])
-    vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
+    Hv = similar(grad_f_x)
+    if iter.hvp === nothing
+        H = iter.H(z)
+        # construct homogeneous system
+        B = Symmetric([H grad_f_x; SparseArrays.spzeros(n)' -1e-3])
+        vals, vecs, info = KrylovKit.eigsolve(
+            B, n + 1, 1, :SR, Float64;
+            issymmetric=true, tol=iter.eigtol
+        )
+    else
+        fvp(x, g, v, Hv, d) = (
+            iter.hvp(x, v[1:end-1], Hv);
+            [
+                Hv + v[end] * g
+                g'v[1:end-1] + d * v[end]
+            ]
+        )
+        iter.fvp = fvp
+        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 1e-3)
+        vals, vecs, info = KrylovKit.eigsolve(
+            ff, n + 1, 1, :SR, Float64;
+            issymmetric=true, tol=iter.eigtol
+        )
+    end
     kᵥ = info.numops
     λ₁ = vals[1]
     ξ = vecs[1]
@@ -89,7 +110,11 @@ function Base.iterate(iter::HSODMIteration)
     (abs(t₀) > 1e-3) && (v = v / t₀)
 
     vn = norm(v)
-    vHv = (v'*H*v/2)[]
+    if iter.hvp === nothing
+        vHv = (v'*H*v/2)[]
+    else
+        vHv = v' * Hv
+    end
     vg = (v'*grad_f_x)[]
     bool_reverse_v = vg > 0
     # reverse this v if g'v > 0
@@ -126,6 +151,7 @@ function Base.iterate(iter::HSODMIteration)
         fz=fz,
         ∇f=grad_f_x,
         ∇fz=z,
+        ∇fb=Hv,
         α=α,
         d=d,
         Δ=Δ,
@@ -153,15 +179,23 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.∇fz = state.∇f
 
     state.∇f = iter.g(state.x)
-    H = iter.H(state.x)
     n = state.∇f |> length
-    # construct homogeneous system
-    B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
+    if iter.hvp === nothing
+        H = iter.H(state.x)
+        # construct homogeneous system
+        B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
 
-    kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
-        B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
-    )
+        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+            B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+        )
+    else
 
+        n = length(z)
+        ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, 0)
+        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+            ff, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+        )
+    end
     # add line search over computed direction 
     if iter.linesearch == :trustregion
         state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
@@ -223,7 +257,7 @@ function counting(iter::T, state::S) where {T<:HSODMIteration,S<:HSODMState}
         state.kf = getfield(iter.f, :counter)
         state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
-        state.kh = 0 # todo, accept hvp iterative in the future
+        state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
     catch
     end
 end
@@ -248,3 +282,80 @@ HomogeneousSecondOrderDescentMethod(;
     stop=hsodm_stopping_criterion,
     display=hsodm_display
 ) = IterativeAlgorithm(HSODMIteration, HSODMState; name=name, stop=stop, display=display)
+
+
+
+####################################################################################################
+# HSODM
+####################################################################################################
+function (alg::IterativeAlgorithm{T,S})(;
+    maxiter=10000,
+    maxtime=1e2,
+    tol=1e-6,
+    freq=10,
+    verbose=1,
+    direction=:cold,
+    linesearch=:hagerzhang,
+    adaptive=:none,
+    kwargs...
+) where {T<:HSODMIteration,S<:HSODMState}
+
+    arr = Vector{S}()
+    kwds = Dict(kwargs...)
+
+    for cf ∈ [:f :g :H :hvp]
+        apply_counter(cf, kwds)
+    end
+    iter = T(; linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    (verbose >= 1) && show(iter)
+    for (k, state) in enumerate(iter)
+
+        push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
+            (verbose >= 1) && alg.display(k, state)
+            (verbose >= 1) && summarize(k, iter, state)
+            return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
+        end
+        (verbose >= 1) && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
+    end
+end
+
+
+function Base.show(io::IO, t::T) where {T<:HSODMIteration}
+    format_header(t.LOG_SLOTS)
+    @printf io " algorithm alias       := %s\n" t.ALIAS
+    @printf io " algorithm description := %s\n" t.DESC
+    @printf io " inner iteration limit := %s\n" t.itermax
+    @printf io " line-search algorithm := %s\n" t.linesearch
+    @printf io "    adaptive  strategy := %s\n" t.adaptive
+    if t.H !== nothing
+        @printf io "     second-order info := using provided Hessian matrix\n"
+    elseif t.hvp !== nothing
+        @printf io "     second-order info := using provided Hessian-vector product\n"
+    else
+        @printf io " unknown mode to compute Hessian info\n"
+        throw(ErrorException("unknown differentiation mode\n"))
+    end
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODMState}
+    println(io, "-"^length(t.LOG_SLOTS))
+    println(io, "summary:")
+    @printf io " (main)          f       := %.2e\n" s.fx
+    @printf io " (first-order)  |g|      := %.2e\n" s.ϵ
+    println(io, "oracle calls:")
+    @printf io " (main)          k       := %d  \n" k
+    @printf io " (function)      f       := %d  \n" s.kf
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg + s.kh
+    @printf io " (first-order)  hvp      := %d  \n" s.kh
+    @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (running time)  t       := %.3f  \n" s.t
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+summarize(k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODMState} =
+    summarize(stdout, k, t, s)

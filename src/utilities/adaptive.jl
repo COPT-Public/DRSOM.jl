@@ -38,20 +38,21 @@ end
 
 
 
-# arc style
+# adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbose::Bool=false)
     kᵥ = 1
     k₂ = 1
     homogeneous_eigenvalue.counter = 0
     _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
-
+    # non-adaptive mode
     if iter.adaptive === :none
         state.λ₁ = λ₁
         state.ξ = ξ
         return kᵥ, k₂, v, vn, vg, vHv
     end
 
+    # adaptive mode
     h(t, θ) = sqrt(t^2 / (1 - t^2)) * max(θ, 0)
     # line search root-finding function
     function fa(δ, p)
@@ -136,7 +137,23 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
     end
 end
 
-function _inner_homogeneous_eigenvalue(B, iter, state)
+# adaptive GHMs wrapping ArC style
+function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
+    kᵥ = 1
+    k₂ = 1
+    homogeneous_eigenvalue.counter = 0
+    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
+
+    # non-adaptive mode
+    if iter.adaptive === :none
+        state.λ₁ = λ₁
+        state.ξ = ξ
+        return kᵥ, k₂, v, vn, vg, vHv
+    end
+    # todo, implement adaptive version.
+end
+
+function _inner_homogeneous_eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state)
     n = length(state.x)
     vals, vecs, info = eigenvalue(B, iter, state)
     λ₁ = vals[1]
@@ -159,6 +176,30 @@ function _inner_homogeneous_eigenvalue(B, iter, state)
     return info.numops, λ₁, ξ, t₀, v, vn, vg, vHv
 end
 
+function _inner_homogeneous_eigenvalue(f::Function, iter, state)
+    n = length(state.x)
+    vals, vecs, info = eigenvalue(f, iter, state)
+    λ₁ = vals[1]
+    ξ = vecs[1]
+
+    v = reshape(ξ[1:end-1], n)
+    t₀ = abs(ξ[end])
+    t₀ = min(max(t₀, 1e-4), 1 - 1e-4)
+
+    # scale v if t₀ is big enough
+    # reverse this v if g'v > 0
+    v = v / t₀
+    vg = (v'*state.∇f)[]
+    bool_reverse_v = vg > 0
+    v = (-1)^bool_reverse_v * v
+    vg = (-1)^bool_reverse_v * vg
+    vn = norm(v)
+    vHv = v'state.∇fb
+
+    return info.numops, λ₁, ξ, t₀, v, vn, vg, vHv
+end
+
+
 
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
@@ -170,19 +211,30 @@ function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, 
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
         end
     end
     return vals, vecs, info
 end
 
 
+function eigenvalue(f::Function, iter, state; bg=:krylov)
+    if bg == :krylov
+        if iter.direction == :cold
+            n = length(state.x)
+            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+        else
+            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
+        end
+    end
+    return vals, vecs, info
+end
+
 
 function linesearch(state, fa, adaptive_param; verbose::Bool=false, method::Symbol=:order2, tracker=tracker)
     # oracle
-
     atol = log((adaptive_param.uₖ - adaptive_param.lₖ) / 2 + 1)
     midpoint = log((adaptive_param.lₖ + adaptive_param.uₖ) / 2 + 1)
 
