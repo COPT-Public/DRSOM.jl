@@ -48,12 +48,13 @@ using DRSOM
 # nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
-# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+# nlp = CUTEstModel("CHNROSNB", "-param", "N=25")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
 # nlp = CUTEstModel("COSINE", "-param", "N=100")
-nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
 # nlp = CUTEstModel("INDEF", "-param", "ALPHA=0.5,N=50")
 #######################################################
@@ -90,11 +91,11 @@ options = Optim.Options(
     time_limit=500
 )
 
-res1 = Optim.optimize(loss, g, x0,
-    GradientDescent(;
-        alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()
-    ), options; inplace=false)
+# res1 = Optim.optimize(loss, g, x0,
+#     GradientDescent(;
+#         alphaguess=LineSearches.InitialHagerZhang(),
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options; inplace=false)
 # res2 = Optim.optimize(loss, g, H, x0,
 #     LBFGS(;
 #         linesearch=LineSearches.StrongWolfe()
@@ -116,9 +117,14 @@ res1 = Optim.optimize(loss, g, x0,
 #     maxiter=10000, tol=1e-6, freq=1,
 #     sog=:prov, hvp=hvp
 # )
-
 rh = HSODM(; name=:HSODMLS)(;
     x0=copy(x0), f=loss, g=g, hvp=hvp,
+    maxiter=10000, tol=1e-6, freq=1,
+    direction=:warm, linesearch=:hagerzhang
+)
+
+rh = HSODM(; name=:HSODMLS)(;
+    x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm, linesearch=:hagerzhang
 )

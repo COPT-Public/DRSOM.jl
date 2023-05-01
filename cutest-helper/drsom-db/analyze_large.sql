@@ -40,5 +40,5 @@ from (select method,
                    on tt.method = t.method and tt.version = t.version
 where
     tt.version <= 1
-    and tt.method not in ('\\cg', '\\gd', '\\drsom');
+    and tt.method not in ('\\cg', '\\gd', '\\drsom', '\\lbfgs');
 # and    tt.method not in ('\\newtontr', '\\hsodm', '\\arc');

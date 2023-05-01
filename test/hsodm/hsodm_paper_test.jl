@@ -1,6 +1,9 @@
 
 # unconstrained problems 2022/11/04
 # I select a set of unconstrained problems
+TEST = Dict(
+    "EXTROSNB" => ["N=100"]
+)
 UNC_PROBLEMS_4to200 = Dict(
     "ARGLINA" => ["M=200,N=200"], "ARGLINB" => ["M=200,N=200"],
     "ARGLINC" => ["M=200,N=200"], "ARGTRIGLS" => ["N=200"],

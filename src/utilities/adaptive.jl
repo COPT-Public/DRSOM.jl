@@ -4,11 +4,11 @@
 
 using Roots
 using SparseArrays
+using ArnoldiMethod
 try
     using MKL
 catch e
-    @warn("Unable to import MKL")
-    @warn(" fall back to BLAS")
+    @warn("Unable to import MKL; fall back to BLAS")
 end
 
 Base.@kwdef mutable struct AR
@@ -32,8 +32,8 @@ Base.@kwdef mutable struct AR
     uₛ::Float64 = 1e5
 end
 
-Base.@kwdef mutable struct MKLInfo
-    k::Int = 0
+Base.@kwdef mutable struct ArnoldiInfo
+    numops::Int
 end
 
 
@@ -157,7 +157,7 @@ function _inner_homogeneous_eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Floa
     n = length(state.x)
     vals, vecs, info = eigenvalue(B, iter, state)
     λ₁ = vals[1]
-    ξ = vecs[1]
+    ξ = vecs[:, 1]
 
     v = reshape(ξ[1:end-1], n)
     t₀ = abs(ξ[end])
@@ -179,6 +179,7 @@ end
 function _inner_homogeneous_eigenvalue(f::Function, iter, state)
     n = length(state.x)
     vals, vecs, info = eigenvalue(f, iter, state)
+
     λ₁ = vals[1]
     ξ = vecs[1]
 
@@ -203,11 +204,8 @@ end
 
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
-function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:krylov)
-    if bg == :direct
-        cc = LinearAlgebra.eigen(B, 1:1)
-        return cc.values, cc.vectors, MKLInfo(k=1)
-    end
+function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:arnoldi)
+
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
@@ -215,8 +213,13 @@ function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, 
         else
             vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
         end
+        return vals, vecs[1], info
     end
-    return vals, vecs, info
+    if bg == :arnoldi
+        decomp, history = ArnoldiMethod.partialschur(B, nev=1, tol=iter.eigtol, which=SR())
+        vals, vecs = partialeigen(decomp)
+        return vals, vecs, ArnoldiInfo(numops=1)
+    end
 end
 
 
