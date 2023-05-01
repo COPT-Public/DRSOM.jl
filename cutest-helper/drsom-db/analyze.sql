@@ -41,4 +41,4 @@ from (select method,
                     group by method, rn) as tt
                    on tt.method = t.method and tt.version = t.version
 where
-    tt.version <= 3 and tt.method not in ('\\lbfgs', '\\cg', '\\gd', '\\drsom');
+    tt.version <= 1 and tt.method not in ('\\lbfgs', '\\cg', '\\gd', '\\drsom');

@@ -74,7 +74,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        r.state.ϵ <= precision
+                        r.state.ϵ <= this_tol
                     ]
 
                 catch e
@@ -121,7 +121,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        r.state.ϵ <= precision
+                        r.state.ϵ <= this_tol
                     ]
 
                 catch e
@@ -158,7 +158,7 @@ for (f, param_combination) in PROBLEMS
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
                         r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
                         r.state.ϵ, r.state.fx, r.state.t,
-                        r.state.ϵ <= precision
+                        r.state.ϵ <= this_tol
                     ]
 
                 catch e

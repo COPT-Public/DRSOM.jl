@@ -120,16 +120,20 @@ function Base.iterate(iter::HSODMIteration)
     # reverse this v if g'v > 0
     v = (-1)^bool_reverse_v * v
     vg = (-1)^bool_reverse_v * vg
+    α = 0.0
     # now use a LS to solve (state.α)
-    if iter.linesearch == :trustregion
-        α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
-    elseif iter.linesearch == :hagerzhang
+    if iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
         α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
-    elseif iter.linesearch == :backtrack
+    end
+    if (α == 0) || (iter.linesearch == :trustregion)
+        α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
+    end
+    if (α == 0) || (iter.linesearch == :backtrack)
         # use Hager-Zhang line-search algorithm
         α, fx, kₜ = BacktrackLineSearch(iter, grad_f_x, fz, z, v)
-    elseif iter.linesearch == :none
+    end
+    if (α == 0) || (iter.linesearch == :none)
         α = 1.0
         fx = iter.f(z + v * α)
         kₜ = 1
@@ -197,27 +201,27 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         )
     end
     # add line search over computed direction 
-    if iter.linesearch == :trustregion
-        state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
-
-    elseif iter.linesearch == :hagerzhang
+    if iter.linesearch == :hagerzhang
         # use Hager-Zhang line-search algorithm
         s = v
         x = state.x
         state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
-
-    elseif iter.linesearch == :backtrack
+    end
+    if (state.α == 0) || (iter.linesearch == :trustregion)
+        state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
+    end
+    if (state.α == 0) || (iter.linesearch == :backtrack)
         # use Hager-Zhang line-search algorithm
         s = v
         x = state.x
         state.α, fx, kₜ = BacktrackLineSearch(iter, state.∇f, state.fx, x, s)
-
-    elseif iter.linesearch == :none
+    end
+    if (state.α == 0) || (iter.linesearch == :none)
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
         kₜ = 1
-
-    else
+    end
+    if (state.α == 0)
         state.status = false
         iter.error = ErrorException(
             "unknown option of line-search $(iter.linesearch)"

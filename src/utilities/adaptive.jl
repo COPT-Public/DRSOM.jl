@@ -156,8 +156,8 @@ end
 function _inner_homogeneous_eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state)
     n = length(state.x)
     vals, vecs, info = eigenvalue(B, iter, state)
-    λ₁ = vals[1]
-    ξ = vecs[:, 1]
+    λ₁ = vals[1] |> real
+    ξ = vecs[:, 1] |> real
 
     v = reshape(ξ[1:end-1], n)
     t₀ = abs(ξ[end])
@@ -206,9 +206,9 @@ homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
 function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:arnoldi)
 
+    n = length(state.x)
     if bg == :krylov
         if iter.direction == :cold
-            n = length(state.x)
             vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
         else
             vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
@@ -216,9 +216,15 @@ function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, 
         return vals, vecs[1], info
     end
     if bg == :arnoldi
-        decomp, history = ArnoldiMethod.partialschur(B, nev=1, tol=iter.eigtol, which=SR())
-        vals, vecs = partialeigen(decomp)
-        return vals, vecs, ArnoldiInfo(numops=1)
+        try
+            # arnoldi is not stable?
+            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=iter.eigtol, which=SR())
+            vals, vecs = partialeigen(decomp)
+            return vals, vecs, ArnoldiInfo(numops=1)
+        catch
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            return vals, vecs[1], info
+        end
     end
 end
 
