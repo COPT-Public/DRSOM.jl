@@ -215,7 +215,8 @@ MY_OPTIMIZERS = Dict(
     # :DRSOM => wrapper_drsom,
     :DRSOM => wrapper_drsomd,
     # :DRSOMHomo => wrapper_drsom_homo,
-    :HSODM => wrapper_hsodm_hvp,
+    :HSODM => wrapper_hsodm,
+    # :HSODM => wrapper_hsodm_hvp,
     # :HSODMArC => wrapper_hsodm_arc,
 )
 

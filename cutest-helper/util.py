@@ -133,9 +133,10 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
 \begin{document}
 
 \begin{landscape}
-    \input{perf}
     \input{perf.alg}
     \input{perf.geo}
+    \clearpage
+    \input{perf}
     \input{perf.history}
     \scriptsize
     \input{complete.kt}

@@ -9,10 +9,12 @@ engine, trans = CUTEST_UTIL.establish_connection()
 
 AGG_RESULT = f"""
     (select method,
-             rn          as version,
-             sum(status) as nf,
-             avg(t)      as tf,
-             avg(k)      as kf,
+             max(`update`)                 as up_max,
+             min(`update`)                 as up_min,
+             rn                            as version,
+             sum(status)                   as nf,
+             avg(if(status = 0, 200, t)) as tf,
+             avg(if(status = 0, 20000, k)) as kf,
              avg(kf)     as kff,
              avg(kg)     as kfg,
              avg(kh)     as kfh
@@ -22,8 +24,8 @@ AGG_RESULT = f"""
          as t
          left join (select method,
                            rn                         as version,
-                           exp(avg(ln(t + 1))) - 1   as tg,
-                           exp(avg(ln(k + 50))) - 50  as kg,
+                           exp(avg(ln(if(status = 0, 200, t) + 1))) - 1   as tg,
+                           exp(avg(ln(if(status = 0, 20000, k) + 50))) - 50 as kg,
                            exp(avg(ln(kf + 50))) - 50 as kgf,
                            exp(avg(ln(kg + 50))) - 50 as kgg,
                            exp(avg(ln(kh + 50))) - 50 as kgh
@@ -102,12 +104,12 @@ select t.method,
        tt.kg,
        tt.kgf,
        tt.kgg,
-       tt.kgh,
-       tt.version
+       tt.kgh
 from {AGG_RESULT}
+where tt.version=1;
     """,
     con=engine,
-).set_index(["method", "version"])
+).set_index(["method"])
 
 latex_geo_sum_str = df_geo_perf.rename(
     columns=INFO_CUTEST_RESULT.COLUMNS_RENAMING
@@ -126,12 +128,12 @@ df_geo_perf = pd.read_sql(
     f"""
 {RANKING}
 select t.method,
+       t.nf,
        tt.tg,
        tt.kg,
        tt.kgf,
        tt.kgg,
-       tt.kgh,
-       tt.version
+       tt.kgh
 from {AGG_RESULT}
 where tt.version=1;
     """,
@@ -229,6 +231,7 @@ layout = go.Layout(
         title=f"α",
         color="black",
     ),
+    yaxis=dict(title=f"profile of α", color="black", range=[0, 1.1]),
     xaxis_type="log",
     font=dict(family="Latin Modern Roman", size=15),
     legend=dict(
@@ -245,6 +248,8 @@ layout = go.Layout(
 
 df_b = (
     df.reset_index()
+    .rename(columns={"t": "tsf"})
+    .assign(t=lambda df: df["tsf"].apply(lambda x: max(x, 1)))
     .groupby(["name", "n"])
     .agg({"k": min, "t": min})
     .rename(columns={"k": "kb", "t": "tb"})
@@ -255,7 +260,7 @@ df_rho = (
     .join(df_b)
     .assign(rho_k=lambda df: df["k"] / df["kb"], rho_t=lambda df: df["t"] / df["tb"])
 )
-scale = df_rho.reset_index()[["name", "param"]].drop_duplicates().shape[0]
+scale = df_rho.reset_index().groupby("method").status.sum().max()
 methods = df_rho.index.get_level_values(2).unique().to_list()
 metrics = {"rho_k": "k", "rho_t": "t"}
 for m in metrics:

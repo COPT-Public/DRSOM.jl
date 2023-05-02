@@ -123,7 +123,7 @@ for (f, param_combination) in PROBLEMS
                         r.state.ϵ, r.state.fx, r.state.t,
                         r.state.ϵ <= this_tol
                     ]
-
+                    printstyled(r.iter)
                 catch e
                     line = [
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
