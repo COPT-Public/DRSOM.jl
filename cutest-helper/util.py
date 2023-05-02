@@ -81,6 +81,7 @@ class INFO_CUTEST_RESULT(INFO_CUTEST):
         "DRSOM": r"\drsom",
         "NewtonTR": r"\newtontr",
         "HSODM": r"\hsodm",
+        "HSODMhvp": r"\hsodmhvp",
         "DRSOMHomo": r"\drsomh",
         "HSODMArC": r"\hsodmarc",
         "LBFGS": r"\lbfgs",

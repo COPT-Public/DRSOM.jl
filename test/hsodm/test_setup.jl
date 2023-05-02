@@ -42,8 +42,8 @@ filter_optimization_method(k) = k == :HSODM
 
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104
-# PROBLEMS = TEST
-PROBLEMS = UNC_PROBLEMS_4to200
+PROBLEMS = TEST
+# PROBLEMS = UNC_PROBLEMS_4to200
 # PROBLEMS = UNC_PROBLEMS_200to5000
 
 if test_before_start

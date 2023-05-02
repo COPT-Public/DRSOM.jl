@@ -43,13 +43,13 @@ using DRSOM
 #######################################################
 # examples
 # nlp = CUTEstModel("BROYDN7D", "-param", "N/2=2500")
-nlp = CUTEstModel("SSBRYBND", "-param", "N=50")
+# nlp = CUTEstModel("SSBRYBND", "-param", "N=50")
 # nlp = CUTEstModel("SCURLY10", "-param", "N=10")
 # nlp = CUTEstModel("ARGLINB", "-param", "M=200,N=200")
 # nlp = CUTEstModel("VARDIM", "-param", "N=200")
 # nlp = CUTEstModel("SENSORS", "-param", "N=10")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
-# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
 # nlp = CUTEstModel("CHNROSNB", "-param", "N=25")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")

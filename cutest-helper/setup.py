@@ -5,7 +5,7 @@
 UNSELECT_METHOD = r"('\\lbfgs', '\\drsomh', '\\hsodmarc', '\\gd', '\\cg', '\\drsom')"
 
 # filter the results satisfying the following condition...
-OPTION = 1
+OPTION = int(input("small: 1; large: 0\n"))
 if OPTION:
     FILTER = """
     where k <= 5000000

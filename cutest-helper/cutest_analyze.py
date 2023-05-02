@@ -227,19 +227,18 @@ import plotly.graph_objects as go
 
 layout = go.Layout(
     plot_bgcolor="rgba(255, 255, 255, 1)",
-    xaxis=dict(
-        title=f"α",
-        color="black",
-    ),
-    yaxis=dict(title=f"profile of α", color="black", range=[0, 1.1]),
+    xaxis=dict(title=f"α", color="black", mirror=True),
+    yaxis=dict(title=f"profile of α", color="black", range=[0, 1.1], mirror=True),
     xaxis_type="log",
     font=dict(family="Latin Modern Roman", size=15),
+    autosize=False,
+    margin={"l": 0, "r": 0, "t": 0, "b": 0},
     legend=dict(
         bordercolor="black",
         borderwidth=0.8,
         orientation="h",
         yanchor="bottom",
-        y=1.02,
+        y=0.02,
         xanchor="right",
         x=1,
     ),

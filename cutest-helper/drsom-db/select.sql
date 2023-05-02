@@ -18,5 +18,6 @@ where k <= 5000
   and rn = 1
   and `precision` = 1e-5
   and method in ('\\hsodm', '\\lbfgs', '\\newtontr', '\\arc')
+and `update`='2023-05-02 17:43:13'
 order by n desc, name, t
 ;
