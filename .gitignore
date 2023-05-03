@@ -1,5 +1,4 @@
 # extras
-third-party
 # doc
 *.xdv
 *.toc
@@ -21,12 +20,10 @@ docs/build/
 
 # projects
 fig
-instances
 instances_pr
 draft/*.pdf
 docs/report/*.pdf
 docs/sections/*.pdf
-
 
 notes
 data/

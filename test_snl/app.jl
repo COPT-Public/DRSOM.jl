@@ -35,7 +35,7 @@ function julia_main()::Cint
         snldata = matread(_args[:fp])
     end
     n, m, nf, pp = snldata["n"], snldata["m"], snldata["nf"], snldata["PP"]
-    @printf("finished loading")
+    @printf("finished loading\n")
     Nx = SNL.create_neighborhood(
         snldata["n"], snldata["m"], snldata["PP"], snldata["r"], snldata["nf"], snldata["deg"]
     )
@@ -51,19 +51,22 @@ function julia_main()::Cint
         Xv = zeros(2, n - m)
     end
     # PHASE-II: 
-    state_drsom, k = SNL.drsom_nls(
-        n, m, pp, Nx, Xv,
-        1e-5, 1e5, true,
-        _args[:timelimit], 20
-    )
-
-    Xvr = reshape(state_drsom.x, 2, n - m)
     md = _args[:option_set_comparison]
+
     if length(md) >= 1
         othermd = md[1]
     else
         othermd = 0
     end
+    if "drsom" ∈ othermd
+        state_drsom, k = SNL.drsom_nls(
+            n, m, pp, Nx, Xv,
+            1e-5, 1e5, true,
+            _args[:timelimit], 20
+        )
+        Xvr = reshape(state_drsom.x, 2, n - m)
+    end
+
     if "gd" ∈ othermd
         state_grad_gd, k = SNL.gd_nls(
             n, m, pp, Nx, Xv,
@@ -85,6 +88,20 @@ function julia_main()::Cint
         println(state_grad_cg)
     end
 
+    if "lbfgs" ∈ othermd
+        state_grad_lbfgs, k = SNL.lbfgs_nls(
+            n, m, pp, Nx, Xv,
+            1e-5, 1e5, true,
+            _args[:timelimit], 30
+        )
+
+        Xvl = reshape(state_grad_lbfgs.minimizer, 2, n - m)
+        println(state_grad_lbfgs)
+    end
+
+    ################################################
+    # PLOTTING UTILITIES
+    ################################################
 
     if _args[:option_plot_js] == 1
         # js + html backend

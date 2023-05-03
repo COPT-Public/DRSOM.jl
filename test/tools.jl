@@ -2,13 +2,8 @@
 __precompile__()
 
 
-include("lp.jl")
-
-using .LP
-
 using AdaptiveRegularization
 using ArgParse
-using CUTEst
 using DRSOM
 using Dates
 using Distributions
@@ -28,41 +23,11 @@ using ProximalAlgorithms
 using ProximalOperators
 using Random
 using Statistics
-using Test
 
-log_freq = 200
-tol_grad = 1e-5
-max_iter = 20000
-max_time = 200.0
-options = Optim.Options(
-    g_tol=tol_grad,
-    iterations=max_iter,
-    store_trace=true,
-    show_trace=true,
-    show_every=log_freq,
-    time_limit=max_time
-)
-options_drsom = Dict(
-    :maxiter => max_iter,
-    :maxtime => max_time,
-    :tol => tol_grad,
-    :freq => log_freq
-)
-
-
-# general options for Optim
-# GD and LBFGS, Trust Region Newton,
-options = Optim.Options(
-    g_tol=1e-6,
-    iterations=10000,
-    store_trace=true,
-    show_trace=true,
-    show_every=50,
-)
 
 # utilities
 getresultfield(x, y=:fx) = getfield.(getfield(x, :trajectory), y)
-getname(x) = getfield(x, :name)
+getname(x) = getfield(x, :name) |> string
 geteps(x) = x.g_norm
 
 Base.@kwdef mutable struct StateOptim
@@ -72,6 +37,7 @@ Base.@kwdef mutable struct StateOptim
     kf::Int = 0
     kg::Int = 0
     kH::Int = 0
+    kh::Int = 0
 end
 function optim_to_result(rr, name)
     traj = map(
@@ -83,6 +49,17 @@ function optim_to_result(rr, name)
     return Result(name=name, iter=rr, state=traj[end], k=rr.iterations, trajectory=traj)
 end
 
+function optim_to_result(nlp, rr, name)
+    traj = map(
+        (x) -> StateOptim(fx=x.value, ϵ=x.g_norm, t=rr.time_run), rr.trace
+    )
+    traj[end].kf = rr.f_calls
+    traj[end].kg = rr.g_calls
+    traj[end].kH = rr.h_calls
+    traj[end].kh = neval_hprod(nlp)
+    return Result(name=name, iter=rr, state=traj[end], k=rr.iterations, trajectory=traj)
+end
+
 function arc_to_result(nlp, stats, name)
     state = StateOptim(
         fx=stats.objective,
@@ -91,7 +68,8 @@ function arc_to_result(nlp, stats, name)
     )
     state.kf = neval_obj(nlp) # return number of f call
     state.kg = neval_grad(nlp) # return number of gradient call
-    state.kH = neval_hess(nlp) + neval_hprod(nlp) # return number of Hessian call
+    state.kH = neval_hess(nlp) # return number of Hessian call
+    state.kh = neval_hprod(nlp)
 
     return Result(name=name, iter=stats, state=state, k=stats.iter, trajectory=[])
 end
@@ -99,7 +77,7 @@ export StateOptim, optim_to_result, arc_to_result
 
 
 
-wrapper_gd(x, loss, g, H) =
+wrapper_gd(x, loss, g, H, options; kwargs...) =
     optim_to_result(
         Optim.optimize(
             loss, g, x,
@@ -111,7 +89,8 @@ wrapper_gd(x, loss, g, H) =
             inplace=false
         ), "GD+Wolfe"
     )
-wrapper_cg(x, loss, g, H) =
+
+wrapper_cg(x, loss, g, H, options; kwargs...) =
     optim_to_result(
         Optim.optimize(
             loss, g, x,
@@ -123,18 +102,20 @@ wrapper_cg(x, loss, g, H) =
             inplace=false
         ), "CG"
     )
-wrapper_lbfgs(x, loss, g, H) =
+wrapper_lbfgs(x, loss, g, H, options; kwargs...) =
     optim_to_result(
         Optim.optimize(
             loss, g, x,
             LBFGS(;
+                m=10,
+                alphaguess=LineSearches.InitialStatic(),
                 linesearch=LineSearches.HagerZhang()
             ),
             options;
             inplace=false
         ), "LBFGS+Wolfe"
     )
-wrapper_newton(x, loss, g, H) =
+wrapper_newton(x, loss, g, H, options; kwargs...) =
     optim_to_result(
         Optim.optimize(
             loss, g, H, x,
@@ -144,22 +125,70 @@ wrapper_newton(x, loss, g, H) =
         ), "Newton+TR"
     )
 alg_drsom = DRSOM2()
-wrapper_drsom(x, loss, g, H) =
+wrapper_drsom(x, loss, g, H, options; kwargs...) =
     alg_drsom(;
         x0=copy(x), f=loss, g=g, H=H,
         fog=:direct,
-        sog=:direct,
-        options_drsom...
+        sog=:hess,
+        options...
     )
+wrapper_drsomh(x, loss, g, H, options; kwargs...) =
+    alg_drsom(;
+        x0=copy(x), f=loss, g=g, H=H,
+        fog=:direct,
+        sog=:hess,
+        options...
+    )
+wrapper_drsomf(x, loss, g, H, options; kwargs...) =
+    alg_drsom(;
+        x0=copy(x), f=loss,
+        fog=:forward,
+        sog=:forward,
+        options...
+    )
+wrapper_drsomb(x, loss, g, H, options; kwargs...) =
+    alg_drsom(;
+        x0=copy(x), f=loss,
+        fog=:backward,
+        sog=:backward,
+        options...
+    )
+wrapper_drsomd(x, loss, g, H, options; kwargs...) =
+    alg_drsom(;
+        x0=copy(x), f=loss, g=g,
+        fog=:direct,
+        sog=:prov,
+        kwargs...,
+        options...
+    )
+
 alg_hsodm = HSODM()
-wrapper_hsodm(x, loss, g, H) =
+wrapper_hsodm(x, loss, g, H, options; kwargs...) =
     alg_hsodm(;
         x0=copy(x), f=loss, g=g, H=H,
         linesearch=:hagerzhang,
         direction=:warm,
-        options_drsom...
+        options...
     )
-# wrapper_drsom_homo(x, loss, g, H) =
+alg_hsodm_hvp = HSODM()
+wrapper_hsodm_hvp(x, loss, g, H, options; kwargs...) =
+    alg_hsodm_hvp(;
+        x0=copy(x), f=loss, g=g, H=H,
+        linesearch=:hagerzhang,
+        direction=:warm,
+        kwargs...,
+        options...
+    )
+alg_hsodm_arc = HSODM(; name=:HSODMArC)
+wrapper_hsodm_arc(x, loss, g, H, options; kwargs...) =
+    alg_hsodm_arc(;
+        x0=copy(x), f=loss, g=g, H=H,
+        linesearch=:none,
+        direction=:warm,
+        adaptive=:arc,
+        options...
+    )
+# wrapper_drsom_homo(x, loss, g, H, options; kwargs...) =
 #     drsom_helper_plus.run_drsomd(
 #         copy(x), loss, g, H;
 #         direction=:homokrylov,
@@ -182,13 +211,19 @@ function wrapper_arc(nlp)
 end
 
 # My solvers and those in Optim.jl
-OPTIMIZERS = Dict(
+MY_OPTIMIZERS = Dict(
+    # :DRSOM => wrapper_drsom,
+    :DRSOM => wrapper_drsomd,
+    # :DRSOMHomo => wrapper_drsom_homo,
+    :HSODM => wrapper_hsodm,
+    :HSODMhvp => wrapper_hsodm_hvp,
+    # :HSODMArC => wrapper_hsodm_arc,
+)
+
+OPTIMIZERS_OPTIM = Dict(
     :GD => wrapper_gd,
     :LBFGS => wrapper_lbfgs,
     :NewtonTR => wrapper_newton,
-    :DRSOM => wrapper_drsom,
-    # :DRSOMHomo => wrapper_drsom_homo,
-    :HSODM => wrapper_hsodm,
     :CG => wrapper_cg
 )
 

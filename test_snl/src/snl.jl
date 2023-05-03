@@ -142,14 +142,17 @@ function create_neighborhood(n, m, pp, radius, nf, degree)
 
 end
 
+
+
 function least_square(n, m, points, pp, Nx::NeighborVector)
-    val = 0
-    for nx in Nx
+
+    function _least_square(nx::Neighbor)
         i, j = nx.edge
         xij = j < n - m + 1 ? points[:, i] - points[:, j] : points[:, i] - pp[:, j]
         dh = xij .^ 2 |> sum
-        val += (dh - nx.distn^2)^2
+        return (dh - nx.distn^2)^2
     end
+    val = _least_square.(Nx) |> sum
     return val
 end
 
@@ -182,19 +185,11 @@ function drsom_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float
     end
     x0 = vec(Xv)
     g(x) = DRSOM.ReverseDiff.gradient(loss, x)
-    iter = DRSOM.DRSOMIteration(x0=x0, f=loss, g=g, H=Nothing(), mode=:direct)
-    rb = nothing
-    for (k, state::DRSOM.DRSOMState) in enumerate(iter)
-
-        if k >= max_iter || state.t >= max_time || DRSOM.drsom_stopping_criterion(tol, state)
-            rb = (state, k)
-            DRSOM.drsom_display(k, state)
-            break
-        end
-        verbose && (k == 1 || mod(k, freq) == 0) && DRSOM.drsom_display(k, state)
-    end
-    @printf("finished with iter: %.3e, objval: %.3e\n", rb[2], rb[1].fx)
-    return rb
+    r = DRSOM2()(;
+        x0=copy(x0), f=loss, g=g,
+        verbose=verbose, maxtime=max_time, maxiter=max_iter, tol=tol, freq=freq
+    )
+    return r.state, r.k
 end
 
 
@@ -243,6 +238,33 @@ function cg_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64,
     res1 = Optim.optimize(
         loss, g, x0,
         ConjugateGradient(;
+            alphaguess=LineSearches.InitialStatic(),
+            linesearch=LineSearches.HagerZhang()
+        ),
+        options;
+        inplace=false
+    )
+    return res1, res1
+end
+
+function lbfgs_nls(n, m, pp, Nx::NeighborVector, Xv::Matrix{Float64}, tol::Float64, max_iter::Real, verbose::Bool, max_time::Real=100.0, freq=20)
+    function loss(x::AbstractVector{T}) where {T}
+        xv = reshape(x, 2, n - m)
+        return least_square(n, m, xv, pp, Nx)
+    end
+    x0 = vec(Xv)
+    g(x) = DRSOM.ReverseDiff.gradient(loss, x)
+    options = Optim.Options(
+        g_tol=tol,
+        iterations=round(Int, max_iter),
+        store_trace=true,
+        show_trace=true,
+        show_every=freq,
+        time_limit=max_time
+    )
+    res1 = Optim.optimize(
+        loss, g, x0,
+        LBFGS(;
             alphaguess=LineSearches.InitialStatic(),
             linesearch=LineSearches.HagerZhang()
         ),

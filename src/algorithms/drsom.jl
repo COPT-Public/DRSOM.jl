@@ -7,12 +7,33 @@ using LinearAlgebra
 using Printf
 using Dates
 
+
+
 const DRSOM_LOG_SLOTS = @sprintf(
     "%5s | %10s | %8s | %8s | %7s | %7s | %7s | %6s | %2s | %6s \n",
     "k", "f", "α₁", "α₂", "Δ", "|∇f|", "λ", "ρ", "kₜ", "t",
 )
 @doc raw"""
-Iteration object for DRSOM
+Iteration object for DRSOM, to initialize an iterator, 
+    you must specify the attributes, including 
+
+| attr | notes |
+|:-----:|:------|
+| x0   | initial point                   |
+| f    | the smooth function to minimize |
+| ϕ    | the nonsmooth function          |
+| g    | the gradient function           |
+| ga   | gradient function via forward or backward diff |
+| hvp  | hvp function via forward or backward diff
+| H    | hessian function |
+
+rest of the attributes have default options:
+```julia
+    t::Dates.DateTime = Dates.now()
+    itermax::Int64 = 20
+    fog = :forward
+    sog = :forward
+```
 """
 Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     x0::Tx            # initial point
@@ -29,11 +50,46 @@ Base.@kwdef mutable struct DRSOMIteration{Tx,Tf,Tϕ,Tr,Tg,Th,Te}
     LOG_SLOTS::String = DRSOM_LOG_SLOTS
     ALIAS::String = "DRSOM2"
     DESC::String = "DRSOM with gradient and momentum"
+    error::Union{Nothing,Exception} = nothing
 end
-
 
 Base.IteratorSize(::Type{<:DRSOMIteration}) = Base.IsInfinite()
 
+@doc raw"""
+State struct for DRSOM to keep the iterate information,
+We keep the following attributes:
+
+| attr | notes |
+|:-----------------:|:------|
+|x::Tx             | iterate | 
+|fx::R             | new value f at x: x(k) | 
+|fz::R             | old value f at z: x(k-1) | 
+|∇f::Tx            | gradient of f at x | 
+|∇fz::Tx           | gradient of f at z | 
+|∇hvp::Tx          | gradient buffer (for buffer use of hvps) | 
+|y::Tx             | forward point | 
+|z::Tx             | previous point | 
+|d::Tx             | momentum/fixed-point diff at iterate (= x - z) | 
+|α₁::R             | stepsize 1 parameter of gradient | 
+|α₂::R             | stepsize 2 parameter of momentum | 
+|Q::Tq             | Q for low-dimensional QP | 
+|c::Tc             | c for low-dimensional QP | 
+|G::Tq             | c for low-dimensional QP | 
+|Δ::R              | trs radius | 
+|dq::R             | decrease of estimated quadratic model | 
+|df::R             | decrease of the real function value | 
+|ρ::R              | trs descrease ratio: ρ = df/dq | 
+|ϵ::R              | eps: residual for gradient  | 
+|γ::R              | scaling parameter γ for λ | 
+|ψ::R              | 1-D linear search iteration |. if there is only one direction   | 
+|λ::R              | dual λ | 
+|kₜ::Int            | inner iterations for adjustment | 
+|kf::Int           | function evaluations | 
+|kg::Int           | gradient evaluations | 
+|kh::Int           | hvp      evaluations | 
+|kH::Int           | hessian  evaluations | 
+|t::R              | running time | 
+"""
 Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
@@ -63,6 +119,7 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     kh::Int = 0       # hvp      evaluations
     kH::Int = 0       # hessian  evaluations
     t::R = 0.0        # running time
+    status = true
 end
 
 function construct_quadratic_model(
@@ -79,6 +136,10 @@ function construct_quadratic_model(
         iter.hvp(z, gf, hvp, ∇hvp, gf)
     elseif iter.sog == :hess
         copy!(hvp, iter.H(z) * gf)
+    elseif iter.sog == :prov
+        # means the hvp is provided,
+        #   e.g. in the NLPModels
+        iter.hvp(z, gf, hvp)
     else
         # wild treatment in the direct mode 
         #   for the first iteration
@@ -111,6 +172,11 @@ function construct_quadratic_model(
             H = iter.H(state.x)
             Hg = H * state.∇f
             Hd = H * state.d
+        elseif iter.sog == :prov
+            # means the hvp is provided,
+            #   e.g. in the NLPModels
+            iter.hvp(state.x, state.∇f, Hg)
+            iter.hvp(state.x, state.d, Hd)
         end
         gₙ = state.ϵ = norm(state.∇f)
         dₙ = norm(state.d)
@@ -243,7 +309,6 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
         s = -state.∇f
 
         α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fz, state.x, s)
-
         # summary
         x = y = state.z - α .* state.∇f
         gₙ = norm(state.∇f)
@@ -294,3 +359,118 @@ DimensionReducedSecondOrderMethod(;
 ) = IterativeAlgorithm(DRSOMIteration, DRSOMState; name=name, stop=stop, display=display)
 
 # Aliases
+
+
+####################################################################################################
+# DRSOM
+####################################################################################################
+function (alg::IterativeAlgorithm{T,S})(;
+    maxiter=10000,
+    maxtime=1e2,
+    tol=1e-6,
+    freq=10,
+    verbose=true,
+    fog=:backward,
+    sog=:direct,
+    kwargs...
+) where {T<:DRSOMIteration,S<:DRSOMState}
+
+    arr = Vector{S}()
+    kwds = Dict(kwargs...)
+    x0 = get(kwds, :x0, nothing)
+    x0 === nothing && throw(ErrorException("an initial point must be provided"))
+    f = get(kwds, :f, nothing)
+    f === nothing && throw(ErrorException("target function f must be provided"))
+    if get(kwds, :g, nothing) !== nothing
+        fog = :direct
+    elseif fog == :forward
+        cfg = ForwardDiff.GradientConfig(f, x0, ForwardDiff.Chunk(x0))
+        gf(g_buffer, x) = ForwardDiff.gradient!(g_buffer, f, x, cfg)
+        kwds[:ga] = gf
+        if sog == :forward
+            hvpf(x, v, hvp, ∇hvp, ∇f) = hessfa(f, x, v, hvp, ∇hvp, ∇f; cfg=cfg)
+            kwds[:hvp] = hvpf
+        end
+    elseif fog == :backward
+        f_tape = ReverseDiff.GradientTape(f, x0)
+        f_tape_compiled = ReverseDiff.compile(f_tape)
+        gb(g_buffer, x) = ReverseDiff.gradient!(g_buffer, f_tape_compiled, x)
+        kwds[:ga] = gb
+        if sog == :backward
+            hvpb(x, v, hvp, ∇hvp, ∇f) = hessba(x, v, hvp, ∇hvp, ∇f; tp=f_tape_compiled)
+            kwds[:hvp] = hvpb
+        end
+    else
+        throw(ErrorException("""function g must be provided, you must specify g directly
+         or a correct first-order oracle mode via keyword :fog"""))
+    end
+    # 
+    if sog == :prov
+        hvp = get(kwds, :hvp, nothing)
+        hvp === nothing && throw(ErrorException("hvp function must be provided if you choose sog==:prov"))
+        kwds[:hvp] = hvp
+    end
+
+    for cf ∈ [:f :g :H :ga :hvp]
+        apply_counter(cf, kwds)
+    end
+    iter = T(; fog=fog, sog=sog, kwds...)
+    verbose && show(iter)
+    for (k, state) in enumerate(iter)
+
+        push!(arr, copy(state))
+        if k >= maxiter || state.t >= maxtime || alg.stop(tol, state)
+            verbose && alg.display(k, state)
+            verbose && summarize(k, iter, state)
+            return Result(name=alg.name, iter=iter, state=state, k=k, trajectory=arr)
+        end
+        verbose && (k == 1 || mod(k, freq) == 0) && alg.display(k, state)
+    end
+end
+
+
+function Base.show(io::IO, t::T) where {T<:DRSOMIteration}
+    format_header(t.LOG_SLOTS)
+    @printf io " algorithm alias       := %s\n" t.ALIAS
+    @printf io " algorithm description := %s\n" t.DESC
+    @printf io " inner iteration limit := %s\n" t.itermax
+    if t.g !== nothing
+        @printf io " oracle (first-order)  := %s => %s\n" t.fog "provided"
+    else
+        @printf io " oracle (first-order)  := %s\n" t.fog
+    end
+    @printf io " oracle (second-order) := %s => " t.sog
+    if t.sog ∈ (:forward, :backward)
+        @printf io "use forward diff or backward tape\n"
+    elseif t.sog == :direct
+        @printf io "use interpolation\n"
+    elseif t.sog == :hess
+        @printf io "use provided Hessian\n"
+    elseif t.sog == :prov
+        @printf io "use provided Hessian-vector product\n"
+    else
+        throw(ErrorException("unknown differentiation mode\n"))
+    end
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+function summarize(io::IO, k::Int, t::T, s::S) where {T<:DRSOMIteration,S<:DRSOMState}
+    println(io, "-"^length(t.LOG_SLOTS))
+    println(io, "summary:")
+    @printf io " (main)          f       := %.2e\n" s.fx
+    @printf io " (first-order)  |g|      := %.2e\n" s.ϵ
+    println(io, "oracle calls:")
+    @printf io " (main)          k       := %d  \n" k
+    @printf io " (function)      f       := %d  \n" s.kf
+    @printf io " (first-order)   g       := %d  \n" s.kg
+    @printf io " (first-order)  hvp      := %d  \n" s.kh
+    @printf io " (second-order)  h       := %d  \n" s.kH
+    @printf io " (line-search)   ψ       := %d  \n" s.ψ
+    @printf io " (running time)  t       := %.3f  \n" s.t
+    println(io, "-"^length(t.LOG_SLOTS))
+    flush(io)
+end
+
+summarize(k::Int, t::T, s::S) where {T<:DRSOMIteration,S<:DRSOMState} =
+    summarize(stdout, k, t, s)

@@ -24,7 +24,7 @@ using Optim
 using ProximalAlgorithms
 using Random
 using Distributions
-using Plots
+# using Plots
 using Printf
 using LazyStack
 using KrylovKit
@@ -45,17 +45,24 @@ using DRSOM
 # nlp = CUTEstModel("BROYDN7D", "-param", "N/2=2500")
 # nlp = CUTEstModel("SSBRYBND", "-param", "N=50")
 # nlp = CUTEstModel("SCURLY10", "-param", "N=10")
-# nlp = CUTEstModel("ARGLINA", "-param", "M=200,N=200")
+# nlp = CUTEstModel("ARGLINB", "-param", "M=200,N=200")
+# nlp = CUTEstModel("VARDIM", "-param", "N=200")
+# nlp = CUTEstModel("SENSORS", "-param", "N=10")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
+nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+# nlp = CUTEstModel("CHNROSNB", "-param", "N=25")
+# nlp = CUTEstModel("CURLY10", "-param", "N=100")
+# nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
 # nlp = CUTEstModel("ARWHEAD", "-param", "N=500")
-# nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
+# nlp = CUTEstModel("COSINE", "-param", "N=100")
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
-# nlp = CUTEstModel("FMINSRF2", "-param", "NS=49")
+# nlp = CUTEstModel("INDEF", "-param", "ALPHA=0.5,N=50")
 #######################################################
 
 bool_plotting = true
-name, param = ARGS[1:2]
+# name, param = ARGS[1:2]
+# nlp = CUTEstModel(name, "-param", param)
 
 function get_needed_entry(r)
     return @sprintf("%d,%.1e,%.3f", r.k, r.state.ϵ, r.state.t)
@@ -66,13 +73,13 @@ function get_needed_entry_optim(r)
 end
 
 
-nlp = CUTEstModel(name, "-param", param)
 
 name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
 x0 = nlp.meta.x0
 loss(x) = NLPModels.obj(nlp, x)
 g(x) = NLPModels.grad(nlp, x)
 H(x) = NLPModels.hess(nlp, x)
+hvp(x, v, Hv) = NLPModels.hprod!(nlp, x, v, Hv)
 
 
 # compare with GD and LBFGS, Trust region newton,
@@ -85,79 +92,99 @@ options = Optim.Options(
     time_limit=500
 )
 
-res1 = Optim.optimize(loss, g, x0,
-    GradientDescent(;
-        alphaguess=LineSearches.InitialHagerZhang(),
-        linesearch=LineSearches.StrongWolfe()
-    ), options; inplace=false)
-res2 = Optim.optimize(loss, g, H, x0,
-    LBFGS(;
-        linesearch=LineSearches.StrongWolfe()
-    ), options; inplace=false)
-res3 = Optim.optimize(loss, g, H, x0,
-    NewtonTrustRegion(
-    ), options; inplace=false)
+# res1 = Optim.optimize(loss, g, x0,
+#     GradientDescent(;
+#         alphaguess=LineSearches.InitialHagerZhang(),
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options; inplace=false)
+# res2 = Optim.optimize(loss, g, H, x0,
+#     LBFGS(;
+#         linesearch=LineSearches.StrongWolfe()
+#     ), options; inplace=false)
+# res3 = Optim.optimize(loss, g, H, x0,
+#     NewtonTrustRegion(
+#     ), options; inplace=false)
 
-res4 = Optim.optimize(loss, g, H, x0,
-    ConjugateGradient(;
-        alphaguess=LineSearches.InitialStatic(),
-        linesearch=LineSearches.HagerZhang()
-    ), options; inplace=false)
+# res4 = Optim.optimize(loss, g, H, x0,
+#     ConjugateGradient(;
+#         alphaguess=LineSearches.InitialStatic(),
+#         linesearch=LineSearches.HagerZhang()
+#     ), options; inplace=false)
 
+# # arc = wrapper_arc(nlp)
 
-
-r = DRSOM2()(;
-    x0=copy(x0), f=loss, g=g,
-    maxiter=10000, tol=1e-6, freq=1
+# r = DRSOM2()(;
+#     x0=copy(x0), f=loss, g=g,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     sog=:prov, hvp=hvp
+# )
+rh = HSODM(; name=:HSODMLS)(;
+    x0=copy(x0), f=loss, g=g, hvp=hvp,
+    maxiter=10000, tol=1e-6, freq=1,
+    direction=:warm, linesearch=:hagerzhang
 )
 
-rh = HSODM()(;
+rh = HSODM(; name=:HSODMLS)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm
+    direction=:warm, linesearch=:hagerzhang
 )
 
-# rarc = wrapper_arc(nlp)
-results = [
-    optim_to_result(res1, "GD+Wolfe"),
-    optim_to_result(res2, "LBFGS+Wolfe"),
-    optim_to_result(res3, "Newton-TR"),
-    optim_to_result(res4, "CG"),
-    r,
-    rh,
-]
 
-if bool_plotting
+# rha = HSODM(; name=:HSODMArC)(;
+#     x0=copy(x0), f=loss, g=g, H=H,
+#     maxiter=10, tol=1e-6, freq=1,
+#     direction=:warm,
+#     # linesearch=:hagerzhang,
+#     adaptive=:arc,
+#     maxtime=10000
+# )
 
-    for metric in (:fx, :ϵ)
-        method_objval_ragged = rstack([
-                getresultfield.(results, metric)...
-            ]; fill=NaN
-        )
-        method_names = getname.(results)
-
-
-        @printf("plotting results\n")
-
-        pgfplotsx()
-        title = "CUTEst model name := $(name)"
-        fig = plot(
-            1:(method_objval_ragged|>size|>first),
-            method_objval_ragged,
-            label=permutedims(method_names),
-            xscale=:log2,
-            yscale=:log10,
-            xlabel="Iteration",
-            ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
-            title=title,
-            size=(1280, 720),
-            yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
-            xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-            dpi=1000,
-        )
-
-        savefig(fig, @sprintf("/tmp/CUTEst-%s-%s.pdf", name, metric))
-    end
-
-end
 finalize(nlp)
+
+# rarc = wrapper_arc(nlp)
+# results = [
+#     # optim_to_result(res1, "GD+Wolfe"),
+#     optim_to_result(res2, "LBFGS+Wolfe"),
+#     optim_to_result(res3, "Newton-TR"),
+#     # optim_to_result(res4, "CG"),
+#     # arc,
+#     # r,
+#     rh,
+#     rha,
+# ]
+
+# if bool_plotting
+
+#     for metric in (:fx, :ϵ)
+#         method_objval_ragged = rstack([
+#                 getresultfield.(results, metric)...
+#             ]; fill=NaN
+#         )
+#         method_names = getname.(results)
+
+
+#         @printf("plotting results\n")
+
+#         pgfplotsx()
+#         title = "CUTEst model name := $(name)"
+#         fig = plot(
+#             1:(method_objval_ragged|>size|>first),
+#             method_objval_ragged,
+#             label=permutedims(method_names),
+#             xscale=:log2,
+#             yscale=:log10,
+#             xlabel="Iteration",
+#             ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
+#             title=title,
+#             size=(1280, 720),
+#             yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+#             xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+#             dpi=1000,
+#         )
+
+#         savefig(fig, @sprintf("/tmp/CUTEst-%s-%s.pdf", name, metric))
+#     end
+
+# end
+

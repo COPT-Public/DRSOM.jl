@@ -76,14 +76,9 @@ If you just want help on a specific function, see the [API Reference](@ref api_r
 ## Reference
 You are welcome to cite our paper on DRSOM :)
 ```bibtex
-
 @misc{zhang_drsom_2022,
 	title = {{DRSOM}: {A} {Dimension} {Reduced} {Second}-{Order} {Method} and {Preliminary} {Analyses}},
-	copyright = {All rights reserved},
-	shorttitle = {{DRSOM}},
 	url = {http://arxiv.org/abs/2208.00208},
-	language = {en},
-	urldate = {2022-08-12},
 	publisher = {arXiv},
 	author = {Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
 	month = jul,
@@ -97,7 +92,6 @@ and HSODM,
 @misc{zhang_homogenous_2022,
 	title = {A {Homogenous} {Second}-{Order} {Descent} {Method} for {Nonconvex} {Optimization}},
 	url = {http://arxiv.org/abs/2211.08212},
-	urldate = {2022-11-16},
 	publisher = {arXiv},
 	author = {Zhang, Chuwen and Ge, Dongdong and He, Chang and Jiang, Bo and Jiang, Yuntian and Xue, Chenyu and Ye, Yinyu},
 	month = nov,
