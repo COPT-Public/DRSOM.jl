@@ -172,14 +172,14 @@ end
 function TRStyleLineSearch(
     iter::IterationType,
     z::Tx,
-    s::Tx,
+    s::Tg,
     vHv::Real,
     vg::Real,
     f₀::Real,
     γ₀::Real=1.0;
     ρ::Real=0.7,
     ψ::Real=0.8
-) where {IterationType,Tx}
+) where {IterationType,Tx,Tg}
     it = 1
     γ = γ₀
     fx = f₀
@@ -206,8 +206,8 @@ function BacktrackLineSearch(
     iter::IterationType,
     gx, fx,
     x::Tx,
-    s::Tx,
-) where {IterationType,Tx}
+    s::Tg
+) where {IterationType,Tx,Tg}
 
     ϕ(α) = iter.f(x .+ α .* s)
     function dϕ(α)
@@ -239,6 +239,7 @@ function BacktrackLineSearch(
         return α, fx, it
     catch y
         isa(y, LineSearchException) # && println() # todo
+
         return 0.1, fx, 1
     end
 end
@@ -247,8 +248,8 @@ function BacktrackLineSearch(
     f, g,
     gx, fx,
     x::Tx,
-    s::Tx,
-) where {Tx}
+    s::Tg
+) where {Tx,Tg}
 
     ϕ(α) = f(x .+ α .* s)
     function dϕ(α)
@@ -266,13 +267,14 @@ function BacktrackLineSearch(
 
 
     dϕ_0 = dot(s, gx)
-    try
-        α, fx, it = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
-        return α, fx, it
-    catch y
-        isa(y, LineSearchException) # && println() # todo
-        return 0.1, fx, 1
-    end
+    # try
+    α, fx = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+    return α, fx
+    # catch y
+    #     throw(y)
+    #     isa(y, LineSearchException) # && println() # todo
+    #     return 0.1, fx, 1
+    # end
 
 end
 
@@ -281,8 +283,9 @@ function HagerZhangLineSearch(
     iter::IterationType,
     gx, fx,
     x::Tx,
-    s::Tx,
-) where {IterationType,Tx}
+    s::Tg;
+    α₀::R=1.0
+) where {IterationType,Tx,Tg,R<:Real}
 
     ϕ(α) = iter.f(x .+ α .* s)
     function dϕ(α)
@@ -310,7 +313,7 @@ function HagerZhangLineSearch(
     dϕ_0 = dot(s, gx)
 
     try
-        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, α₀, fx, dϕ_0)
         return α, fx, it
     catch y
         isa(y, LineSearchException) # && println() # todo
@@ -322,8 +325,9 @@ function HagerZhangLineSearch(
     f, g,
     gx, fx,
     x::Tx,
-    s::Tx,
-) where {Tx}
+    s::Tg;
+    α₀::R=1.0
+) where {Tx,Tg,R<:Real}
 
     ϕ(α) = f(x .+ α .* s)
     function dϕ(α)
@@ -342,7 +346,7 @@ function HagerZhangLineSearch(
 
     dϕ_0 = dot(s, gx)
     try
-        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        α, fx, it = lsa(ϕ, dϕ, ϕdϕ, α₀, fx, dϕ_0)
         return α, fx, it
     catch y
         isa(y, LineSearchException) # && println() # todo

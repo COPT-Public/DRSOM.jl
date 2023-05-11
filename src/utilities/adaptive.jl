@@ -153,7 +153,9 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
     # todo, implement adaptive version.
 end
 
-function _inner_homogeneous_eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state)
+function _inner_homogeneous_eigenvalue(
+    B::Symmetric{Q,F}, iter, state
+) where {Q<:Real,F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
     n = length(state.x)
     vals, vecs, info = eigenvalue(B, iter, state)
     λ₁ = vals |> real
@@ -204,7 +206,9 @@ end
 
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
-function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:arnoldi)
+function eigenvalue(
+    B::Symmetric{Float64,F}, iter, state; bg=:arnoldi
+) where {F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
 
     n = length(state.x)
     if bg == :krylov
@@ -276,6 +280,16 @@ function linesearch(state, fa, adaptive_param; verbose::Bool=false, method::Symb
 end
 
 
+
+function NewtonStep(
+    H::SparseMatrixCSC{R,T}, μ, g, state; verbose::Bool=false
+) where {R<:Real,T<:Int}
+    d, __unused_info = KrylovKit.linsolve(
+        H + μ * SparseArrays.I, -Vector(g);
+        isposdef=true, issymmetric=true
+    )
+    return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
+end
 
 function NewtonStep(H, μ, g, state; verbose::Bool=false)
     d = -((H + μ * I) \ g)

@@ -7,9 +7,9 @@ using KrylovKit
 using Distributions
 using LineSearches
 
-const PFH_LOG_SLOTS = @sprintf(
-    "%5s | %10s | %10s | %7s | %8s | %8s | %6s | %5s | %6s | %6s |\n",
-    "k", "μ", "f", "α", "Δ", "|∇f|", "λ", "kᵤ", "ρ", "t"
+PFH_LOG_SLOTS = @sprintf(
+    "%4s | %5s | %9s | %10s | %7s | %7s | %9s | %9s | %6s |\n",
+    "kᵤ", "k", "μ", "f", "α", "Δ", "|∇f|", "∇fμ", "t"
 )
 Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     f::Tf             # f: smooth f
@@ -25,6 +25,7 @@ Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH}
     direction = :warm
     linesearch = :none
     adaptive = :none
+    step = :hsodm
     verbose::Int64 = 1
     LOG_SLOTS::String = PFH_LOG_SLOTS
     ALIAS::String = "PFH"
@@ -37,27 +38,27 @@ PFHIteration = PathFollowingHSODMIteration
 
 Base.IteratorSize(::Type{<:PFHIteration}) = Base.IsInfinite()
 
-Base.@kwdef mutable struct PFHState{R,Tx}
+Base.@kwdef mutable struct PFHState{R,Tx,Tg}
     status::Bool = true # status
     x::Tx             # iterate
-    ∇fμ::Tx           # gradient of homotopy model at x 
+    ∇fμ::Tg           # gradient of homotopy model at x 
     μ::Float64        # μ in the path-following algorithm
     kᵤ::Int = 0       # outer path-following loop
     ϵμ::R             # eps 3: residual of ∇fμ
     ##################################################################
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
-    ∇f::Tx            # gradient of f at x
-    ∇fz::Tx           # gradient of f at z
+    ∇f::Tg            # gradient of f at x
+    ∇fz::Tg           # gradient of f at z
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    Δ::R              # trs radius
-    dq::R             # decrease of estimated quadratic model
-    df::R             # decrease of the real function value
-    ρ::R              # trs descrease ratio: ρ = df/dq
-    ϵ::R              # eps 2: residual for gradient 
-    α::R = 1e-5       # step size
+    Δ::R = 1e6        # trs radius
+    dq::R = 0.0       # decrease of estimated quadratic model
+    df::R = 0.0       # decrease of the real function value
+    ρ::R = 0.0        # trs descrease ratio: ρ = df/dq
+    ϵ::R = 0.0        # eps 2: residual for gradient 
+    α::R = 0.0       # step size
     γ::R = 1e-5       # trust-region style parameter γ
     σ::R = 1e3        # adaptive arc style parameter σ
     kᵥ::Int = 1       # krylov iterations
@@ -74,83 +75,32 @@ Base.@kwdef mutable struct PFHState{R,Tx}
 end
 
 
-
+@doc raw"""
+ Initialize the PFH state, change of behavior:
+    do not optimize at the first iterate.
+"""
 function Base.iterate(iter::PFHIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
-    grad_f_x = similar(z)
-    grad_f_b = similar(z)
-
     grad_f_x = iter.g(z)
     grad_fμ = grad_f_x + iter.μ₀ * z
-    H = iter.H(z)
-    n = length(z)
-    # construct homogeneous system
-    B = Symmetric([H grad_fμ; grad_fμ' -iter.μ₀])
-    vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol)
-    kᵥ = info.numops
-    λ₁ = vals[1]
-    ξ = vecs[1]
-    v = reshape(ξ[1:end-1], n)
-    t₀ = ξ[end]
-    (abs(t₀) > 1e-3) && (v = v / t₀)
-
-    vn = norm(v)
-    vHv = (v'*H*v/2)[]
-    vg = (v'*grad_f_x)[]
-    bool_reverse_v = vg > 0
-    # reverse this v if g'v > 0
-    v = (-1)^bool_reverse_v * v
-    vg = (-1)^bool_reverse_v * vg
-    # # now use a LS to solve (state.α)
-    # if iter.linesearch == :trustregion
-    #     α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
-    # elseif iter.linesearch == :hagerzhang
-    #     # use Hager-Zhang line-search algorithm
-    #     α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
-    # elseif iter.linesearch == :none
-    # α = 1.0
-    # fx = iter.f(z + v * α)
-    # kₜ = 1
-    # else
-    # end
-    α = 1.0
-    fx = iter.f(z + v * α)
-    kₜ = 1
-    y = z + α .* v
-    fx = iter.f(y)
-    dq = -α^2 * vHv / 2 - α * vg
-    df = fz - fx
-    ro = df / dq
-    Δ = vn * α
-    t = (Dates.now() - iter.t).value / 1e3
-    d = y - z
     state = PFHState(
-        x=y,
-        y=y,
+        x=z,
+        y=z,
         z=z,
-        fx=fx,
+        d=zeros(z |> size),
+        fx=fz,
         fz=fz,
         ∇f=grad_f_x,
         ∇fμ=grad_fμ,
-        ∇fz=z,
-        α=α,
-        d=d,
-        Δ=Δ,
-        dq=dq,
-        df=df,
-        ρ=ro,
+        ∇fz=grad_f_x,
         ϵ=norm(grad_f_x, 2),
-        ϵμ=norm(grad_f_x, 2),
+        ϵμ=norm(grad_fμ, 2),
         μ=iter.μ₀,
         γ=1e-6,
-        kᵥ=kᵥ,
-        kₜ=kₜ,
-        t=t,
-        δ=0.0,
         ξ=ones(length(z) + 1),
-        λ₁=λ₁
+        λ₁=0.0
     )
     return state, state
 end
@@ -167,22 +117,24 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.∇fμ = state.∇f + state.μ * state.x
     H = iter.H(state.x)
 
-    # construct homogeneous system
-    B = Symmetric([H state.∇fμ; state.∇fμ' state.μ])
-    kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
-        B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
-    )
-
-    # kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
-    #     H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
-    # )
-
-    # # stepsize choice
-    # fh(x) = iter.f(x) + state.μ / 2 * norm(x)^2
-    # gh(x) = iter.g(x) + state.μ * x
-    # # use Hager-Zhang line-search algorithm
-    # state.α, fx, _ = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
-    state.α = 1.0
+    if iter.step == :hsodm
+        # construct homogeneous system
+        B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
+        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+            B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+        )
+    else
+        kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
+            H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
+        )
+    end
+    # stepsize choice
+    fh(x) = iter.f(x) + state.μ / 2 * norm(x)^2
+    gh(x) = iter.g(x) + state.μ * x
+    # state.α = 1.0
+    # use Hager-Zhang line-search algorithm
+    state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+    # state.α = max(1, 1 - state.μ)
     fx = iter.f(state.z + v * state.α)
 
     # summarize
@@ -205,8 +157,8 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.ϵμ = norm(state.∇fμ)
 
 
-    if state.ϵμ < state.μ
-        state.μ = state.μ < 1e-7 ? 0 : 0.6 * state.μ
+    if state.ϵμ < min(5e-1, state.μ)
+        state.μ = state.μ < 1e-7 ? 0 : 0.05 * state.μ
         state.kᵤ += 1
         state.kₜ = 0
     end
@@ -235,8 +187,9 @@ function pfh_display(k, state::PFHState)
     if k == 1 || mod(k, 30) == 0
         @printf("%s", PFH_LOG_SLOTS)
     end
-    @printf("%5d | %+.3e | %+.3e | %.1e | %.2e | %.2e | %+.0e | %5d | %+.0e | %6.1f |\n",
-        k, state.μ, state.fx, state.α, state.Δ, state.ϵ, state.λ₁, state.kᵤ, state.ρ, state.t
+    @printf(
+        "%4d | %5d | %+.2e | %+.3e | %.1e | %.1e | %+.2e | %+.2e | %6.1f |\n",
+        state.kᵤ, k, state.μ, state.fx, state.α, state.Δ, state.ϵ, state.ϵμ, state.t
     )
 end
 
@@ -266,6 +219,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     linesearch=:none,
     adaptive=:none,
     μ₀=0.1,
+    bool_trace=true,
     kwargs...
 ) where {T<:PFHIteration,S<:PFHState}
 
@@ -279,7 +233,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     (verbose >= 1) && show(iter)
     for (k, state) in enumerate(iter)
 
-        push!(arr, copy(state))
+        bool_trace && push!(arr, copy(state))
         if k >= maxiter || state.t >= maxtime || alg.stop(tol, state) || state.status == false
             (verbose >= 1) && alg.display(k, state)
             (verbose >= 1) && summarize(k, iter, state)
@@ -292,11 +246,12 @@ end
 
 function Base.show(io::IO, t::T) where {T<:PFHIteration}
     format_header(t.LOG_SLOTS)
-    @printf io " algorithm alias       := %s\n" t.ALIAS
-    @printf io " algorithm description := %s\n" t.DESC
-    @printf io " inner iteration limit := %s\n" t.itermax
-    @printf io " line-search algorithm := %s\n" t.linesearch
-    @printf io "   adaptive μ strategy := %s\n" t.adaptive
+    @printf io "  algorithm alias       := %s\n" t.ALIAS
+    @printf io "  algorithm description := %s\n" t.DESC
+    @printf io "  inner iteration limit := %s\n" t.itermax
+    @printf io "  line-search algorithm := %s\n" t.linesearch
+    @printf io "    adaptive μ strategy := %s\n" t.adaptive
+    @printf io " homotopy step strategy := %s\n" t.step
 
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
@@ -308,7 +263,8 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:PFHIteration,S<:PFHStat
     @printf io " (main)          f       := %.2e\n" s.fx
     @printf io " (first-order)  |g|      := %.2e\n" s.ϵ
     println(io, "oracle calls:")
-    @printf io " (main)          k       := %d  \n" k
+    @printf io " (main)          kᵤ      := %d  \n" s.kᵤ
+    @printf io " (main-total)    k       := %d  \n" k
     @printf io " (function)      f       := %d  \n" s.kf
     @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
     @printf io " (second-order)  H       := %d  \n" s.kH
