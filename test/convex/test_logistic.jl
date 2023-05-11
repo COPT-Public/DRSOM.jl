@@ -41,28 +41,36 @@ using LoopVectorization
 using LIBSVMFileIO
 
 bool_plot = false
-bool_opt = true
+bool_opt = false
 bool_q_preprocessed = true
 
-name = "covtype"
+name = "a4a"
+# name = "w4a"
+# name = "covtype"
 # Load data
 X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
+Xv = hcat(X...)'
 y = convert(Vector{Float64}, y)
 
-
+@info begin
+    a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
+    "using BLAS threads $a"
+end
 @info "data reading finished"
+
 # precompute Q Matrix
 Qf(x, y) = y^2 * x * x'
+Qc(x, y) = y^2 * x
 bool_q_preprocessed && (Q = Qf.(X, y))
-# y = max.(y, 0)
+bool_q_preprocessed && (P = Qc.(X, y))
+Pv = hcat(P...)'
 # loss
 λ = 1e-5
-n = X[1] |> size
+n = X[1] |> length
 Random.seed!(1)
-x0 = 0.011 * randn(Float64, n)
 N = y |> length
 
-@info "data preparation finished"
+
 
 function sloss(w)
     loss_single(x, y) = log(1 + exp(-y * w' * x))
@@ -92,19 +100,47 @@ function g(w)
     return _pure / N + λ * w
 end
 function H(w)
-    function _H(x, y, q, w)
-        ff = exp(-y * w' * x)
-        return ff / (1 + ff)^2 * q
+    # function _H(x, y, q, w)
+    #     ff = exp(-y * w' * x)
+    #     return ff / (1 + ff)^2 * q
+    # end
+    # _pure = vmapreduce(
+    #     (x, y, q) -> _H(x, y, q, w),
+    #     +,
+    #     X,
+    #     y,
+    #     Q
+    # )
+    # return _pure / N + λ * I
+    z = exp.(y .* (Xv * w))
+    fq = z ./ (1 .+ z) .^ 2
+    return ((fq .* Pv)' * Xv ./ N) + λ * I
+end
+function hvp(w, v, Hv; eps=1e-8)
+    function _hvp(x, y, q, w, v)
+        wx = w' * x
+        ff = exp(-y * wx)
+        return ff / (1 + ff)^2 * q * x' * v
     end
     _pure = vmapreduce(
-        (x, y, q) -> _H(x, y, q, w),
+        (x, y, q) -> _hvp(x, y, q, w, v),
         +,
         X,
         y,
-        Q
+        P
     )
-    return _pure / N + λ * I
+    # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
+    copyto!(Hv, _pure ./ N .+ λ .* v)
 end
+
+function hvp1(w, v, Hv)
+    z = exp.(y .* (Xv * w))
+    fq = z ./ (1 .+ z) .^ 2
+    copyto!(Hv, (fq .* Pv)' * (Xv * v) ./ N .+ λ .* v)
+end
+@info "data preparation finished"
+x0 = 0 * randn(Float64, n)
+ε = 1e-8 * max(g(x0) |> norm, 1)
 
 
 if bool_opt
@@ -125,15 +161,15 @@ if bool_opt
         inplace=false
     )
 
-    # r_lbfgs = Optim.optimize(
-    #     loss, g, x0,
-    #     LBFGS(; alphaguess=LineSearches.InitialStatic(),
-    #         linesearch=LineSearches.BackTracking()), options;
-    #     inplace=false
-    # )
+    r_lbfgs = Optim.optimize(
+        loss, g, x0,
+        LBFGS(; alphaguess=LineSearches.InitialStatic(),
+            linesearch=LineSearches.BackTracking()), options;
+        inplace=false
+    )
 
     # r = HSODM()(;
-    #     x0=copy(x0), f=loss, g=g, H=H,
+    #     x0=copy(x0), f=loss, g=g, hvp=hvp,
     #     maxiter=10000, tol=1e-6, freq=1,
     #     maxtime=10000,
     #     direction=:warm, linesearch=:hagerzhang,
@@ -142,15 +178,23 @@ if bool_opt
 
     rn = PFH()(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=10000, tol=1e-6, freq=1,
+        maxiter=10000, tol=ε, freq=1,
         step=:newton, μ₀=5e-2,
         maxtime=10000,
         direction=:warm
     )
+    # rh = PFH()(;
+    #     x0=copy(x0), f=loss, g=g, hvp=hvp,# H=H,
+    #     maxiter=10000, tol=ε, freq=1,
+    #     step=:hsodm, μ₀=5e-1,
+    #     maxtime=10000,
+    #     direction=:warm
+    # )
     rh = PFH()(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=10000, tol=1e-6, freq=1,
+        maxiter=10000, tol=ε, freq=1,
         step=:hsodm, μ₀=5e-1,
+        bool_trace=false,
         maxtime=10000,
         direction=:warm
     )

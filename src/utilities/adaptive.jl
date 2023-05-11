@@ -5,6 +5,7 @@
 using Roots
 using SparseArrays
 using ArnoldiMethod
+using LDLFactorizations
 try
     using MKL
 catch e
@@ -147,7 +148,8 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
     # non-adaptive mode
     if iter.adaptive === :none
         state.λ₁ = λ₁
-        state.ξ = ξ
+        # printstyled(ξ)
+        state.ξ = ξ[:, 1]
         return kᵥ, k₂, v, vn, vg, vHv
     end
     # todo, implement adaptive version.
@@ -284,17 +286,30 @@ end
 function NewtonStep(
     H::SparseMatrixCSC{R,T}, μ, g, state; verbose::Bool=false
 ) where {R<:Real,T<:Int}
-    d, __unused_info = KrylovKit.linsolve(
-        H + μ * SparseArrays.I, -Vector(g);
-        isposdef=true, issymmetric=true
-    )
+    # d, __unused_info = KrylovKit.linsolve(
+    #     H + μ * SparseArrays.I, -Vector(g);
+    #     isposdef=true, issymmetric=true
+    # )
+    # d = -((H + μ * I) \ g)
+    cc = ldl(H + μ * I)
+    d = -cc \ g
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
 
-function NewtonStep(H, μ, g, state; verbose::Bool=false)
+function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
+) where {R<:Real}
     d = -((H + μ * I) \ g)
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
+
+function NewtonStep(f, g, state; verbose::Bool=false)
+    d, __unused_info = KrylovKit.linsolve(
+        f, -Vector(g);
+        isposdef=true, issymmetric=true
+    )
+    return 1, 1, d, norm(d), d' * state.∇f, d' * f(d)
+end
+
 ###############################################################################
 # a vanilla bisection
 ###############################################################################

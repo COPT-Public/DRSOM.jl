@@ -7,20 +7,23 @@ using KrylovKit
 using Distributions
 using LineSearches
 
-PFH_LOG_SLOTS = @sprintf(
+const PFH_LOG_SLOTS = @sprintf(
     "%4s | %5s | %9s | %10s | %7s | %7s | %9s | %9s | %6s |\n",
     "kᵤ", "k", "μ", "f", "α", "Δ", "|∇f|", "∇fμ", "t"
 )
-Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH}
+Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     f::Tf             # f: smooth f
     ϕ::Tϕ = nothing   # ϕ: nonsmooth part (not implemented yet)
     g::Tg = nothing   # gradient function
+    hvp::Th = nothing
+    fvp::Union{Function,Nothing} = nothing
+    ff::Union{Function,Nothing} = nothing
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
     μ₀::Float64       # initial path-following penalty
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-10
+    eigtol::Float64 = 1e-12
     itermax::Int64 = 20
     direction = :warm
     linesearch = :none
@@ -49,6 +52,7 @@ Base.@kwdef mutable struct PFHState{R,Tx,Tg}
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
     ∇f::Tg            # gradient of f at x
+    ∇fb::Tg           # gradient buffer
     ∇fz::Tg           # gradient of f at z
     y::Tx             # forward point
     z::Tx             # previous point
@@ -85,6 +89,7 @@ function Base.iterate(iter::PFHIteration)
     fz = iter.f(z)
     grad_f_x = iter.g(z)
     grad_fμ = grad_f_x + iter.μ₀ * z
+    Hv = similar(grad_f_x)
     state = PFHState(
         x=z,
         y=z,
@@ -94,6 +99,7 @@ function Base.iterate(iter::PFHIteration)
         fz=fz,
         ∇f=grad_f_x,
         ∇fμ=grad_fμ,
+        ∇fb=Hv,
         ∇fz=grad_f_x,
         ϵ=norm(grad_f_x, 2),
         ϵμ=norm(grad_fμ, 2),
@@ -102,6 +108,18 @@ function Base.iterate(iter::PFHIteration)
         ξ=ones(length(z) + 1),
         λ₁=0.0
     )
+    if (iter.step == :hsodm) && (iter.hvp !== nothing)
+        fvp(x, g, v, Hv, d) = (
+            iter.hvp(x, v[1:end-1], Hv);
+            [
+                Hv + v[end] * g
+                g'v[1:end-1] + d * v[end]
+            ]
+        )
+        iter.fvp = fvp
+        ff(v) = iter.fvp(state.x, state.∇fμ, v, state.∇fb, -state.μ)
+        iter.ff = ff
+    end
     return state, state
 end
 
@@ -115,21 +133,48 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 
     state.∇f = iter.g(state.x)
     state.∇fμ = state.∇f + state.μ * state.x
-    H = iter.H(state.x)
+
     fh(x) = iter.f(x) + state.μ / 2 * norm(x)^2
     gh(x) = iter.g(x) + state.μ * x
     if iter.step == :hsodm
         # construct homogeneous system
-        B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
-        kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
-            B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
-        )
+        if iter.hvp === nothing
+            H = iter.H(state.x)
+            B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
+            kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+                B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+            )
+        else
+
+            # H = iter.H(state.x)
+            # B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
+            # q = randn((state.x |> length) + 1)
+            # @assert abs.(B * q - ff(q)) |> maximum < 1e-6
+            kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
+                iter.ff, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
+            )
+        end
         # state.α, fx = TRStyleLineSearch(iter, state.x, v, vHv, vg, state.fz)
         state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
     else
-        kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
-            H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
-        )
+        if iter.hvp === nothing
+            H = iter.H(state.x)
+            kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
+                H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
+            )
+        else
+            function hvp(v)
+                iter.hvp(state.x, v, state.∇fb)
+                println(v)
+                println(state.∇fb)
+                z = state.∇fb .+ state.μ * v
+                return z
+            end
+            # println(hvp(state.x))
+            kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
+                hvp, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
+            )
+        end
         # stepsize choice
 
         # state.α = 1.0
@@ -159,7 +204,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.ϵ = norm(state.∇f)
     state.ϵμ = norm(state.∇fμ)
 
-    if state.ϵμ < min(5e-1, state.μ)
+    if state.ϵμ < min(5e-1, 10 * state.μ)
 
         state.μ = state.μ < 1e-6 ? 0 : 0.05 * state.μ
         state.kᵤ += 1
@@ -255,7 +300,14 @@ function Base.show(io::IO, t::T) where {T<:PFHIteration}
     @printf io "  line-search algorithm := %s\n" t.linesearch
     @printf io "    adaptive μ strategy := %s\n" t.adaptive
     @printf io " homotopy step strategy := %s\n" t.step
-
+    if t.hvp !== nothing
+        @printf io "      second-order info := using provided Hessian-vector product\n"
+    elseif t.H !== nothing
+        @printf io "      second-order info := using provided Hessian matrix\n"
+    else
+        @printf io " unknown mode to compute Hessian info\n"
+        throw(ErrorException("unknown differentiation mode\n"))
+    end
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
 end
