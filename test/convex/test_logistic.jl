@@ -41,10 +41,10 @@ using LoopVectorization
 using LIBSVMFileIO
 
 bool_plot = false
-bool_opt = false
-bool_q_preprocessed = false
+bool_opt = true
+bool_q_preprocessed = true
 
-name = "gisette_scale"
+name = "covtype"
 # Load data
 X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
 y = convert(Vector{Float64}, y)
@@ -58,7 +58,8 @@ bool_q_preprocessed && (Q = Qf.(X, y))
 # loss
 λ = 1e-5
 n = X[1] |> size
-x0 = 5 * ones(n)
+Random.seed!(1)
+x0 = 0.011 * randn(Float64, n)
 N = y |> length
 
 @info "data preparation finished"
@@ -118,18 +119,18 @@ if bool_opt
         time_limit=500
     )
 
-    # r_newton = Optim.optimize(
-    #     loss, g, H, x0,
-    #     Newton(; alphaguess=LineSearches.InitialStatic()), options;
-    #     inplace=false
-    # )
-
-    r_lbfgs = Optim.optimize(
-        loss, g, x0,
-        LBFGS(; alphaguess=LineSearches.InitialStatic(),
-            linesearch=LineSearches.BackTracking()), options;
+    r_newton = Optim.optimize(
+        loss, g, H, x0,
+        Newton(; alphaguess=LineSearches.InitialStatic()), options;
         inplace=false
     )
+
+    # r_lbfgs = Optim.optimize(
+    #     loss, g, x0,
+    #     LBFGS(; alphaguess=LineSearches.InitialStatic(),
+    #         linesearch=LineSearches.BackTracking()), options;
+    #     inplace=false
+    # )
 
     # r = HSODM()(;
     #     x0=copy(x0), f=loss, g=g, H=H,
@@ -139,10 +140,17 @@ if bool_opt
     #     adaptive=:none
     # )
 
-    r = PFH()(;
+    rn = PFH()(;
         x0=copy(x0), f=loss, g=g, H=H,
         maxiter=10000, tol=1e-6, freq=1,
-        step=:newton, μ₀=5e0,
+        step=:newton, μ₀=5e-2,
+        maxtime=10000,
+        direction=:warm
+    )
+    rh = PFH()(;
+        x0=copy(x0), f=loss, g=g, H=H,
+        maxiter=10000, tol=1e-6, freq=1,
+        step=:hsodm, μ₀=5e-1,
         maxtime=10000,
         direction=:warm
     )

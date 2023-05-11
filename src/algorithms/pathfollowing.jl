@@ -116,24 +116,27 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.∇f = iter.g(state.x)
     state.∇fμ = state.∇f + state.μ * state.x
     H = iter.H(state.x)
-
+    fh(x) = iter.f(x) + state.μ / 2 * norm(x)^2
+    gh(x) = iter.g(x) + state.μ * x
     if iter.step == :hsodm
         # construct homogeneous system
         B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
         )
+        # state.α, fx = TRStyleLineSearch(iter, state.x, v, vHv, vg, state.fz)
+        state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
     else
         kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
             H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
         )
+        # stepsize choice
+
+        # state.α = 1.0
+        # use Hager-Zhang line-search algorithm
+        state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
     end
-    # stepsize choice
-    fh(x) = iter.f(x) + state.μ / 2 * norm(x)^2
-    gh(x) = iter.g(x) + state.μ * x
-    # state.α = 1.0
-    # use Hager-Zhang line-search algorithm
-    state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+
     # state.α = max(1, 1 - state.μ)
     fx = iter.f(state.z + v * state.α)
 
@@ -156,9 +159,9 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.ϵ = norm(state.∇f)
     state.ϵμ = norm(state.∇fμ)
 
-
     if state.ϵμ < min(5e-1, state.μ)
-        state.μ = state.μ < 1e-7 ? 0 : 0.05 * state.μ
+
+        state.μ = state.μ < 1e-6 ? 0 : 0.05 * state.μ
         state.kᵤ += 1
         state.kₜ = 0
     end
