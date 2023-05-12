@@ -181,6 +181,7 @@ if bool_opt
         maxiter=10000, tol=ε, freq=1,
         step=:newton, μ₀=5e-2,
         maxtime=10000,
+        bool_trace=false,
         direction=:warm
     )
     # rh = PFH()(;
