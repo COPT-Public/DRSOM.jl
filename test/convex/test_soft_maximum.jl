@@ -39,6 +39,10 @@ using .LP
 
 
 using LIBSVMFileIO
+
+bool_plot = false
+bool_opt = false
+
 n = 200
 m = 500
 μ = 0.05
@@ -81,13 +85,12 @@ options = Optim.Options(
     show_every=10,
     time_limit=500
 )
-
-# res3 = Optim.optimize(f_composite, g, H, x0, NewtonTrustRegion(), options; inplace=false)
-# res2 = Optim.optimize(
-#     loss, x0, LBFGS(;
-#         linesearch=LineSearches.StrongWolfe()
-#     ), options;
-#     autodiff=:forward)
+r_lbfgs = Optim.optimize(
+    loss, g, x0,
+    LBFGS(; alphaguess=LineSearches.InitialStatic(),
+        linesearch=LineSearches.BackTracking()), options;
+    inplace=false
+)
 r_newton = Optim.optimize(
     loss, grad, hess, x0,
     Newton(; alphaguess=LineSearches.InitialStatic(),
@@ -99,49 +102,52 @@ r = HSODM()(;
     maxiter=10000, tol=1e-6, freq=1,
     direction=:warm, linesearch=:hagerzhang
 )
-ra = HSODM(name=:HSODM_adaptive)(;
-    x0=copy(x0), f=loss, g=grad, H=hess,
-    maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, linesearch=:hagerzhang, adaptive=:angle
+rh = PFH()(;
+    x0=copy(x0), f=loss, g=g, H=H,
+    maxiter=10000, tol=ε, freq=1,
+    step=:hsodm, μ₀=5e-1,
+    bool_trace=false,
+    maxtime=10000,
+    direction=:warm
 )
 
+if bool_plot
+
+    results = [
+        # optim_to_result(res1, "GD+Wolfe"),
+        # optim_to_result(res2, "LBFGS+Wolfe"),
+        optim_to_result(r_newton, "Newton's method"),
+        r,
+        ra
+    ]
+    method_names = getname.(results)
+    for metric in (:ϵ, :fx)
+        method_objval_ragged = rstack([
+                getresultfield.(results, metric)...
+            ]; fill=NaN
+        )
 
 
-results = [
-    # optim_to_result(res1, "GD+Wolfe"),
-    # optim_to_result(res2, "LBFGS+Wolfe"),
-    optim_to_result(r_newton, "Newton's method"),
-    r,
-    ra
-]
-method_names = getname.(results)
+        @printf("plotting results\n")
 
-for metric in (:ϵ, :fx)
-    method_objval_ragged = rstack([
-            getresultfield.(results, metric)...
-        ]; fill=NaN
-    )
+        pgfplotsx()
+        title = L"111"
+        fig = plot(
+            1:(method_objval_ragged|>size|>first),
+            method_objval_ragged,
+            label=permutedims(method_names),
+            xscale=:log2,
+            yscale=:log10,
+            xlabel="Iteration",
+            ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
+            title=title,
+            size=(1280, 720),
+            yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+            xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+            dpi=1000,
+        )
 
+        savefig(fig, "/tmp/$metric-softmaximum.pdf")
 
-    @printf("plotting results\n")
-
-    pgfplotsx()
-    title = L"111"
-    fig = plot(
-        1:(method_objval_ragged|>size|>first),
-        method_objval_ragged,
-        label=permutedims(method_names),
-        xscale=:log2,
-        yscale=:log10,
-        xlabel="Iteration",
-        ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
-        title=title,
-        size=(1280, 720),
-        yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
-        xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-        dpi=1000,
-    )
-
-    savefig(fig, "/tmp/$metric-softmaximum.pdf")
-
+    end
 end
