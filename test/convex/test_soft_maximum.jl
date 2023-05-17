@@ -40,18 +40,18 @@ using .LP
 
 using LIBSVMFileIO
 
-bool_plot = false
+bool_plot = true
 bool_opt = false
 
-n = 200
-m = 500
-μ = 0.05
+n = 500
+m = 1000
+μ = 5e-2
 X = [rand(Float64, n) * 2 .- 1 for _ in 1:m]
 Xm = hcat(X)'
 y = rand(Float64, m) * 2 .- 1
 # y = max.(y, 0)
 # loss
-x0 = ones(n)
+x0 = ones(n)/10
 function loss(w)
     loss_single(x, y0) = exp((w' * x - y0) / μ)
     _pure = loss_single.(X, y) |> sum
@@ -72,56 +72,55 @@ function hess(w)
 end
 
 
-
-# g(x) = DRSOM.ForwardDiff.gradient(loss, x)
-# H(x) = DRSOM.ForwardDiff.hessian(loss, x)
-
-# compare with GD and LBFGS, Trust region newton,
-options = Optim.Options(
-    g_tol=1e-6,
-    iterations=10000,
-    store_trace=true,
-    show_trace=true,
-    show_every=10,
-    time_limit=500
-)
-r_lbfgs = Optim.optimize(
-    loss, g, x0,
-    LBFGS(; alphaguess=LineSearches.InitialStatic(),
-        linesearch=LineSearches.BackTracking()), options;
-    inplace=false
-)
-r_newton = Optim.optimize(
-    loss, grad, hess, x0,
-    Newton(; alphaguess=LineSearches.InitialStatic(),
-        linesearch=LineSearches.HagerZhang()), options;
-    inplace=false
-)
-r = HSODM()(;
-    x0=copy(x0), f=loss, g=grad, H=hess,
-    maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, linesearch=:hagerzhang
-)
-rh = PFH()(;
-    x0=copy(x0), f=loss, g=g, H=H,
-    maxiter=10000, tol=ε, freq=1,
-    step=:hsodm, μ₀=5e-1,
-    bool_trace=false,
-    maxtime=10000,
-    direction=:warm
-)
+if bool_opt
+    # compare with GD and LBFGS, Trust region newton,
+    options = Optim.Options(
+        g_tol=1e-6,
+        iterations=10000,
+        store_trace=true,
+        show_trace=true,
+        show_every=10,
+        time_limit=500
+    )
+    r_lbfgs = Optim.optimize(
+        loss, grad, x0,
+        LBFGS(; alphaguess=LineSearches.InitialStatic(),
+            linesearch=LineSearches.BackTracking()), options;
+        inplace=false
+    )
+    r_newton = Optim.optimize(
+        loss, grad, hess, x0,
+        Newton(; alphaguess=LineSearches.InitialStatic(),
+            linesearch=LineSearches.HagerZhang()), options;
+        inplace=false
+    )
+    r = HSODM()(;
+        x0=copy(x0), f=loss, g=grad, H=hess,
+        maxiter=10000, tol=1e-6, freq=1,
+        direction=:warm, linesearch=:hagerzhang
+    )
+    r.name = "Adaptive HSODM"
+    rh = PFH()(;
+        x0=copy(x0), f=loss, g=grad, H=hess,
+        maxiter=10000, tol=1e-6, freq=1,
+        step=:hsodm, μ₀=5e-1,
+        bool_trace=true,
+        maxtime=10000,
+        direction=:warm
+    )
+end
 
 if bool_plot
 
     results = [
-        # optim_to_result(res1, "GD+Wolfe"),
-        # optim_to_result(res2, "LBFGS+Wolfe"),
+        optim_to_result(r_lbfgs, "LBFGS"),
         optim_to_result(r_newton, "Newton's method"),
         r,
-        ra
+        rh
     ]
     method_names = getname.(results)
-    for metric in (:ϵ, :fx)
+    # for metric in (:ϵ, :fx)
+    metric = :ϵ
         method_objval_ragged = rstack([
                 getresultfield.(results, metric)...
             ]; fill=NaN
@@ -131,7 +130,7 @@ if bool_plot
         @printf("plotting results\n")
 
         pgfplotsx()
-        title = L"111"
+        title = L"Soft Maximum"
         fig = plot(
             1:(method_objval_ragged|>size|>first),
             method_objval_ragged,
