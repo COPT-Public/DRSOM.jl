@@ -302,7 +302,7 @@ function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
 
-function NewtonStep(f, g, state; verbose::Bool=false)
+function NewtonStep(f::Function, μ, g, state; verbose::Bool=false)
     d, __unused_info = KrylovKit.linsolve(
         f, -Vector(g);
         isposdef=true, issymmetric=true

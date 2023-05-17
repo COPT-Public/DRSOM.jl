@@ -43,50 +43,47 @@ using LIBSVMFileIO
 bool_plot = false
 bool_opt = false
 bool_q_preprocessed = true
+f1(A,d=2) = sqrt.(sum(abs2.(A),dims=d))
 
-name = "a4a"
+# name = "a4a"
+# name = "a9a"
 # name = "w4a"
 # name = "covtype"
+# name = "news20"
+name = "rcv1"
 # Load data
 X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
 Xv = hcat(X...)'
-y = convert(Vector{Float64}, y)
+Rc = 1 ./ f1(Xv)[:] 
+Xv = (Rc |> Diagonal) * Xv
+X = Rc .* X
 
+if name in ["covtype"]
+    y = convert(Vector{Float64}, (y .- 1.5)*2)
+else
+end
 @info begin
     a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
+    if a > 8
+        BLAS.set_num_threads(8)
+        a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
+    end
     "using BLAS threads $a"
 end
 @info "data reading finished"
 
 # precompute Q Matrix
-Qf(x, y) = y^2 * x * x'
 Qc(x, y) = y^2 * x
-bool_q_preprocessed && (Q = Qf.(X, y))
 bool_q_preprocessed && (P = Qc.(X, y))
 Pv = hcat(P...)'
 # loss
 λ = 1e-5
-n = X[1] |> length
+n = Xv[1,:] |> length
 Random.seed!(1)
 N = y |> length
 
 
-
-function sloss(w)
-    loss_single(x, y) = log(1 + exp(-y * w' * x))
-    _pure = loss_single.(X, y) |> sum
-    return _pure / N + 0.5 * λ * w'w
-end
-function loss(w)
-    _pure = vmapreduce(
-        (x, y) -> log(1 + exp(-y * w' * x)),
-        +,
-        X,
-        y
-    )
-    return _pure / N + 0.5 * λ * w'w
-end
-function g(w)
+function g1(w)
     function _g(x, y, w)
         ff = exp(-y * w' * x)
         return -ff / (1 + ff) * y * x
@@ -99,24 +96,7 @@ function g(w)
     )
     return _pure / N + λ * w
 end
-function H(w)
-    # function _H(x, y, q, w)
-    #     ff = exp(-y * w' * x)
-    #     return ff / (1 + ff)^2 * q
-    # end
-    # _pure = vmapreduce(
-    #     (x, y, q) -> _H(x, y, q, w),
-    #     +,
-    #     X,
-    #     y,
-    #     Q
-    # )
-    # return _pure / N + λ * I
-    z = exp.(y .* (Xv * w))
-    fq = z ./ (1 .+ z) .^ 2
-    return ((fq .* Pv)' * Xv ./ N) + λ * I
-end
-function hvp(w, v, Hv; eps=1e-8)
+function hvp1(w, v, Hv; eps=1e-8)
     function _hvp(x, y, q, w, v)
         wx = w' * x
         ff = exp(-y * wx)
@@ -133,15 +113,68 @@ function hvp(w, v, Hv; eps=1e-8)
     copyto!(Hv, _pure ./ N .+ λ .* v)
 end
 
-function hvp1(w, v, Hv)
+function loss1(w)
+    _pure = vmapreduce(
+        (x, c) -> log(1 + exp(-c * w' * x)),
+        +,
+        X,
+        y
+    )
+    return _pure / N + 0.5 * λ * w'w
+end
+function loss(w)
+    z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
+    return z / N + 0.5 * λ * w'w
+end
+function g(w)
+    z = exp.(-y .* (Xv * w))
+    fq = -z ./ (1 .+ z)
+    return Xv' * (fq .* y) / N + λ * w
+end
+
+function H(w)
+    z = exp.(y .* (Xv * w))
+    fq = z ./ (1 .+ z) .^ 2
+    return ((fq .* Pv)' * Xv ./ N) + λ * I
+end
+
+function hvp(w, v, Hv)
     z = exp.(y .* (Xv * w))
     fq = z ./ (1 .+ z) .^ 2
     copyto!(Hv, (fq .* Pv)' * (Xv * v) ./ N .+ λ .* v)
 end
+
+function hvpdiff(w, v, Hv; eps=1e-5)
+    gn = g(w + eps*v)
+    gf = g(w)
+    copyto!(Hv, (gn - gf)/eps)
+end
+
 @info "data preparation finished"
 x0 = 0 * randn(Float64, n)
 ε = 1e-8 * max(g(x0) |> norm, 1)
+options = Optim.Options(
+    g_tol=ε,
+    iterations=10000,
+    store_trace=true,
+    show_trace=true,
+    show_every=1,
+    time_limit=500
+)
 
+# r_newton = Optim.optimize(
+#     loss, g, H, x0,
+#     Newton(; alphaguess=LineSearches.InitialStatic(),
+#         linesearch=LineSearches.BackTracking()), options;
+#     inplace=false
+# )
+
+r_lbfgs = Optim.optimize(
+    loss, g, x0,
+    LBFGS(; alphaguess=LineSearches.InitialStatic(),
+        linesearch=LineSearches.BackTracking()), options;
+    inplace=false
+)
 
 if bool_opt
 
@@ -183,13 +216,13 @@ if bool_opt
         maxtime=10000,
         direction=:warm
     )
-    # rh = PFH()(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvp,# H=H,
-    #     maxiter=10000, tol=ε, freq=1,
-    #     step=:hsodm, μ₀=5e-1,
-    #     maxtime=10000,
-    #     direction=:warm
-    # )
+    rh = PFH()(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=10000, tol=ε, freq=1,
+        step=:hsodm, μ₀=5e-1,
+        maxtime=10000,
+        direction=:warm
+    )
     rh = PFH()(;
         x0=copy(x0), f=loss, g=g, H=H,
         maxiter=10000, tol=ε, freq=1,

@@ -108,7 +108,10 @@ function Base.iterate(iter::PFHIteration)
         ξ=ones(length(z) + 1),
         λ₁=0.0
     )
-    if (iter.step == :hsodm) && (iter.hvp !== nothing)
+    if iter.hvp === nothing
+        return state, state
+    end
+    if iter.step == :hsodm
         fvp(x, g, v, Hv, d) = (
             iter.hvp(x, v[1:end-1], Hv);
             [
@@ -119,6 +122,13 @@ function Base.iterate(iter::PFHIteration)
         iter.fvp = fvp
         ff(v) = iter.fvp(state.x, state.∇fμ, v, state.∇fb, -state.μ)
         iter.ff = ff
+    else
+        function hvp(v)
+            iter.hvp(state.x, v, Hv)
+            z = Hv .+ state.μ * v
+            return z
+        end
+        iter.ff = hvp
     end
     return state, state
 end
@@ -155,6 +165,8 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
             )
         end
         # state.α, fx = TRStyleLineSearch(iter, state.x, v, vHv, vg, state.fz)
+        # state.α = 1.0
+        # state.α, fx = BacktrackLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
         state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
     else
         if iter.hvp === nothing
@@ -163,16 +175,10 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
                 H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
         else
-            function hvp(v)
-                iter.hvp(state.x, v, state.∇fb)
-                println(v)
-                println(state.∇fb)
-                z = state.∇fb .+ state.μ * v
-                return z
-            end
+            
             # println(hvp(state.x))
             kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
-                hvp, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
+                iter.ff, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
         end
         # stepsize choice
@@ -206,7 +212,8 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 
     if state.ϵμ < min(5e-1, 10 * state.μ)
 
-        state.μ = state.μ < 1e-6 ? 0 : 0.05 * state.μ
+        # state.μ = state.μ < 2e-6 ? 0 : 0.06 * state.μ
+        state.μ = 0.02 * state.μ
         state.kᵤ += 1
         state.kₜ = 0
     end
@@ -218,7 +225,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 end
 
 pfh_stopping_criterion(tol, state::PFHState) =
-    (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol # || (state.μ <= 1e-12)
+    (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol && (state.μ <= 1e-8)
 
 function counting(iter::T, state::S) where {T<:PFHIteration,S<:PFHState}
     try
