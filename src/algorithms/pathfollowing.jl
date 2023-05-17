@@ -32,7 +32,7 @@ Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     verbose::Int64 = 1
     LOG_SLOTS::String = PFH_LOG_SLOTS
     ALIAS::String = "PFH"
-    DESC::String = "Path-Following Homogeneous Second-order Descent Method"
+    DESC::String = "Path-Following Homotopy Method"
     error::Union{Nothing,Exception} = nothing
 end
 
@@ -175,7 +175,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
                 H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
         else
-            
+
             # println(hvp(state.x))
             kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
                 iter.ff, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
@@ -225,7 +225,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 end
 
 pfh_stopping_criterion(tol, state::PFHState) =
-    (state.Δ <= 1e-20) || (state.ϵ <= tol) && abs(state.fz - state.fx) <= tol && (state.μ <= 1e-8)
+    (state.Δ <= 1e-20) || (state.ϵ <= tol) || ((state.ϵμ <= tol) && (state.μ <= 1e-8))
 
 function counting(iter::T, state::S) where {T<:PFHIteration,S<:PFHState}
     try

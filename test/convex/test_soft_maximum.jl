@@ -41,8 +41,9 @@ using .LP
 using LIBSVMFileIO
 
 bool_plot = true
-bool_opt = false
+bool_opt = true
 
+Random.seed!(1)
 n = 500
 m = 1000
 μ = 5e-2
@@ -51,13 +52,13 @@ Xm = hcat(X)'
 y = rand(Float64, m) * 2 .- 1
 # y = max.(y, 0)
 # loss
-x0 = ones(n)/10
-function loss(w)
+x0 = ones(n) / 10
+function loss_orig(w)
     loss_single(x, y0) = exp((w' * x - y0) / μ)
     _pure = loss_single.(X, y) |> sum
     return μ * log(_pure)
 end
-function grad(w)
+function grad_orig(w)
     a = (Xm * w - y) / μ
     ax = exp.(a)
     π0 = ax / (ax |> sum)
@@ -70,13 +71,16 @@ function hess(w)
     π0 = ax / (ax |> sum)
     return 1 / μ * (Xm' * Diagonal(π0) * Xm - Xm' * π0 * π0' * Xm)
 end
+∇₀ = grad_orig(zeros(x0 |> size))
+grad(w) = grad_orig(w) - ∇₀
+loss(w) = loss_orig(w) - ∇₀'w
 
 
 if bool_opt
     # compare with GD and LBFGS, Trust region newton,
     options = Optim.Options(
         g_tol=1e-6,
-        iterations=10000,
+        iterations=200,
         store_trace=true,
         show_trace=true,
         show_every=10,
@@ -91,7 +95,7 @@ if bool_opt
     r_newton = Optim.optimize(
         loss, grad, hess, x0,
         Newton(; alphaguess=LineSearches.InitialStatic(),
-            linesearch=LineSearches.HagerZhang()), options;
+            linesearch=LineSearches.BackTracking()), options;
         inplace=false
     )
     r = HSODM()(;
@@ -119,8 +123,8 @@ if bool_plot
         rh
     ]
     method_names = getname.(results)
-    # for metric in (:ϵ, :fx)
-    metric = :ϵ
+    for metric in (:ϵ, :fx)
+        # metric = :ϵ
         method_objval_ragged = rstack([
                 getresultfield.(results, metric)...
             ]; fill=NaN
@@ -130,20 +134,27 @@ if bool_plot
         @printf("plotting results\n")
 
         pgfplotsx()
-        title = L"Soft Maximum"
+        title = L"Soft Maximum $n:=$%$(n), $m:=$%$(m), $\mu:=$%$(μ)"
         fig = plot(
             1:(method_objval_ragged|>size|>first),
             method_objval_ragged,
             label=permutedims(method_names),
-            xscale=:log2,
+            # xscale=:log2,
             yscale=:log10,
             xlabel="Iteration",
             ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
             title=title,
-            size=(1280, 720),
+            size=(1100, 500),
             yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
             xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-            dpi=1000,
+            dpi=500,
+            labelfontsize=16,
+            xtickfont=font(13),
+            ytickfont=font(13),
+            leg=:bottomleft,
+            legendfontsize=24,
+            legendfontfamily="sans-serif",
+            titlefontsize=24,
         )
 
         savefig(fig, "/tmp/$metric-softmaximum.pdf")
