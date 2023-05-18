@@ -41,9 +41,9 @@ using .LP
 using LIBSVMFileIO
 
 bool_plot = true
-bool_opt = true
+bool_opt = false
 
-Random.seed!(1)
+Random.seed!(2)
 n = 500
 m = 1000
 μ = 5e-2
@@ -74,12 +74,12 @@ end
 ∇₀ = grad_orig(zeros(x0 |> size))
 grad(w) = grad_orig(w) - ∇₀
 loss(w) = loss_orig(w) - ∇₀'w
-
+ε = 1e-5
 
 if bool_opt
     # compare with GD and LBFGS, Trust region newton,
     options = Optim.Options(
-        g_tol=1e-6,
+        g_tol=ε,
         iterations=200,
         store_trace=true,
         show_trace=true,
@@ -100,13 +100,13 @@ if bool_opt
     )
     r = HSODM()(;
         x0=copy(x0), f=loss, g=grad, H=hess,
-        maxiter=10000, tol=1e-6, freq=1,
+        maxiter=10000, tol=ε, freq=1,
         direction=:warm, linesearch=:hagerzhang
     )
     r.name = "Adaptive HSODM"
     rh = PFH()(;
         x0=copy(x0), f=loss, g=grad, H=hess,
-        maxiter=10000, tol=1e-6, freq=1,
+        maxiter=10000, tol=ε, freq=1,
         step=:hsodm, μ₀=5e-1,
         bool_trace=true,
         maxtime=10000,
@@ -123,7 +123,8 @@ if bool_plot
         rh
     ]
     method_names = getname.(results)
-    for metric in (:ϵ, :fx)
+    # for metric in (:ϵ, :fx)
+    for metric in [:fx]
         # metric = :ϵ
         method_objval_ragged = rstack([
                 getresultfield.(results, metric)...
@@ -140,18 +141,18 @@ if bool_plot
             method_objval_ragged,
             label=permutedims(method_names),
             # xscale=:log2,
-            yscale=:log10,
+            # yscale=:log10,
             xlabel="Iteration",
             ylabel=metric == :ϵ ? L"\|\nabla f\| = \epsilon" : L"f(x)",
             title=title,
             size=(1100, 500),
-            yticks=[1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e2],
+            # yticks=[1e-7, 1e-6, 1e-4, 1e-2, 1e-1, 1e0, 1e1],
             xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
             dpi=500,
             labelfontsize=16,
             xtickfont=font(13),
             ytickfont=font(13),
-            leg=:bottomleft,
+            leg=:topright,
             legendfontsize=24,
             legendfontfamily="sans-serif",
             titlefontsize=24,

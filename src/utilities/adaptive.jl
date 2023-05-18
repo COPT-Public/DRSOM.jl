@@ -209,7 +209,7 @@ end
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
 function eigenvalue(
-    B::Symmetric{Float64,F}, iter, state; bg=:arnoldi
+    B::Symmetric{Float64,F}, iter, state; bg=:krylov#:arnoldi
 ) where {F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
 
     n = length(state.x)

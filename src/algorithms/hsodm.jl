@@ -60,7 +60,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    δ::Float64 = -1.0  # smallest curvature if available
+    δ::Float64 = 1e-3  # smallest curvature if available
     ξ::Tx             # eigenvector
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
@@ -96,7 +96,7 @@ function Base.iterate(iter::HSODMIteration)
             ]
         )
         iter.fvp = fvp
-        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 1e-3)
+        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 0)
         vals, vecs, info = KrylovKit.eigsolve(
             ff, n + 1, 1, :SR, Float64;
             issymmetric=true, tol=iter.eigtol
@@ -187,7 +187,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     if iter.hvp === nothing
         H = iter.H(state.x)
         # construct homogeneous system
-        B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
+        B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' 0.0])
 
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
