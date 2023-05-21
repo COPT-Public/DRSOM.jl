@@ -256,13 +256,14 @@ if bool_plot
                     xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
                     yv,
                     label=method_names[k],
-                    linewidth=1.5,
+                    linewidth=1.1,
                     markershape=:circle,
-                    # markeralpha=0.8,
+                    markersize=1.5,
                     # markerstrokecolor=:match,
                     # linestyle=linestyles[k]
                 )
             end
+            savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.tex")
             savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.pdf")
         end
     end

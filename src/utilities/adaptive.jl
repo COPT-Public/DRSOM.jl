@@ -305,7 +305,7 @@ function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
 end
 
 function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
-) where {I<:PFHIteration}
+) where {I}
     # d, __unused_info = KrylovKit.linsolve(
     #     f, -Vector(g);
     #     isposdef=true, issymmetric=true
