@@ -41,7 +41,7 @@ Base.@kwdef mutable struct StateOptim
 end
 function optim_to_result(rr, name)
     traj = map(
-        (x) -> StateOptim(fx=x.value, ϵ=x.g_norm, t=rr.time_run), rr.trace
+        (x) -> StateOptim(fx=x.value, ϵ=x.g_norm, t=x.metadata["time"]), rr.trace
     )
     traj[end].kf = rr.f_calls
     traj[end].kg = rr.g_calls

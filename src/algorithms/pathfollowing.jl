@@ -213,7 +213,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     if state.ϵμ < min(5e-1, 10 * state.μ)
 
         # state.μ = state.μ < 2e-6 ? 0 : 0.06 * state.μ
-        state.μ = 0.02 * state.μ
+        state.μ = 0.01 * state.μ
         state.kᵤ += 1
         state.kₜ = 0
     end
@@ -225,7 +225,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 end
 
 pfh_stopping_criterion(tol, state::PFHState) =
-    (state.Δ <= 1e-20) || (state.ϵ <= tol) || ((state.ϵμ <= tol) && (state.μ <= 1e-8))
+    (state.Δ <= 1e-20) || (state.ϵ <= tol) || ((state.ϵμ <= tol) && (state.μ <= 1e-12))
 
 function counting(iter::T, state::S) where {T<:PFHIteration,S<:PFHState}
     try
