@@ -40,8 +40,8 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
+bool_opt = false
 bool_plot = true
-bool_opt = true
 bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
@@ -194,7 +194,7 @@ if bool_opt
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
         step=:newton, μ₀=0.0,
-        maxtime=10000,
+        maxtime=10000, linesearch=:backtrack,
         bool_trace=true,
         direction=:warm
     )
@@ -225,6 +225,7 @@ if bool_plot
         r,
         rh
     ]
+    linestyles = [:dash, :dot, :dashdot, :dashdotdot]
     method_names = getname.(results)
     for xaxis in (:t, :k)
         for metric in (:ϵ, :fx)
@@ -255,10 +256,11 @@ if bool_plot
                     xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
                     yv,
                     label=method_names[k],
-                    linewidth=1,
+                    linewidth=1.5,
                     markershape=:circle,
-                    markeralpha=0.8,
-                    markerstrokecolor=:match
+                    # markeralpha=0.8,
+                    # markerstrokecolor=:match,
+                    # linestyle=linestyles[k]
                 )
             end
             savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.pdf")

@@ -6,6 +6,8 @@ using Dates
 using KrylovKit
 using Distributions
 using LineSearches
+using Krylov
+using LinearOperators
 
 const PFH_LOG_SLOTS = @sprintf(
     "%4s | %5s | %9s | %10s | %7s | %7s | %9s | %9s | %6s |\n",
@@ -23,7 +25,7 @@ Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     μ₀::Float64       # initial path-following penalty
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-12
+    eigtol::Float64 = 1e-5
     itermax::Int64 = 20
     direction = :warm
     linesearch = :none
@@ -123,12 +125,11 @@ function Base.iterate(iter::PFHIteration)
         ff(v) = iter.fvp(state.x, state.∇fμ, v, state.∇fb, -state.μ)
         iter.ff = ff
     else
-        function hvp(v)
+        function hvp(y, v)
             iter.hvp(state.x, v, Hv)
-            z = Hv .+ state.μ * v
-            return z
+            copy!(y, Hv .+ state.μ * v)
         end
-        iter.ff = hvp
+        iter.ff = (y, v) -> hvp(y, v)
     end
     return state, state
 end
@@ -164,10 +165,11 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
                 iter.ff, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
             )
         end
-        # state.α, fx = TRStyleLineSearch(iter, state.x, v, vHv, vg, state.fz)
-        # state.α = 1.0
-        # state.α, fx = BacktrackLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
-        state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+        if iter.linesearch == :backtrack
+            state.α, fx = BacktrackLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+        else
+            state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+        end
     else
         if iter.hvp === nothing
             H = iter.H(state.x)
@@ -178,16 +180,19 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 
             # println(hvp(state.x))
             kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
-                iter.ff, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
+                iter, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
         end
         # stepsize choice
-
-        # state.α = 1.0
         # use Hager-Zhang line-search algorithm
-        state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
-    end
+        if iter.linesearch == :backtrack
+            state.α, fx = BacktrackLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
 
+        else
+            state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
+        end
+    end
+    (state.α == 0.0) && (state.α = 0.1)
     # state.α = max(1, 1 - state.μ)
     fx = iter.f(state.z + v * state.α)
 
@@ -213,7 +218,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     if state.ϵμ < min(5e-1, 10 * state.μ)
 
         # state.μ = state.μ < 2e-6 ? 0 : 0.06 * state.μ
-        state.μ = 0.01 * state.μ
+        state.μ = 0.02 * state.μ
         state.kᵤ += 1
         state.kₜ = 0
     end
@@ -225,7 +230,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
 end
 
 pfh_stopping_criterion(tol, state::PFHState) =
-    (state.Δ <= 1e-20) || (state.ϵ <= tol) || ((state.ϵμ <= tol) && (state.μ <= 1e-12))
+    (state.ϵ <= tol) || ((state.ϵμ <= tol) && (state.μ <= 1e-12))
 
 function counting(iter::T, state::S) where {T<:PFHIteration,S<:PFHState}
     try

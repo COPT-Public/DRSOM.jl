@@ -6,6 +6,8 @@ using Roots
 using SparseArrays
 using ArnoldiMethod
 using LDLFactorizations
+using Krylov
+using LinearOperators
 try
     using MKL
 catch e
@@ -215,20 +217,20 @@ function eigenvalue(
     n = length(state.x)
     if bg == :krylov
         if iter.direction == :cold
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, issymmetric=true, eager=true)
         end
         return vals[1], vecs[1], info
     end
     if bg == :arnoldi
         try
             # arnoldi is not stable?
-            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=iter.eigtol, which=SR())
+            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, which=SR())
             vals, vecs = partialeigen(decomp)
             return vals[1], vecs, ArnoldiInfo(numops=1)
         catch
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, issymmetric=true, eager=true)
             return vals[1], vecs[1], info
         end
     end
@@ -239,9 +241,9 @@ function eigenvalue(f::Function, iter, state; bg=:krylov)
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
-            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : 1e-9, issymmetric=true, eager=true)
         end
     end
     return vals, vecs, info
@@ -302,12 +304,23 @@ function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
 
-function NewtonStep(f::Function, μ, g, state; verbose::Bool=false)
-    d, __unused_info = KrylovKit.linsolve(
-        f, -Vector(g);
-        isposdef=true, issymmetric=true
-    )
-    return 1, 1, d, norm(d), d' * state.∇f, d' * f(d)
+function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
+) where {I<:PFHIteration}
+    # d, __unused_info = KrylovKit.linsolve(
+    #     f, -Vector(g);
+    #     isposdef=true, issymmetric=true
+    # )
+    n = g |> length
+    opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
+    d, __unused_info = cg(opH, -Vector(g); verbose=0, atol=1e-8, itmax=200)
+    # if norm(d) < 1e-8
+    #     f(v) = iter.ff(state.∇fb, v)
+    #     d, __unused_info = KrylovKit.linsolve(
+    #         f, -Vector(g);
+    #         isposdef=true, issymmetric=true
+    #     )
+    # end
+    return 1, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
 end
 
 ###############################################################################

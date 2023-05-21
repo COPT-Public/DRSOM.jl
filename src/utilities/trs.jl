@@ -267,14 +267,14 @@ function BacktrackLineSearch(
 
 
     dϕ_0 = dot(s, gx)
-    # try
-    α, fx = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
-    return α, fx
-    # catch y
-    #     throw(y)
-    #     isa(y, LineSearchException) # && println() # todo
-    #     return 0.1, fx, 1
-    # end
+    try
+        α, fx = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        return α, fx
+    catch y
+        # throw(y)
+        isa(y, LineSearchException) # && println() # todo
+        return 0.1, fx, 1
+    end
 
 end
 
