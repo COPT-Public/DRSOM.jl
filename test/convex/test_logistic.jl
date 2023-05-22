@@ -42,125 +42,127 @@ using LIBSVMFileIO
 
 bool_opt = false
 bool_plot = true
-bool_q_preprocessed = true
+bool_q_preprocessed = false
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
-# name = "a4a"
-# name = "a9a"
-# name = "w4a"
-# name = "covtype"
-name = "news20"
-# name = "rcv1"
-# Load data
-X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
-Xv = hcat(X...)'
-Rc = 1 ./ f1(Xv)[:]
-Xv = (Rc |> Diagonal) * Xv
-X = Rc .* X
+if bool_q_preprocessed
+    # name = "a4a"
+    # name = "a9a"
+    # name = "w4a"
+    # name = "covtype"
+    # name = "news20"
+    name = "rcv1"
+    # Load data
+    X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
+    Xv = hcat(X...)'
+    Rc = 1 ./ f1(Xv)[:]
+    Xv = (Rc |> Diagonal) * Xv
+    X = Rc .* X
 
-if name in ["covtype"]
-    y = convert(Vector{Float64}, (y .- 1.5) * 2)
-else
-end
-@info begin
-    a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
-    if a > 8
-        BLAS.set_num_threads(8)
+    if name in ["covtype"]
+        y = convert(Vector{Float64}, (y .- 1.5) * 2)
+    else
+    end
+    @info begin
         a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
+        if a > 8
+            BLAS.set_num_threads(8)
+            a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
+        end
+        "using BLAS threads $a"
     end
-    "using BLAS threads $a"
-end
-@info "data reading finished"
+    @info "data reading finished"
 
-# precompute Q Matrix
-Qc(x, y) = y^2 * x
-bool_q_preprocessed && (P = Qc.(X, y))
-Pv = hcat(P...)'
-# loss
-λ = 1e-5
-n = Xv[1, :] |> length
-Random.seed!(1)
-N = y |> length
+    # precompute Q Matrix
+    Qc(x, y) = y^2 * x
+    bool_q_preprocessed && (P = Qc.(X, y))
+    Pv = hcat(P...)'
+    # loss
+    λ = 1e-5
+    n = Xv[1, :] |> length
+    Random.seed!(1)
+    N = y |> length
 
 
-function g1(w)
-    function _g(x, y, w)
-        ff = exp(-y * w' * x)
-        return -ff / (1 + ff) * y * x
+    function g1(w)
+        function _g(x, y, w)
+            ff = exp(-y * w' * x)
+            return -ff / (1 + ff) * y * x
+        end
+        _pure = vmapreduce(
+            (x, y) -> _g(x, y, w),
+            +,
+            X,
+            y
+        )
+        return _pure / N + λ * w
     end
-    _pure = vmapreduce(
-        (x, y) -> _g(x, y, w),
-        +,
-        X,
-        y
-    )
-    return _pure / N + λ * w
-end
-function hvp1(w, v, Hv; eps=1e-8)
-    function _hvp(x, y, q, w, v)
-        wx = w' * x
-        ff = exp(-y * wx)
-        return ff / (1 + ff)^2 * q * x' * v
+    function hvp1(w, v, Hv; eps=1e-8)
+        function _hvp(x, y, q, w, v)
+            wx = w' * x
+            ff = exp(-y * wx)
+            return ff / (1 + ff)^2 * q * x' * v
+        end
+        _pure = vmapreduce(
+            (x, y, q) -> _hvp(x, y, q, w, v),
+            +,
+            X,
+            y,
+            P
+        )
+        # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
+        copyto!(Hv, _pure ./ N .+ λ .* v)
     end
-    _pure = vmapreduce(
-        (x, y, q) -> _hvp(x, y, q, w, v),
-        +,
-        X,
-        y,
-        P
+
+    function loss1(w)
+        _pure = vmapreduce(
+            (x, c) -> log(1 + exp(-c * w' * x)),
+            +,
+            X,
+            y
+        )
+        return _pure / N + 0.5 * λ * w'w
+    end
+    function loss(w)
+        z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
+        return z / N + 0.5 * λ * w'w
+    end
+    function g(w)
+        z = exp.(-y .* (Xv * w))
+        fq = -z ./ (1 .+ z)
+        return Xv' * (fq .* y) / N + λ * w
+    end
+
+    function H(w)
+        z = exp.(y .* (Xv * w))
+        fq = z ./ (1 .+ z) .^ 2
+        return ((fq .* Pv)' * Xv ./ N) + λ * I
+    end
+
+    function hvp(w, v, Hv)
+        z = exp.(y .* (Xv * w))
+        fq = z ./ (1 .+ z) .^ 2
+        copyto!(Hv, (fq .* Pv)' * (Xv * v) ./ N .+ λ .* v)
+    end
+
+    function hvpdiff(w, v, Hv; eps=1e-5)
+        gn = g(w + eps * v)
+        gf = g(w)
+        copyto!(Hv, (gn - gf) / eps)
+    end
+
+    @info "data preparation finished"
+    x0 = 10 * randn(Float64, n)
+    ε = 1e-8 # * max(g(x0) |> norm, 1)
+    options = Optim.Options(
+        g_tol=ε,
+        iterations=10000,
+        store_trace=true,
+        show_trace=true,
+        show_every=1,
+        time_limit=500
     )
-    # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
-    copyto!(Hv, _pure ./ N .+ λ .* v)
 end
-
-function loss1(w)
-    _pure = vmapreduce(
-        (x, c) -> log(1 + exp(-c * w' * x)),
-        +,
-        X,
-        y
-    )
-    return _pure / N + 0.5 * λ * w'w
-end
-function loss(w)
-    z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
-    return z / N + 0.5 * λ * w'w
-end
-function g(w)
-    z = exp.(-y .* (Xv * w))
-    fq = -z ./ (1 .+ z)
-    return Xv' * (fq .* y) / N + λ * w
-end
-
-function H(w)
-    z = exp.(y .* (Xv * w))
-    fq = z ./ (1 .+ z) .^ 2
-    return ((fq .* Pv)' * Xv ./ N) + λ * I
-end
-
-function hvp(w, v, Hv)
-    z = exp.(y .* (Xv * w))
-    fq = z ./ (1 .+ z) .^ 2
-    copyto!(Hv, (fq .* Pv)' * (Xv * v) ./ N .+ λ .* v)
-end
-
-function hvpdiff(w, v, Hv; eps=1e-5)
-    gn = g(w + eps * v)
-    gf = g(w)
-    copyto!(Hv, (gn - gf) / eps)
-end
-
-@info "data preparation finished"
-x0 = 10 * randn(Float64, n)
-ε = 1e-8 # * max(g(x0) |> norm, 1)
-options = Optim.Options(
-    g_tol=ε,
-    iterations=10000,
-    store_trace=true,
-    show_trace=true,
-    show_every=1,
-    time_limit=500
-)
 
 
 if bool_opt
@@ -181,7 +183,34 @@ if bool_opt
     #         linesearch=LineSearches.BackTracking()), options;
     #     inplace=false
     # )
-
+    rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=40, tol=ε, freq=1,
+        step=:newton, μ₀=0.0,
+        maxtime=10000, linesearch=:backtrack,
+        bool_trace=true,
+        eigtol=1e-7,
+        direction=:warm
+    )
+    rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=60, tol=ε, freq=1,
+        step=:newton, μ₀=0.0,
+        maxtime=10000, linesearch=:backtrack,
+        bool_trace=true,
+        eigtol=1e-8,
+        direction=:warm
+    )
+    rn3 = PFH(name=Symbol("iNewton-1e-9"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=60, tol=ε, freq=1,
+        step=:newton, μ₀=0.0,
+        maxtime=10000, linesearch=:backtrack,
+        bool_trace=true,
+        eigtol=1e-9,
+        direction=:warm
+    )
+    
     r = HSODM(name=Symbol("adaptive-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
@@ -189,23 +218,8 @@ if bool_opt
         direction=:warm, linesearch=:hagerzhang,
         adaptive=:none
     )
-
-    rn = PFH(name=Symbol("inexact-Newton"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        step=:newton, μ₀=0.0,
-        maxtime=10000, linesearch=:backtrack,
-        bool_trace=true,
-        direction=:warm
-    )
-    # rh = PFH()(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=10000, tol=ε, freq=1,
-    #     step=:hsodm, μ₀=5e-1,
-    #     maxtime=10000,
-    #     direction=:warm
-    # )
-    rh = PFH()(;
+  
+    rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
         step=:hsodm, μ₀=5e-2,
@@ -213,7 +227,6 @@ if bool_opt
         maxtime=10000,
         direction=:warm
     )
-
 end
 
 
@@ -221,18 +234,26 @@ if bool_plot
     results = [
         # optim_to_result(res1, "GD+Wolfe"),
         # optim_to_result(r_lbfgs, "LBFGS+Wolfe"),
-        rn,
         r,
-        rh
+        rh,
+        rn1,
+        rn2,
+        rn3
     ]
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
-    method_names = getname.(results)
+    method_names = [
+        L"\texttt{PF-HSODM}",
+        L"\texttt{Adaptive-HSODM}",
+        L"\texttt{iNewton}-$10^{-7}$",
+        L"\texttt{iNewton}-$10^{-8}$",
+        L"\texttt{iNewton}-$10^{-9}$",
+    ]
     for xaxis in (:t, :k)
         for metric in (:ϵ, :fx)
             @printf("plotting results\n")
 
             pgfplotsx()
-            title = L"Logistic Regression $\texttt{name}:=$%$(name), $n:=$%$(n), $N:=$%$(N)"
+            title = L"Logistic Regression $\texttt{name}:=\texttt{%$(name)}$, $n:=$%$(n), $N:=$%$(N)"
             fig = plot(
                 xlabel=xaxis == :t ? L"\textrm{Running Time (s)}" : L"\textrm{Iterations}",
                 ylabel=metric == :ϵ ? L"\|\nabla f\|" : L"f(x)",
@@ -249,7 +270,9 @@ if bool_plot
                 # leg=:bottomleft,
                 legendfontsize=14,
                 legendfontfamily="sans-serif",
-                titlefontsize=22,)
+                titlefontsize=22,
+                palette=:Paired_8 #palette(:PRGn)[[1,3,9,10,11]]
+            )
             for (k, rv) in enumerate(results)
                 yv = getresultfield(rv, metric)
                 plot!(fig,
@@ -259,8 +282,9 @@ if bool_plot
                     linewidth=1.1,
                     markershape=:circle,
                     markersize=1.5,
-                    # markerstrokecolor=:match,
+                    markercolor=:match,
                     # linestyle=linestyles[k]
+                    # seriescolor=colors[k]
                 )
             end
             savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.tex")

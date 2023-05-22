@@ -25,7 +25,7 @@ Base.@kwdef mutable struct PathFollowingHSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     μ₀::Float64       # initial path-following penalty
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-5
+    eigtol::Float64 = 1e-9
     itermax::Int64 = 20
     direction = :warm
     linesearch = :none
@@ -275,6 +275,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     tol=1e-6,
     freq=10,
     verbose=1,
+    eigtol=1e-9,
     direction=:cold,
     linesearch=:none,
     adaptive=:none,
@@ -289,7 +290,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     for cf ∈ [:f :g :H]
         apply_counter(cf, kwds)
     end
-    iter = T(; μ₀=μ₀, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    iter = T(; μ₀=μ₀, eigtol=eigtol, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
     (verbose >= 1) && show(iter)
     for (k, state) in enumerate(iter)
 
