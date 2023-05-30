@@ -45,14 +45,19 @@ bool_plot = true
 bool_q_preprocessed = false
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
+ε = 1e-6 # * max(g(x0) |> norm, 1)
+λ = 1e-7
 if bool_q_preprocessed
     # name = "a4a"
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    # name = "news20"
-    name = "rcv1"
-    # Load data
+    name = "news20"
+    # name = "rcv1"
+    
+    # loss
+    
+   
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
     Rc = 1 ./ f1(Xv)[:]
@@ -77,12 +82,11 @@ if bool_q_preprocessed
     Qc(x, y) = y^2 * x
     bool_q_preprocessed && (P = Qc.(X, y))
     Pv = hcat(P...)'
-    # loss
-    λ = 1e-5
+    
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
-
+    x0 = 10 * randn(Float64, n)
 
     function g1(w)
         function _g(x, y, w)
@@ -152,8 +156,7 @@ if bool_q_preprocessed
     end
 
     @info "data preparation finished"
-    x0 = 10 * randn(Float64, n)
-    ε = 1e-8 # * max(g(x0) |> norm, 1)
+    
     options = Optim.Options(
         g_tol=ε,
         iterations=10000,
@@ -187,7 +190,7 @@ if bool_opt
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=40, tol=ε, freq=1,
         step=:newton, μ₀=0.0,
-        maxtime=10000, linesearch=:backtrack,
+        maxtime=500, linesearch=:backtrack,
         bool_trace=true,
         eigtol=1e-7,
         direction=:warm
@@ -196,7 +199,7 @@ if bool_opt
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=60, tol=ε, freq=1,
         step=:newton, μ₀=0.0,
-        maxtime=10000, linesearch=:backtrack,
+        maxtime=500, linesearch=:backtrack,
         bool_trace=true,
         eigtol=1e-8,
         direction=:warm
@@ -205,16 +208,16 @@ if bool_opt
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=60, tol=ε, freq=1,
         step=:newton, μ₀=0.0,
-        maxtime=10000, linesearch=:backtrack,
+        maxtime=500, linesearch=:backtrack,
         bool_trace=true,
         eigtol=1e-9,
         direction=:warm
     )
     
-    r = HSODM(name=Symbol("adaptive-HSODM"))(;
+    ra = HSODM(name=Symbol("adaptive-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
-        maxtime=10000,
+        maxtime=500,
         direction=:warm, linesearch=:hagerzhang,
         adaptive=:none
     )
@@ -224,7 +227,7 @@ if bool_opt
         maxiter=10000, tol=ε, freq=1,
         step=:hsodm, μ₀=5e-2,
         bool_trace=true,
-        maxtime=10000,
+        maxtime=500,
         direction=:warm
     )
 end
@@ -234,7 +237,7 @@ if bool_plot
     results = [
         # optim_to_result(res1, "GD+Wolfe"),
         # optim_to_result(r_lbfgs, "LBFGS+Wolfe"),
-        r,
+        ra,
         rh,
         rn1,
         rn2,
@@ -242,8 +245,8 @@ if bool_plot
     ]
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
     method_names = [
-        L"\texttt{PF-HSODM}",
         L"\texttt{Adaptive-HSODM}",
+        L"\texttt{Homotopy-HSODM}",
         L"\texttt{iNewton}-$10^{-7}$",
         L"\texttt{iNewton}-$10^{-8}$",
         L"\texttt{iNewton}-$10^{-9}$",
@@ -279,9 +282,9 @@ if bool_plot
                     xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
                     yv,
                     label=method_names[k],
-                    linewidth=1.1,
+                    linewidth=1.5,
                     markershape=:circle,
-                    markersize=1.5,
+                    markersize=2.0,
                     markercolor=:match,
                     # linestyle=linestyles[k]
                     # seriescolor=colors[k]
@@ -289,6 +292,7 @@ if bool_plot
             end
             savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.tex")
             savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.pdf")
+            savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.png")
         end
     end
 end

@@ -184,10 +184,12 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     state.∇f = iter.g(state.x)
     n = state.∇f |> length
+    ng = norm(state.∇f)
+    
     if iter.hvp === nothing
         H = iter.H(state.x)
         # construct homogeneous system
-        B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' 0.0])
+        B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
 
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
@@ -195,7 +197,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     else
 
         n = length(z)
-        ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, 0)
+        ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, state.δ)
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             ff, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
         )
@@ -245,8 +247,16 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.k₂ += k₂
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
-
     state.t = (Dates.now() - iter.t).value / 1e3
+    
+    if ng > 5e-3 
+        state.δ = 1e-1
+    end
+    if state.λ₁ < 0
+        state.δ = state.δ + 8e-3
+    else
+        state.δ = state.δ - 1e-2
+    end
     counting(iter, state)
     state.status = true
     return state, state
