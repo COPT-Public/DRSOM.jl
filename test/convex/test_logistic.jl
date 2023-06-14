@@ -1,7 +1,6 @@
-###############
-# project: RSOM
+#############################################
+# project: DRSOM
 # created Date: Tu Mar 2022
-# author: <<author>
 # -----
 # last Modified: Mon Apr 18 2022
 # modified By: Chuwen Zhang
@@ -82,47 +81,6 @@ if bool_q_preprocessed
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
-
-
-    function g1(w)
-        function _g(x, y, w)
-            ff = exp(-y * w' * x)
-            return -ff / (1 + ff) * y * x
-        end
-        _pure = vmapreduce(
-            (x, y) -> _g(x, y, w),
-            +,
-            X,
-            y
-        )
-        return _pure / N + λ * w
-    end
-    function hvp1(w, v, Hv; eps=1e-8)
-        function _hvp(x, y, q, w, v)
-            wx = w' * x
-            ff = exp(-y * wx)
-            return ff / (1 + ff)^2 * q * x' * v
-        end
-        _pure = vmapreduce(
-            (x, y, q) -> _hvp(x, y, q, w, v),
-            +,
-            X,
-            y,
-            P
-        )
-        # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
-        copyto!(Hv, _pure ./ N .+ λ .* v)
-    end
-
-    function loss1(w)
-        _pure = vmapreduce(
-            (x, c) -> log(1 + exp(-c * w' * x)),
-            +,
-            X,
-            y
-        )
-        return _pure / N + 0.5 * λ * w'w
-    end
     function loss(w)
         z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
         return z / N + 0.5 * λ * w'w
@@ -177,12 +135,6 @@ if bool_opt
         time_limit=500
     )
 
-    # r_lbfgs = Optim.optimize(
-    #     loss, g, x0,
-    #     LBFGS(; m=5, alphaguess=LineSearches.InitialStatic(),
-    #         linesearch=LineSearches.BackTracking()), options;
-    #     inplace=false
-    # )
     rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=40, tol=ε, freq=1,
@@ -210,7 +162,7 @@ if bool_opt
         eigtol=1e-9,
         direction=:warm
     )
-    
+
     r = HSODM(name=Symbol("adaptive-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
@@ -218,7 +170,7 @@ if bool_opt
         direction=:warm, linesearch=:hagerzhang,
         adaptive=:none
     )
-  
+
     rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,

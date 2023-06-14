@@ -1,7 +1,7 @@
 ###############
-# project: RSOM
+# project: DRSOM
 # created Date: Tu Mar 2022
-# author: <<author>
+
 # -----
 # last Modified: Mon Apr 18 2022
 # modified By: Chuwen Zhang
