@@ -216,7 +216,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.ϵμ = norm(state.∇fμ)
 
     if (state.ϵμ < min(5e-1, 10 * state.μ)) || state.kₜ > 10
-        
+
         # state.μ = state.μ < 2e-6 ? 0 : 0.06 * state.μ
         state.μ = 0.02 * state.μ
         state.kᵤ += 1

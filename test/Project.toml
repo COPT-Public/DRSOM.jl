@@ -33,6 +33,7 @@ ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
 SpecialMatrices = "928aab9d-ef52-54ac-8ca1-acd7ca42c160"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 VectorizedReduction = "4ffe575c-65e5-43f4-bc05-e0b500dc3d2c"
 

@@ -43,10 +43,10 @@ end
 
 # adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbose::Bool=false)
-    kᵥ = 1
+
     k₂ = 1
     homogeneous_eigenvalue.counter = 0
-    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
+    kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
     # non-adaptive mode
     if iter.adaptive === :none
@@ -142,10 +142,10 @@ end
 
 # adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
-    kᵥ = 1
-    k₂ = 1
+    kᵥ = 1 # krylov iterations
+    k₂ = 1 # second-order eigenvalue calls
     homogeneous_eigenvalue.counter = 0
-    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
+    kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
 
     # non-adaptive mode
     if iter.adaptive === :none
@@ -155,6 +155,7 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
         return kᵥ, k₂, v, vn, vg, vHv
     end
     # todo, implement adaptive version.
+    throw(ErrorException("LinearOperator style ArC HSODM is not finished"))
 end
 
 function _inner_homogeneous_eigenvalue(

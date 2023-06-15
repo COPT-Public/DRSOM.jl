@@ -85,8 +85,7 @@ if bool_q_preprocessed
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
-<<<<<<< HEAD
-=======
+
     x0 = 10 * randn(Float64, n)
 
     function g1(w)
@@ -128,7 +127,7 @@ if bool_q_preprocessed
         )
         return _pure / N + 0.5 * λ * w'w
     end
->>>>>>> origin/dev
+
     function loss(w)
         z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
         return z / N + 0.5 * λ * w'w

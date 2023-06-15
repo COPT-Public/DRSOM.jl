@@ -70,7 +70,7 @@ for name in names
     else
     end
 
-    γ = 1e-3
+    γ = 1e-6
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
@@ -138,9 +138,8 @@ end
 tmat = hcat(table...)
 df = DataFrame(
     name=tmat[1, :],
-    dim=tmat[2, :],
     method=tmat[3, :],
-    k=tmat[4, :],
+    k=string.(tmat[4, :]),
     ϵ=tmat[5, :]
 )
 
@@ -149,5 +148,12 @@ CSV.write("/tmp/linsys.csv", df)
 """
 import pandas as pd
 df = pd.read_csv("/tmp/linsys.csv")
-print(df.set_index(["name", "method"]).to_latex(multirow=True, longtable=True))
+print(
+    df.set_index(["name", "method"]
+).to_latex(
+    multirow=True, 
+    longtable=True,
+    float_format="%.1e"
+)
+)
 """

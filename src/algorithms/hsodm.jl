@@ -185,7 +185,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.∇f = iter.g(state.x)
     n = state.∇f |> length
     ng = norm(state.∇f)
-    
+
     if iter.hvp === nothing
         H = iter.H(state.x)
         # construct homogeneous system
@@ -248,8 +248,8 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
     state.t = (Dates.now() - iter.t).value / 1e3
-    
-    if ng > 5e-3 
+
+    if ng > 5e-3
         state.δ = 1e-1
     end
     if state.λ₁ < 0
@@ -366,6 +366,7 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODM
     @printf io " (first-order)  hvp      := %d  \n" s.kh
     @printf io " (second-order)  H       := %d  \n" s.kH
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (sub-problem)   kₕ       := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
