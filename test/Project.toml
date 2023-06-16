@@ -40,5 +40,5 @@ VectorizedReduction = "4ffe575c-65e5-43f4-bc05-e0b500dc3d2c"
 [compat]
 LazyStack = "0.0.7"
 PGFPlotsX = "=1.5.0"
-Plots = "=1.38.16"
+Plots = "=1.38"
 julia = "^1.8.2"

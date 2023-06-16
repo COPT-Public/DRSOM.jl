@@ -38,10 +38,11 @@ using SparseArrays
 using .LP
 using LoopVectorization
 using LIBSVMFileIO
+using StatsPlots
 
-bool_opt = false
+bool_opt = true
 bool_plot = true
-bool_q_preprocessed = false
+bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1e-6 # * max(g(x0) |> norm, 1)
@@ -51,8 +52,8 @@ if bool_q_preprocessed
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    # name = "news20"
-    name = "rcv1"
+    name = "news20"
+    # name = "rcv1"
 
     # loss
 
@@ -85,8 +86,6 @@ if bool_q_preprocessed
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
-
-    x0 = 1 * randn(Float64, n)
 
     function loss(w)
         z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
@@ -128,92 +127,104 @@ if bool_q_preprocessed
     )
 end
 
-
 if bool_opt
+    r = Dict(
+        :cold => [],
+        :warm => []
+    )
+    for i in 1:10
+        x0 = 2 * randn(Float64, n)
+        # options for Optim.jl package
+        options = Optim.Options(
+            g_tol=ε,
+            iterations=10000,
+            store_trace=true,
+            show_trace=true,
+            show_every=1,
+            time_limit=500
+        )
 
-    # options for Optim.jl package
-    options = Optim.Options(
-        g_tol=ε,
-        iterations=10000,
-        store_trace=true,
-        show_trace=true,
-        show_every=1,
-        time_limit=500
-    )
-
-    rc = PFH(name=Symbol("PF-HSODM"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        step=:hsodm, μ₀=5e-2,
-        bool_trace=true,
-        maxtime=500,
-        direction=:cold
-    )
-    rh = PFH(name=Symbol("PF-HSODM"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        step=:hsodm, μ₀=5e-2,
-        bool_trace=true,
-        maxtime=500,
-        direction=:warm
-    )
+        rc = PFH(name=Symbol("PF-HSODM"))(;
+            x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+            maxiter=10000, tol=ε, freq=1,
+            step=:hsodm, μ₀=5e-2,
+            bool_trace=true,
+            maxtime=500,
+            direction=:cold
+        )
+        push!(r[:cold], getresultfield(rc,  :kᵥ)) 
+        rh = PFH(name=Symbol("PF-HSODM"))(;
+            x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+            maxiter=10000, tol=ε, freq=1,
+            step=:hsodm, μ₀=5e-2,
+            bool_trace=true,
+            maxtime=500,
+            direction=:warm
+        )
+        push!(r[:warm], getresultfield(rh,  :kᵥ))
+    end
 end
 
 
 if bool_plot
-    results = [
-        # optim_to_result(res1, "GD+Wolfe"),
-        # optim_to_result(r_lbfgs, "LBFGS+Wolfe"),
-        rc,
-        rh,
-    ]
+    
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
-    method_names = [
-        L"\texttt{no warm-start}",
-        L"\texttt{warm-start}",
-    ]
+    method_id = Dict(
+        :warm => 2,
+        :cold => 1,
+    )
+    method_names = Dict(
+        :warm => L"\texttt{warm-start}",
+        :cold => L"\texttt{no warm-start}",
+    )
+    colors = palette(:default)[1:2]
     xaxis = :k
-    for metric in (:ϵ, :kᵥ)
-        @printf("plotting results\n")
+    metric = :kᵥ 
+    @printf("plotting results\n")
 
-        pgfplotsx()
-        title = L"Warm-start for Homotopy HSODM on $\texttt{name}:=\texttt{%$(name)}$"
-        fig = plot(
-            xlabel=xaxis == :t ? L"\textrm{Running Time (s)}" : L"\textrm{Iterations} $k$",
-            ylabel=metric == :ϵ ? L"\|\nabla f\|" : L"Krylov Iterations $K$",
-            title=title,
-            size=(600, 500),
-            yticks=[1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e-1, 1e0, 1e1],
-            # xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-            yscale=:log10,
-            # xscale=:log2,
-            dpi=500,
-            labelfontsize=14,
-            xtickfont=font(13),
-            ytickfont=font(13),
-            leg=:topleft,
-            legendfontsize=14,
-            legendfontfamily="sans-serif",
-            titlefontsize=22,
-            palette=:Paired_8 #palette(:PRGn)[[1,3,9,10,11]]
+    pgfplotsx()
+    title = L"Warm-start for Homotopy HSODM on $\texttt{name}:=\texttt{%$(name)}$"
+    fig = plot(
+        xlabel=xaxis == :t ? L"\textrm{Running Time (s)}" : L"\textrm{Iterations} $k$",
+        ylabel=metric == :ϵ ? L"\|\nabla f\|" : L"Krylov Iterations $K$",
+        title=title,
+        size=(600, 500),
+        yticks=[1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e-1, 1e0, 1e1],
+        # xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+        yscale=:log10,
+        # xscale=:log2,
+        dpi=500,
+        labelfontsize=14,
+        xtickfont=font(13),
+        ytickfont=font(13),
+        leg=:topleft,
+        legendfontsize=14,
+        legendfontfamily="sans-serif",
+        titlefontsize=22,
+        palette=:Paired_8 #palette(:PRGn)[[1,3,9,10,11]]
+    )
+    for (_, (k, rv)) in enumerate(r)
+        yv = rstack(rv..., fill=NaN)
+        println(yv)
+        errorline!(fig,
+            1:60,
+            convert(Matrix{Float64}, yv)[1:60,:],
+            label=method_names[k],
+            linewidth=0.5,
+            # errorstyle=:plume,
+            groupcolor=colors[method_id[k]],
+            percentiles=[:20, :80]
+            # markershape=:circle,
+            # markersize=2.0,
+            # markercolor=:match,
+            # linestyle=linestyles[k]
+            # seriescolor=colors[k]
+            
         )
-        for (k, rv) in enumerate(results)
-            yv = getresultfield(rv, metric)
-            plot!(fig,
-                xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
-                yv,
-                label=method_names[k],
-                linewidth=1.5,
-                # markershape=:circle,
-                # markersize=2.0,
-                # markercolor=:match,
-                # linestyle=linestyles[k]
-                # seriescolor=colors[k]
-            )
-        end
-        savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.tex")
-        savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.pdf")
-        savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.png")
     end
+    savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.tex")
+    savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.pdf")
+    savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.png")
+    
 end
 
