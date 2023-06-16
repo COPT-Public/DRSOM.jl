@@ -305,12 +305,18 @@ function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
 
+@doc """
+@note, one can use cg from `KrylovKit.jl`, to me it seems to be the same
+`Krylov.jl` seems to be a little faster
+```julia
+d, __unused_info = KrylovKit.linsolve(
+    f, -Vector(g);
+    isposdef=true, issymmetric=true
+)
+```
+"""
 function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
 ) where {I}
-    # d, __unused_info = KrylovKit.linsolve(
-    #     f, -Vector(g);
-    #     isposdef=true, issymmetric=true
-    # )
     n = g |> length
     opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
     d, __unused_info = cg(opH, -Vector(g); verbose=0, atol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, itmax=200)
