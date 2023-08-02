@@ -185,8 +185,9 @@ function Base.iterate(iter::UTRIteration, state::UTRState{R,Tx}) where {R,Tx}
         state.y = y
         state.fx = fx
         state.ρ = ρₐ
-        # state.dq = dq
+        state.dq = dq
         state.df = df
+        state.θ = θ
         state.d = x - z
         state.Δ = Δ
         state.Δₙ = state.d |> norm

@@ -124,6 +124,23 @@ wrapper_newton(x, loss, g, H, options; kwargs...) =
             inplace=false
         ), "Newton+TR"
     )
+function wrapper_arc(nlp)
+    reset!(nlp)
+    stats = ARCqKOp(
+        nlp,
+        max_time=max_time,
+        max_iter=max_iter,
+        max_eval=typemax(Int64),
+        verbose=true
+        # atol=atol,
+        # rtol=rtol,
+        # @note: how to set |g|?
+    )
+    # AdaptiveRegularization.jl to my style of results
+    return arc_to_result(nlp, stats, "ARC")
+end
+
+
 alg_drsom = DRSOM2()
 wrapper_drsom(x, loss, g, H, options; kwargs...) =
     alg_drsom(;
@@ -188,22 +205,13 @@ wrapper_hsodm_arc(x, loss, g, H, options; kwargs...) =
         adaptive=:arc,
         options...
     )
-
-function wrapper_arc(nlp)
-    reset!(nlp)
-    stats = ARCqKOp(
-        nlp,
-        max_time=max_time,
-        max_iter=max_iter,
-        max_eval=typemax(Int64),
-        verbose=true
-        # atol=atol,
-        # rtol=rtol,
-        # @note: how to set |g|?
+alg_utr = UTR(; name=:UTR)
+wrapper_utr(x, loss, g, H, options; kwargs...) =
+    alg_utr(;
+        x0=copy(x), f=loss, g=g, H=H,
+        options...
     )
-    # AdaptiveRegularization.jl to my style of results
-    return arc_to_result(nlp, stats, "ARC")
-end
+
 
 # My solvers and those in Optim.jl
 MY_OPTIMIZERS = Dict(
@@ -213,6 +221,7 @@ MY_OPTIMIZERS = Dict(
     :HSODM => wrapper_hsodm,
     :HSODMhvp => wrapper_hsodm_hvp,
     # :HSODMArC => wrapper_hsodm_arc,
+    :UTR => wrapper_utr,
 )
 
 OPTIMIZERS_OPTIM = Dict(

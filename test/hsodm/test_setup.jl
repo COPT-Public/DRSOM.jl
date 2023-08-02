@@ -6,7 +6,7 @@ log_freq = 200
 precision = tol_grad = 1e-5
 max_iter = 20000
 max_time = 200.0
-test_before_start = true
+test_before_start = false
 
 
 ##########################################
@@ -32,7 +32,8 @@ filter_cutest_problem(nlp) = true
 # filter_optimization_method(k) = k == :LBFGS
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
-filter_optimization_method(k) = k == :HSODM
+# filter_optimization_method(k) = k == :HSODM
+filter_optimization_method(k) = k == :UTR
 # filter_optimization_method(k) = k == :ARC
 # filter_optimization_method(k) = k == :HSODMArC
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
@@ -42,8 +43,8 @@ filter_optimization_method(k) = k == :HSODM
 
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104
-PROBLEMS = TEST
-# PROBLEMS = UNC_PROBLEMS_4to200
+# PROBLEMS = TEST
+PROBLEMS = UNC_PROBLEMS_4to200
 # PROBLEMS = UNC_PROBLEMS_200to5000
 
 if test_before_start
