@@ -15,6 +15,7 @@ include("utilities/trs.jl")
 include("utilities/counter.jl")
 include("utilities/interpolation.jl")
 include("utilities/adaptive.jl")
+include("utilities/lanczos.jl")
 
 
 # algorithm implementations
@@ -24,13 +25,14 @@ include("algorithms/legacy/drsom_legacy.jl")
 include("algorithms/drsom.jl")
 include("algorithms/hsodm.jl")
 include("algorithms/pathfollowing.jl")
-
+include("algorithms/utr.jl")
 
 # Algorithm Aliases
 DRSOM2 = DimensionReducedSecondOrderMethod
 HSODM = HomogeneousSecondOrderDescentMethod
 PFH = PathFollowingHSODM
+UTR = UniversalTrustRegion
 
 export Result
-export DRSOM2, HSODM, PFH
+export DRSOM2, HSODM, PFH, UTR
 end # module

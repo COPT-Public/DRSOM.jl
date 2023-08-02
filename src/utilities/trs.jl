@@ -7,21 +7,7 @@ using Distributions
 
 include("./hagerzhang.jl")
 include("./backtracking.jl")
-"""
-# Solving `TrustRegionSubproblem`` via a given regularizer or a radius or radius-free 
 
-## the strict regularization mode
-strictly solve a quadratic regularization problems given a regularizer :λ 
-## the radius free mode
-compute the Lagrangian multiplier according to the adaptive :γ instead. see the paper for details.
-## the strict radius mode
-if you choose a radius, this function is a bisection procedure 
-    following the complexity of O(loglog(1/ε)) by Ye
-you may find other popular methods like 
-  Steihaug-CG, Steihaug-Toint Lanczos method, et cetera,
-  which are the most practical TRS solvers, as far as I know,
-  you can find their implementations in GLTR and GLRT in GALAHAD library.  
-"""
 const lsa::HagerZhangEx = HagerZhangEx(
 # linesearchmax=10
 )
@@ -31,7 +17,23 @@ const lsb::BackTrackingEx = BackTrackingEx(
     order=2
 )
 
-function TrustRegionSubproblem(
+@doc raw"""
+A simple procedure to solve TRS via a given regularizer || a radius 
+
+- the radius free mode: compute the Lagrangian multiplier according to the adaptive ``\gamma`` instead. 
+    See the paper for details.
+- the strict regularization mode: strictly solve a quadratic regularization problems given a regularizer ``\lambda`` 
+
+- the strict radius mode: if you choose a radius, this function is a bisection procedure 
+    following the complexity of ``O(\log\log(1/ε))`` by Ye
+
+We use this function (radius-free mode) `only` in DRSOM, since the eigenvalues are easy to solve. 
+For full-dimensional problems, you should use `TrustRegionSubproblem` or other popular methods like 
+  Steihaug-CG, Steihaug-Toint Lanczos method, et cetera,
+  which are more practical, as far as I know,
+  you can find their implementations in GLTR and GLRT in GALAHAD library.  
+"""
+function SimpleTrustRegionSubproblem(
     Q,
     c::Vector{Float64},
     state::StateType;
@@ -46,8 +48,6 @@ function TrustRegionSubproblem(
     # the dimension of Q and G should not be two big.
     _Q, _G = Symmetric(Q), Symmetric(G)
     _c = c
-
-
     if mode == :reg
         ######################################
         # the strict regularization mode
@@ -57,7 +57,8 @@ function TrustRegionSubproblem(
         ######################################
         alpha = -(_Q + λ .* _G) \ _c
         return alpha
-    elseif (mode == :free) && (length(_c) == 2)
+    end
+    if (mode == :free) && (length(_c) == 2)
         ######################################
         # the radius free mode
         ######################################
@@ -85,88 +86,61 @@ function TrustRegionSubproblem(
         K = [d/s -b/s; -b/s a/s]
         alpha = -K * _c
         return alpha
-    else
-        eigvalues = eigvals(_Q, _G)
-        sort!(eigvalues)
-        lmin, lmax = eigvalues
-        lb = max(1e-8, -lmin)
-        ub = max(lb, lmax) + Δl
-        if mode == :tr
-            ######################################
-            # the strict radius mode
-            ######################################
-            # strictly solve TR given a radius :Δ 
-            #   via bisection
-            ######################################
-            λ = lb
-            try
-                alpha = -(_Q + λ .* _G) \ _c
-            catch e
-                println(lb)
-                printstyled(_Q)
-                println(_Q + λ .* _G)
-                throw(e)
-            end
+    end
 
-            s = sqrt(alpha' * _G * alpha) # size
+    ######################################
+    # compute eigenvalues.
+    ######################################
+    eigvalues = eigvals(_Q, _G)
+    sort!(eigvalues)
+    lmin, lmax = eigvalues
+    lb = max(1e-8, -lmin)
+    ub = max(lb, lmax) + Δl
 
-            if s <= Δ
-                # damped Newton step is OK
-                state.λ = λ
-                return alpha
-            end
-            # else we must hit the boundary
-            while (ub - lb) > Δϵ
-                λ = (lb + ub) / 2
-                alpha = -(_Q + λ .* _G) \ _c
-                s = sqrt(alpha' * _G * alpha) # size
-                if s > Δ + Δϵ
-                    lb = λ
-                elseif s < Δ - Δϵ
-                    ub = λ
-                else
-                    # good enough
-                    break
-                end
-            end
+    if mode == :trbisect
+        ######################################
+        # the strict radius mode
+        ######################################
+        # strictly solve TR given a radius :Δ 
+        #   via bisection
+        ######################################
+
+        λ = lb
+        try
+            alpha = -(_Q + λ .* _G) \ _c
+        catch e
+            println(lb)
+            printstyled(_Q)
+            println(_Q + λ .* _G)
+            throw(e)
+        end
+
+        s = sqrt(alpha' * _G * alpha) # size
+
+        if s <= Δ
+            # damped Newton step is OK
             state.λ = λ
             return alpha
-        elseif mode == :free
-            ######################################
-            # the radius free mode
-            ######################################
-            # compute the Lagrangian multiplier 
-            # according to the adaptive :γ instead.
-            # see the paper for details.
-            ######################################
-            lb = max(0, -lmin)
-            lmax = max(lb, lmax) + 1e3
-            state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-            try
-                alpha = -(_Q + state.λ .* _G) \ _c
-                return alpha
-            catch
-                try
-                    # this means it is singular
-                    # for example, some direction 
-                    # a wild solution
-                    alpha = -(Diagonal(_Q) + state.λ .* Diagonal(_G)) \ _c
-                    return alpha
-                catch
-                    println(_Q)
-                    println(_G)
-                    println(_c)
-                    println(state.λ)
-                    error("failed at evaluate Q")
-                end
-            end
-            return alpha
-
-        else
-            ex = ErrorException("Only support :tr, :reg, and :free")
-            throw(ex)
         end
+        # else we must hit the boundary
+        while (ub - lb) > Δϵ
+            λ = (lb + ub) / 2
+            alpha = -(_Q + λ .* _G) \ _c
+            s = sqrt(alpha' * _G * alpha) # size
+            if s > Δ + Δϵ
+                lb = λ
+            elseif s < Δ - Δϵ
+                ub = λ
+            else
+                # good enough
+                break
+            end
+        end
+        state.λ = λ
+        return alpha
     end
+    ex = ErrorException("Do not support the options $mode")
+    throw(ex)
 end
 
 function TRStyleLineSearch(
@@ -355,3 +329,118 @@ function HagerZhangLineSearch(
 
 end
 
+
+
+
+@doc raw"""
+A direct/indirect procedure to solve `TRS`.
+"""
+function TrustRegionSubproblem(
+    Q,
+    c::Vector{Float64},
+    state::StateType;
+    G=diagm(ones(2)),
+    mode=:free,
+    Δ::Float64=0.0,
+    Δϵ::Float64=1e-4,
+    Δl::Float64=1e2,
+    λ::Float64=0.0
+) where {StateType}
+
+    # the dimension of Q and G should not be two big.
+    _Q, _G = Symmetric(Q), Symmetric(G)
+    _c = c
+    if mode == :reg
+        ######################################
+        # the strict regularization mode
+        ######################################
+        # strictly solve a quadratic regularization problems
+        #   given a regularizer :λ 
+        ######################################
+        alpha = -(_Q + λ .* _G) \ _c
+        return alpha
+    end
+    if (mode == :free) && (length(_c) == 2)
+        ######################################
+        # the radius free mode
+        ######################################
+        # @special treatment for d = 2 (DRSOM 2D)
+        # when it is small, 
+        #   use more simple ways to calculate eigvalues.
+        a = _Q[1, 1]
+        b = _Q[1, 2]
+        d = _Q[2, 2]
+        t = a + d
+        s = a * d - b^2
+        lmin = t / 2 - (t^2 / 4 - s)^0.5
+        lmax = t / 2 + (t^2 / 4 - s)^0.5
+        # eigvalues = eigvals(_Q, _G)
+        # sort!(eigvalues)
+        # lmin, lmax = eigvalues
+        lb = max(1e-8, -lmin)
+        ub = max(lb, lmax) + Δl
+        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
+        _QG = _Q + state.λ .* _G
+        a = _QG[1, 1]
+        b = _QG[1, 2]
+        d = _QG[2, 2]
+        s = a * d - b^2
+        K = [d/s -b/s; -b/s a/s]
+        alpha = -K * _c
+        return alpha
+    end
+
+    ######################################
+    # compute eigenvalues.
+    ######################################
+    eigvalues = eigvals(_Q, _G)
+    sort!(eigvalues)
+    lmin, lmax = eigvalues
+    lb = max(1e-8, -lmin)
+    ub = max(lb, lmax) + Δl
+
+    if mode == :trbisect
+        ######################################
+        # the strict radius mode
+        ######################################
+        # strictly solve TR given a radius :Δ 
+        #   via bisection
+        ######################################
+
+        λ = lb
+        try
+            alpha = -(_Q + λ .* _G) \ _c
+        catch e
+            println(lb)
+            printstyled(_Q)
+            println(_Q + λ .* _G)
+            throw(e)
+        end
+
+        s = sqrt(alpha' * _G * alpha) # size
+
+        if s <= Δ
+            # damped Newton step is OK
+            state.λ = λ
+            return alpha
+        end
+        # else we must hit the boundary
+        while (ub - lb) > Δϵ
+            λ = (lb + ub) / 2
+            alpha = -(_Q + λ .* _G) \ _c
+            s = sqrt(alpha' * _G * alpha) # size
+            if s > Δ + Δϵ
+                lb = λ
+            elseif s < Δ - Δϵ
+                ub = λ
+            else
+                # good enough
+                break
+            end
+        end
+        state.λ = λ
+        return alpha
+    end
+    ex = ErrorException("Do not support the options $mode")
+    throw(ex)
+end

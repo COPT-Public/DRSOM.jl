@@ -62,7 +62,7 @@ Base.@kwdef mutable struct DRSOMFState{R,Tx,Tq,Tc}
     Q::Tq             # Q for trs
     G::Tq             # G for trs
     c::Tc             # c for trs
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
@@ -189,7 +189,7 @@ function Base.iterate(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}) where {R,
     dim = 0
     bool_reduce = false
     while true
-        alp = TrustRegionSubproblem(Q, c, state; G=G, mode=:tr, Δ=state.Δ)
+        alp = SimpleTrustRegionSubproblem(Q, c, state; G=G, mode=:tr, Δ=state.Δ)
         x = y = state.z + D * alp
         fx = iter.f(x)
         df = fz - fx
@@ -278,7 +278,7 @@ function contract(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}, s::Float64; �
         # increase a little bit 
         #   cannot be bigger :λmax
         λmax = state.λ + sqrt(iter.σmin * norm(state.∇f))
-        alp = TrustRegionSubproblem(
+        alp = SimpleTrustRegionSubproblem(
             state.Q, state.c, state;
             G=state.G, mode=:reg, λ=λmax
         )
@@ -300,7 +300,7 @@ function contract(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}, s::Float64; �
             sn = 0.0
             while (λmax - λmin) / λmin > Δϵ
                 λ = (λmin + λmax) / 2
-                alp = TrustRegionSubproblem(
+                alp = SimpleTrustRegionSubproblem(
                     state.Q, state.c, state;
                     G=state.G, mode=:reg, λ=λ
                 )
@@ -324,7 +324,7 @@ function contract(iter::DRSOMFIteration, state::DRSOMFState{R,Tx}, s::Float64; �
         # increase by a fixed fraction 
         # and this will still guarantee fraction λ/|d|
         λ = state.λ * iter.γλ
-        alp = TrustRegionSubproblem(
+        alp = SimpleTrustRegionSubproblem(
             state.Q, state.c, state;
             G=state.G, mode=:reg, λ=λ
         )

@@ -49,7 +49,7 @@ using DRSOM
 # nlp = CUTEstModel("VARDIM", "-param", "N=200")
 # nlp = CUTEstModel("SENSORS", "-param", "N=10")
 # nlp = CUTEstModel("BRYBND", "-param", "N=100")
-nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
+nlp = CUTEstModel("EXTROSNB", "-param", "N=1000")
 # nlp = CUTEstModel("CHNROSNB", "-param", "N=25")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
@@ -118,16 +118,16 @@ options = Optim.Options(
 #     maxiter=10000, tol=1e-6, freq=1,
 #     sog=:prov, hvp=hvp
 # )
-rh = HSODM(; name=:HSODMLS)(;
-    x0=copy(x0), f=loss, g=g, hvp=hvp,
-    maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, linesearch=:hagerzhang
-)
+# rh = HSODM(; name=:HSODMLS)(;
+#     x0=copy(x0), f=loss, g=g, hvp=hvp,
+#     maxiter=10000, tol=1e-6, freq=1,
+#     direction=:warm, linesearch=:hagerzhang
+# )
 
-rh = HSODM(; name=:HSODMLS)(;
+rh = UTR(;)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm, linesearch=:hagerzhang
+    direction=:warm
 )
 
 
@@ -140,7 +140,7 @@ rh = HSODM(; name=:HSODMLS)(;
 #     maxtime=10000
 # )
 
-finalize(nlp)
+# finalize(nlp)
 
 # rarc = wrapper_arc(nlp)
 # results = [

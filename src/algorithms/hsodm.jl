@@ -48,7 +48,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq

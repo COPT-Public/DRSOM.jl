@@ -78,7 +78,7 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     Q::Tq             # Q for low-dimensional QP
     c::Tc             # c for low-dimensional QP
     G::Tq             # c for low-dimensional QP
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
@@ -243,7 +243,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
     if bool_tr
         while true
 
-            α₁, α₂ = TrustRegionSubproblem(Q, c, state; G=state.G, mode=:free)
+            α₁, α₂ = SimpleTrustRegionSubproblem(Q, c, state; G=state.G, mode=:free)
 
             x = y = state.z - α₁ .* state.∇f / gₙ + α₂ .* state.d / dₙ
             fx = iter.f(x)

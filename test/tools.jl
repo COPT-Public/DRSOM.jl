@@ -188,12 +188,7 @@ wrapper_hsodm_arc(x, loss, g, H, options; kwargs...) =
         adaptive=:arc,
         options...
     )
-# wrapper_drsom_homo(x, loss, g, H, options; kwargs...) =
-#     drsom_helper_plus.run_drsomd(
-#         copy(x), loss, g, H;
-#         direction=:homokrylov,
-#         options_drsom...
-#     )
+
 function wrapper_arc(nlp)
     reset!(nlp)
     stats = ARCqKOp(

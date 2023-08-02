@@ -15,3 +15,14 @@ DRSOM.DRSOMState
 ```@docs
 DRSOM.DRSOMIteration
 ```
+
+!!! note 
+    This TRS solver only works for low-dimensional subproblems
+
+```@docs
+DRSOM.SimpleTrustRegionSubproblem
+```
+
+```@docs
+DRSOM.TrustRegionSubproblem
+```

@@ -53,7 +53,7 @@ Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     α::Tx             # stepsizes for directions...
     Q::Tq             # Q for trs
     c::Tc             # c for trs
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
@@ -65,7 +65,7 @@ Base.@kwdef mutable struct DRSOMLState{R,Tx,Tq,Tc,Tu,Tw}
     β::R = 0.0        # Lipschitz estimate
 end
 
-# function TrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
+# function SimpleTrustRegionSubproblem(Q, c, state::DRSOMLState; G=diagmQ(ones(2)))
 #     try
 #         # for d it is too small, reduce to a Cauchy point ?
 #         eigvalues = eigvals(Q)
@@ -293,7 +293,7 @@ function Base.iterate(iter::DRSOMLIteration, state::DRSOMLState{R,Tx}) where {R,
 
     it = 1
     while true
-        alp = TrustRegionSubproblem(Q, c, state; G=G)
+        alp = SimpleTrustRegionSubproblem(Q, c, state; G=G)
         x = y = state.z + D * alp
         fx = iter.f(x)
         dq = -alp' * Q * alp / 2 - alp' * c

@@ -59,7 +59,7 @@ Base.@kwdef mutable struct PFHState{R,Tx,Tg}
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    Δ::R = 1e6        # trs radius
+    Δ::R = 1e6        # trust-region radius
     dq::R = 0.0       # decrease of estimated quadratic model
     df::R = 0.0       # decrease of the real function value
     ρ::R = 0.0        # trs descrease ratio: ρ = df/dq
@@ -280,7 +280,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     linesearch=:none,
     adaptive=:none,
     μ₀=0.1,
-    bool_trace=true,
+    bool_trace=false,
     kwargs...
 ) where {T<:PFHIteration,S<:PFHState}
 
