@@ -48,8 +48,8 @@ using DRSOM
 # nlp = CUTEstModel("ARGLINB", "-param", "M=200,N=200")
 # nlp = CUTEstModel("VARDIM", "-param", "N=200")
 # nlp = CUTEstModel("SENSORS", "-param", "N=10")
-nlp = CUTEstModel("BRYBND", "-param", "N=100")
-# nlp = CUTEstModel("EXTROSNB", "-param", "N=1000")
+# nlp = CUTEstModel("BRYBND", "-param", "N=100")
+# nlp = CUTEstModel("EXTROSNB", "-param", "N=100")
 # nlp = CUTEstModel("CHNROSNB", "-param", "N=25")
 # nlp = CUTEstModel("CURLY10", "-param", "N=100")
 # nlp = CUTEstModel("CRAGGLVY", "-param", "M=24")
@@ -111,7 +111,7 @@ options = Optim.Options(
 #         linesearch=LineSearches.HagerZhang()
 #     ), options; inplace=false)
 
-# # arc = wrapper_arc(nlp)
+# arc = wrapper_arc(nlp)
 
 # r = DRSOM2()(;
 #     x0=copy(x0), f=loss, g=g,
@@ -127,7 +127,7 @@ options = Optim.Options(
 rh = UTR(;)(;
     x0=copy(x0), f=loss, g=g, H=H,
     maxiter=10000, tol=1e-6, freq=1,
-    direction=:warm
+    direction=:warm, bool_subp_exact=0
 )
 
 

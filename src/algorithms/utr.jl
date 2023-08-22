@@ -29,6 +29,7 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     linesearch = :none
     adaptive = :none
     verbose::Int64 = 1
+    bool_subp_exact::Int64 = 0
     LOG_SLOTS::String = UTR_LOG_SLOTS
     ALIAS::String = "UTR"
     DESC::String = "Universal Trust-Region Method"
@@ -109,8 +110,11 @@ function Base.iterate(iter::UTRIteration)
 end
 
 
+function iterate_evolve_lanczos(
+    iter::UTRIteration,
+    state::UTRState{R,Tx};
+) where {R,Tx}
 
-function Base.iterate(iter::UTRIteration, state::UTRState{R,Tx}) where {R,Tx}
 
     state.z = z = state.x
     state.fz = fz = state.fx
@@ -123,35 +127,35 @@ function Base.iterate(iter::UTRIteration, state::UTRState{R,Tx}) where {R,Tx}
     if iter.hvp === nothing
         H = iter.H(state.x)
     else
+        throw(
+            ErrorException("currently only support Hessian mode")
+        )
     end
-    # stepsize choice
-    # use Hager-Zhang line-search algorithm
-    # if iter.linesearch == :backtrack
-    #     state.α, fx = BacktrackLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
-
-    # else
-    #     state.α, fx = HagerZhangLineSearch(fh, gh, gh(state.x), fh(state.x), state.x, v)
-    # end
     k₂ = 0
     γ = 1.5
     η = 1.0
     ρ = 1.0
-    T, V, β, kᵢ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
-    λ₁ = eigvals(T, 1:1)[]
+
     σ = state.σ * grad_regularizer
     Δ = max(state.r * grad_regularizer, 1e-1)
-    λₗ = max(-λ₁, 0)
-    λᵤ = state.ϵ / Δ
+
     Df = (η / ρ) * decs_regularizer
+    # initialize
+    n = state.∇f |> length
+    Sₗ = DRSOM.Lanczos(n, 2n + 1, state.∇f)
     while true
-        v, θ, kᵢ = LanczosTrustRegionBisect(
-            T + σ * I,
-            V,
+        # use evolving subspaces
+        v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
+            H,
             -state.∇f,
             Δ,
-            max(0, λₗ - σ),
-            λᵤ
+            Sₗ;
+            σ=σ,
+            k=Sₗ.k
         )
+        λ₁ = info.λ₁
+
+        # construct iterate
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
 
@@ -159,9 +163,10 @@ function Base.iterate(iter::UTRIteration, state::UTRState{R,Tx}) where {R,Tx}
         x = y = state.z + v * state.α
         df = fz - fx
         dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
-        ρₐ = df / dq
+        ρₐ = sign(df) * df / dq
+        # @info df, dq
         k₂ += 1
-        if ((df < Df) && (ρₐ < 0.6)) && (Δ > 1e-6)  # not satisfactory
+        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
             if abs(λ₁) >= 1e-3 # too cvx or ncvx
                 σ = 0.0
             else
@@ -198,6 +203,102 @@ function Base.iterate(iter::UTRIteration, state::UTRState{R,Tx}) where {R,Tx}
         state.k += 1
         return state, state
     end
+end
+
+
+function Base.iterate(
+    iter::UTRIteration,
+    state::UTRState{R,Tx};
+) where {R,Tx}
+
+    if (iter.bool_subp_exact == 0)
+        # use inexact method of evolving Lanczos
+        return iterate_evolve_lanczos(iter, state)
+    end
+
+    state.z = z = state.x
+    state.fz = fz = state.fx
+    state.∇fz = state.∇f
+    state.∇f = iter.g(state.x)
+    state.ϵ = norm(state.∇f)
+    grad_regularizer = state.ϵ |> sqrt
+    decs_regularizer = grad_regularizer^3
+
+    if iter.hvp === nothing
+        H = iter.H(state.x)
+    else
+        throw(
+            ErrorException("currently only support Hessian mode")
+        )
+    end
+    k₂ = 0
+    γ = 1.5
+    η = 1.0
+    ρ = 1.0
+    T, V, β, kᵢ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
+    λ₁ = eigvals(T, 1:1)[]
+    σ = state.σ * grad_regularizer
+    Δ = max(state.r * grad_regularizer, 1e-1)
+    λₗ = max(-λ₁, 0)
+    λᵤ = state.ϵ / Δ
+    Df = (η / ρ) * decs_regularizer
+    while true
+        v, θ, kᵢ = LanczosTrustRegionBisect(
+            T + σ * I,
+            V,
+            -state.∇f,
+            Δ,
+            max(0, λₗ - σ),
+            λᵤ
+        )
+        state.α = 1.0
+        fx = iter.f(state.z + v * state.α)
+
+        # summarize
+        x = y = state.z + v * state.α
+        df = fz - fx
+        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+        ρₐ = df / dq
+        k₂ += 1
+
+        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
+            if abs(λ₁) >= 1e-3 # too cvx or ncvx
+                σ = 0.0
+            else
+                σ *= γ
+            end
+            # dec radius
+            Δ /= γ
+            Df /= γ
+            continue
+        end
+        if ρₐ > 0.9
+            σ /= γ
+            Δ *= γ
+        end
+        # do this when accept
+        state.σ = max(1e-8, σ / grad_regularizer)
+        state.r = max(Δ / grad_regularizer, 1e-1)
+        state.k₂ += k₂
+        state.kₜ = k₂
+        state.x = x
+        state.y = y
+        state.fx = fx
+        state.ρ = ρₐ
+        state.dq = dq
+        state.df = df
+        state.θ = θ
+        state.d = x - z
+        state.Δ = Δ
+        state.Δₙ = state.d |> norm
+        state.t = (Dates.now() - iter.t).value / 1e3
+        counting(iter, state)
+        state.status = true
+        # @info ρₐ
+        state.k += 1
+        return state, state
+    end
+
 end
 
 utr_stopping_criterion(tol, state::UTRState) =
@@ -280,6 +381,7 @@ function Base.show(io::IO, t::T) where {T<:UTRIteration}
     @printf io "  algorithm alias       := %s\n" t.ALIAS
     @printf io "  algorithm description := %s\n" t.DESC
     @printf io "  inner iteration limit := %s\n" t.itermax
+    @printf io "  subproblem            := %s\n" t.bool_subp_exact
     if t.hvp !== nothing
         @printf io "      second-order info := using provided Hessian-vector product\n"
     elseif t.H !== nothing

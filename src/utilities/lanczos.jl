@@ -10,8 +10,31 @@ end
 
 
 LanczosTridiag(A, b; kwargs...) = LanczosTridiag(x -> A * x, b; kwargs...)
+LanczosTridiag(A, b, lc; kwargs...) = LanczosTridiag(x -> A * x, b, lc; kwargs...)
 LanczosTrustRegionBisect(A, b, Δ; kwargs...) = LanczosTrustRegionBisect(x -> A * x, b, Δ; kwargs...)
+InexactLanczosTrustRegionBisect(A, b, Δ, lc; kwargs...) = InexactLanczosTrustRegionBisect(x -> A * x, b, Δ, lc; kwargs...)
 
+mutable struct Lanczos
+    n::Int
+    k::Int # max  dim
+    j::Int # used dim
+    α::Vector{Float64}
+    γ::Vector{Float64}
+    V::Matrix{Float64}
+    Lanczos(n::Int, k::Int, b) = begin
+        α::Vector{Float64} = zeros(Float64, k) # diag
+        γ::Vector{Float64} = zeros(Float64, k - 1) # offdiag
+        V = zeros(n, k)
+        j = 1
+        new(n, k, j, α, γ, V)
+    end
+end
+
+Base.@kwdef mutable struct LanczosInfo
+    λ₁::Float64 = 0.0
+    kₗ::Float64 = 0.0
+    εₙ::Float64 = 0.0
+end
 
 function LanczosTridiag(
     A::Function,
@@ -22,16 +45,13 @@ function LanczosTridiag(
 )
 
     n = length(b)
-    x = zeros(n)
 
     # pre-allocate space for tri-diagonalization and basis
-    γ = zeros(k)
+    γ = zeros(k - 1)
     α = zeros(k)
     V = zeros(n, k)
 
-
-    γ[1] = norm(b)
-    V[:, 1] = copy(b) / γ[1]
+    V[:, 1] = copy(b) / norm(b)
     u = A(V[:, 1])
 
     j = 1
@@ -45,18 +65,60 @@ function LanczosTridiag(
         end
         γⱼ = norm(u)
         V[:, j+1] = u / γⱼ
-        γ[j+1] = γⱼ
-        if γ[j+1] < tol
+        γ[j] = γⱼ
+        if γ[j] < tol
             break
         end
-        u = A(V[:, j+1]) - γ[j+1] * V[:, j]
+        u = A(V[:, j+1]) - γ[j] * V[:, j]
         j += 1
     end
     j = min(j, k - 1)
     T = SymTridiagonal(
-        α[1:j], γ[2:j]
+        α[1:j], γ[1:j-1]
     )
-    return T, V[:, 1:j], γ[1:j+1], j
+    return T, V[:, 1:j], γ[1:j-1], j
+end
+
+function LanczosTridiag(
+    A::Function,
+    b::Vector,
+    lc::Lanczos;
+    tol=1e-5,
+    bool_reorth::Bool=false,
+    k::Int=(b |> length)
+)
+    j = lc.j
+    while j <= k - 1
+        @info j
+        if j == 1
+            lc.V[:, 1] = copy(b) / norm(b)
+            u = A(lc.V[:, j])
+        else
+            u = A(lc.V[:, j]) - lc.γ[j-1] * lc.V[:, j-1]
+        end
+        lc.α[j] = dot(lc.V[:, j], u)
+        u = u - lc.α[j] * lc.V[:, j]
+        if bool_reorth # full re-orthogonalization
+            for i = 1:j
+                u -= lc.V[:, i] * dot(lc.V[:, i], u)
+            end
+        end
+        γⱼ = norm(u)
+        lc.V[:, j+1] = u / γⱼ
+        lc.γ[j] = γⱼ
+
+        # use j below
+        if lc.γ[j] < tol
+            break
+        end
+        j += 1
+    end
+    lc.j = j
+    T = SymTridiagonal(
+        view(lc.α, 1:j), view(lc.γ, 1:j-1)
+    )
+    V = view(lc.V, :, 1:j)
+    return T, V[:, 1:j], lc.γ[1:j-1], j
 end
 
 function LanczosTrustRegionBisect(
@@ -64,14 +126,13 @@ function LanczosTrustRegionBisect(
     b::Vector,
     Δ::Real;
     tol=1e-5,
-    bool_reorth::Bool=false,
+    bool_reorth::Bool=true,
     k::Int=(b |> length),
     ϵ=1e-4,
-    ϵₗ=1e-2
+    ϵₗ=1e-4
 )
     # do tridiagonalization
-    T, V, γ, kᵢ = LanczosTridiag(A, b; tol=1e-5, bool_reorth=true, k=k)
-
+    T, V, γ, kᵢ = LanczosTridiag(A, b; tol=tol, bool_reorth=bool_reorth, k=k)
     # a mild estimate
     # λₗ = maximum(sum(abs, T, dims=1)[:] - diag(T))
     λₗ = max(-eigvals(T, 1:1)[], 0)
@@ -83,6 +144,18 @@ function LanczosTrustRegionBisect(
     kₗ = 1
     if (dₖ |> norm) <= Δ
         return V * dₖ
+    end
+
+    while true
+        Sₖ = ldlt(T + λᵤ * I)
+        dₖ = Sₖ \ bₜ
+        dₙ = dₖ |> norm
+        kₗ += 1
+        if dₙ <= Δ
+            break
+        else
+            λᵤ *= 2
+        end
     end
     # otherwise, we initialize a search procedure
     # using bisection
@@ -110,9 +183,6 @@ function LanczosTrustRegionBisect(
     Δ::Real,
     λₗ::Real,
     λᵤ::Real;
-    tol=1e-5,
-    bool_reorth::Bool=false,
-    k::Int=(b |> length),
     ϵ=1e-4,
     ϵₗ=1e-2
 ) where {F}
@@ -124,6 +194,17 @@ function LanczosTrustRegionBisect(
     kₗ = 1
     if (dₖ |> norm) <= Δ
         return V * dₖ, λₖ, kₗ
+    end
+    while true
+        Sₖ = ldlt(T + λᵤ * I)
+        dₖ = Sₖ \ bₜ
+        dₙ = dₖ |> norm
+        kₗ += 1
+        if dₙ <= Δ
+            break
+        else
+            λᵤ *= 2
+        end
     end
     # otherwise, we initialize a search procedure
     # using bisection
@@ -144,12 +225,129 @@ function LanczosTrustRegionBisect(
     return V * dₖ, λₖ, kₗ
 end
 
-function lanczos_solve_tr_inexact(
+@doc """
+Ξ - constants in the inexactness assumption
+"""
+function InexactLanczosTrustRegionBisect(
     A::Function,
     b::Vector,
-    Δ::Real;
+    Δ::Real,
+    lc::Lanczos;
     tol=1e-5,
-    bool_reorth::Bool=false,
-    k::Int=(b |> length)
+    σ=0.0,
+    bool_reorth::Bool=true,
+    k::Int=(b |> length),
+    ϵ=1e-4,
+    ϵₗ=1e-2,
+    Ξ=1e-3
 )
+    kₗ = 1
+    xₖ = zeros(lc.n)
+    λₖ = 0.0
+    j = lc.j
+
+
+    while true
+        if j <= k - 1 # degree not desired; expand
+            if j == 1
+                lc.V[:, 1] = copy(b) / norm(b)
+                u = A(lc.V[:, j])
+            else
+                u = A(lc.V[:, j]) - lc.γ[j-1] * lc.V[:, j-1]
+            end
+            lc.α[j] = dot(lc.V[:, j], u)
+            u = u - lc.α[j] * lc.V[:, j]
+            if bool_reorth # full re-orthogonalization
+                for i = 1:j
+                    u -= lc.V[:, i] * dot(lc.V[:, i], u)
+                end
+            end
+            γⱼ = norm(u)
+            lc.V[:, j+1] = u / γⱼ
+            lc.γ[j] = γⱼ
+
+            j += 1
+            lc.j = j
+        end
+
+        # now compute solution
+        T = SymTridiagonal(
+            view(lc.α, 1:j), view(lc.γ, 1:j-1)
+        ) + σ * I
+        V = view(lc.V, :, 1:j)
+
+        # a mild estimate
+        # minimum eigenvalue
+        λ₁ = eigvals(T, 1:1)[]
+        # λₗ = max(-λ₁, λₖ)
+        λₗ = max(-λ₁, 0)
+        λᵤ = (b |> norm) / Δ + λₗ
+        bₜ = V' * b
+        λₖ = λₗ
+        Sₖ = ldlt(T + λₖ * I)
+        dₖ = Sₖ \ bₜ
+        dₙ = (dₖ |> norm)
+
+        if dₙ <= Δ
+            # check if minimum λ produces an interior point
+            xₖ = V * dₖ
+        else
+            while true
+                Sₖ = ldlt(T + λᵤ * I)
+                dₖ = Sₖ \ bₜ
+                dₙ = dₖ |> norm
+                kₗ += 1
+                if dₙ <= Δ
+                    break
+                else
+                    λᵤ *= 2
+                end
+            end
+            @debug begin
+                """
+                [λₗ, λᵤ] [$λₗ,$λᵤ,$((b |> norm) / Δ + max(-λ₁, 0))]
+
+                """
+            end
+            # otherwise, we initialize a search procedure
+            # using bisection (sway to λₗ)
+            while abs(λᵤ - λₗ) > ϵₗ
+                λₖ = λₗ * 0.5 + λᵤ * 0.5
+                Sₖ = ldlt(T + λₖ * I)
+                dₖ = Sₖ \ bₜ
+                dₙ = dₖ |> norm
+                kₗ += 1
+                @debug begin
+                    """
+                     $dₙ $λₖ $λₗ $λᵤ
+                    """
+                end
+                if dₙ <= Δ - ϵ
+                    λᵤ = λₖ
+                elseif dₙ >= Δ + ϵ
+                    λₗ = λₖ
+                else
+                    break
+                end
+            end
+            xₖ = V * dₖ
+        end
+        εₙ = (A(xₖ) + (σ + λₖ) * xₖ - b) |> norm
+        @debug begin
+            """
+            Κ    $j
+            abs  $εₙ, $(dₙ^2)
+            ls   $kₗ 
+             λₖ  $λₖ
+            |d|  $dₙ : $Δ
+            [λₗ, λᵤ] [$λₗ,$λᵤ]
+
+            """
+        end
+        if (dₙ^2 * Ξ >= εₙ) || (lc.γ[j-1] < tol) || j >= k
+            return xₖ, λₖ, LanczosInfo(εₙ=εₙ, kₗ=kₗ, λ₁=λ₁)
+        end
+
+    end
+    return xₖ, λₖ, LanczosInfo(εₙ=εₙ, kₗ=kₗ, λ₁=λ₁)
 end

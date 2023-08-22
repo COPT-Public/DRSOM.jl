@@ -8,11 +8,7 @@ using ArnoldiMethod
 using LDLFactorizations
 using Krylov
 using LinearOperators
-try
-    using MKL
-catch e
-    @warn("Unable to import MKL; fall back to BLAS")
-end
+
 
 Base.@kwdef mutable struct AR
     ALIAS::String = "AR"
