@@ -29,7 +29,7 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     linesearch = :none
     adaptive = :none
     verbose::Int64 = 1
-    bool_subp_exact::Int64 = 0
+    bool_subp_exact::Int64 = 1
     LOG_SLOTS::String = UTR_LOG_SLOTS
     ALIAS::String = "UTR"
     DESC::String = "Universal Trust-Region Method"
@@ -211,7 +211,8 @@ function Base.iterate(
     state::UTRState{R,Tx};
 ) where {R,Tx}
 
-    if (iter.bool_subp_exact == 0)
+    n = (state.x |> length)
+    if (iter.bool_subp_exact == 0) && n > 200
         # use inexact method of evolving Lanczos
         return iterate_evolve_lanczos(iter, state)
     end

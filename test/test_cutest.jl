@@ -58,6 +58,8 @@ using DRSOM
 # nlp = CUTEstModel("CHAINWOO", "-param", "NS=49")
 # nlp = CUTEstModel("BIGGS6", "-param", "NS=49")
 # nlp = CUTEstModel("INDEF", "-param", "ALPHA=0.5,N=50")
+nlp = CUTEstModel("BROYDN7D", "-param", "N/2=250")
+
 #######################################################
 
 bool_plotting = true
@@ -101,9 +103,9 @@ options = Optim.Options(
 #     LBFGS(;
 #         linesearch=LineSearches.StrongWolfe()
 #     ), options; inplace=false)
-# res3 = Optim.optimize(loss, g, H, x0,
-#     NewtonTrustRegion(
-#     ), options; inplace=false)
+res3 = Optim.optimize(loss, g, H, x0,
+    NewtonTrustRegion(
+    ), options; inplace=false)
 
 # res4 = Optim.optimize(loss, g, H, x0,
 #     ConjugateGradient(;
@@ -118,11 +120,11 @@ options = Optim.Options(
 #     maxiter=10000, tol=1e-6, freq=1,
 #     sog=:prov, hvp=hvp
 # )
-# rh = HSODM(; name=:HSODMLS)(;
-#     x0=copy(x0), f=loss, g=g, hvp=hvp,
-#     maxiter=10000, tol=1e-6, freq=1,
-#     direction=:warm, linesearch=:hagerzhang
-# )
+rh = HSODM(; name=:HSODMLS)(;
+    x0=copy(x0), f=loss, g=g, hvp=hvp,
+    maxiter=10000, tol=1e-6, freq=1,
+    direction=:warm, linesearch=:hagerzhang
+)
 
 rh = UTR(;)(;
     x0=copy(x0), f=loss, g=g, H=H,

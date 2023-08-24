@@ -9,11 +9,32 @@ using Random
 Random.seed!(1)
 
 
-H = Symmetric(sprand(20, 20, 0.75), :U)
-g = rand(20)
+A = Symmetric(sprand(20, 20, 0.75), :U)
+b = rand(20)
 
 Δ = 5.0
 
-x, l, k = DRSOM.LanczosTrustRegionBisect(H, -g, Δ)
-lc = DRSOM.Lanczos(20, 30, g)
-x1, l1, info = DRSOM.InexactLanczosTrustRegionBisect(H, -g, Δ, lc; k=21)
+x, l, k = DRSOM.LanczosTrustRegionBisect(A, -b, Δ)
+
+@info begin
+    """\n
+    Exact
+    dual    : $l
+    size    : $(x |> norm) $(Δ)
+    residual: $(abs2.((A + l*I)*x + b) |> maximum)
+    """
+end
+
+
+lc = DRSOM.Lanczos(20, 30, b)
+x1, l1, info = DRSOM.InexactLanczosTrustRegionBisect(A, -b, Δ, lc; k=21)
+
+
+@info begin
+    """\n
+    Inexact
+    dual    : $l1
+    size    : $(x1 |> norm) $(Δ)
+    residual: $(abs2.((A + l1*I)*x1 + b) |> maximum)
+    """
+end

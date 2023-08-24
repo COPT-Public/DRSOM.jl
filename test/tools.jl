@@ -212,6 +212,14 @@ wrapper_utr(x, loss, g, H, options; kwargs...) =
         options...
     )
 
+wrapper_iutr(x, loss, g, H, options; kwargs...) =
+    alg_utr(;
+        x0=copy(x), f=loss, g=g, H=H,
+        bool_subp_exact=0,
+        options...
+    )
+
+
 
 # My solvers and those in Optim.jl
 MY_OPTIMIZERS = Dict(
@@ -222,6 +230,7 @@ MY_OPTIMIZERS = Dict(
     :HSODMhvp => wrapper_hsodm_hvp,
     # :HSODMArC => wrapper_hsodm_arc,
     :UTR => wrapper_utr,
+    :iUTR => wrapper_iutr,
 )
 
 OPTIMIZERS_OPTIM = Dict(
