@@ -114,8 +114,6 @@ function iterate_evolve_lanczos(
     iter::UTRIteration,
     state::UTRState{R,Tx};
 ) where {R,Tx}
-
-
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
@@ -206,16 +204,10 @@ function iterate_evolve_lanczos(
 end
 
 
-function Base.iterate(
+function iterate_full_lanczos(
     iter::UTRIteration,
     state::UTRState{R,Tx};
 ) where {R,Tx}
-
-    n = (state.x |> length)
-    if (iter.bool_subp_exact == 0) && n > 200
-        # use inexact method of evolving Lanczos
-        return iterate_evolve_lanczos(iter, state)
-    end
 
     state.z = z = state.x
     state.fz = fz = state.fx
@@ -236,7 +228,7 @@ function Base.iterate(
     γ = 1.5
     η = 1.0
     ρ = 1.0
-    T, V, β, kᵢ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
+    T, V, _, κ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
     λ₁ = eigvals(T, 1:1)[]
     σ = state.σ * grad_regularizer
     Δ = max(state.r * grad_regularizer, 1e-1)
@@ -250,11 +242,113 @@ function Base.iterate(
             -state.∇f,
             Δ,
             max(0, λₗ - σ),
-            λᵤ
+            λᵤ;
+            bool_interior=true
         )
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
+        @info """inner""" κ kᵢ
+        # summarize
+        x = y = state.z + v * state.α
+        df = fz - fx
+        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+        ρₐ = df / dq
+        k₂ += 1
 
+        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
+            if abs(λ₁) >= 1e-3 # too cvx or ncvx
+                σ = 0.0
+            else
+                σ *= γ
+            end
+            # dec radius
+            Δ /= γ
+            Df /= γ
+            continue
+        end
+        if ρₐ > 0.9
+            σ /= γ
+            Δ *= γ
+        end
+        # do this when accept
+        state.σ = max(1e-8, σ / grad_regularizer)
+        state.r = max(Δ / grad_regularizer, 1e-1)
+        state.k₂ += k₂
+        state.kₜ = k₂
+        state.x = x
+        state.y = y
+        state.fx = fx
+        state.ρ = ρₐ
+        state.dq = dq
+        state.df = df
+        state.θ = θ
+        state.d = x - z
+        state.Δ = Δ
+        state.Δₙ = state.d |> norm
+        state.t = (Dates.now() - iter.t).value / 1e3
+        counting(iter, state)
+        state.status = true
+        # @info ρₐ
+        state.k += 1
+        return state, state
+    end
+
+end
+
+
+function Base.iterate(
+    iter::UTRIteration,
+    state::UTRState{R,Tx};
+) where {R,Tx}
+
+    n = (state.x |> length)
+    if (iter.bool_subp_exact == 0)
+        if n < 2e4
+            return iterate_full_lanczos(iter, state)
+        else
+            # use inexact method of evolving Lanczos
+            return iterate_evolve_lanczos(iter, state)
+        end
+    end
+
+    throw(ErrorException("not implemented yet"))
+    if iter.hvp === nothing
+        H = iter.H(state.x)
+    else
+        throw(
+            ErrorException("currently only support Hessian mode")
+        )
+    end
+    k₂ = 0
+    γ = 1.5
+    η = 1.0
+    ρ = 1.0
+
+    σ = state.σ * grad_regularizer
+    Δ = max(state.r * grad_regularizer, 1e-1)
+
+    Df = (η / ρ) * decs_regularizer
+    # initialize
+    n = state.∇f |> length
+    while true
+        F = cholesky(H, check=false)
+
+        if !issuccess(F)
+            lambda *= 2
+            continue
+        end
+        v, θ, kᵢ = LanczosTrustRegionBisect(
+            T + σ * I,
+            V,
+            -state.∇f,
+            Δ,
+            max(0, λₗ - σ),
+            λᵤ;
+            bool_interior=true
+        )
+        state.α = 1.0
+        fx = iter.f(state.z + v * state.α)
+        @info """inner""" kᵢ
         # summarize
         x = y = state.z + v * state.α
         df = fz - fx

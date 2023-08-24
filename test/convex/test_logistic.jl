@@ -39,24 +39,21 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
-bool_opt = false
-bool_plot = true
-bool_q_preprocessed = false
+bool_opt = true
+bool_plot = false
+bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1e-6 # * max(g(x0) |> norm, 1)
 λ = 1e-7
 if bool_q_preprocessed
-    # name = "a4a"
+    name = "a4a"
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    name = "news20"
+    # name = "news20"
     # name = "rcv1"
-    
-    # loss
-    
-   
+
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
     Rc = 1 ./ f1(Xv)[:]
@@ -81,52 +78,52 @@ if bool_q_preprocessed
     Qc(x, y) = y^2 * x
     bool_q_preprocessed && (P = Qc.(X, y))
     Pv = hcat(P...)'
-    
+
     n = Xv[1, :] |> length
     Random.seed!(1)
     N = y |> length
 
     x0 = 10 * randn(Float64, n)
 
-    function g1(w)
-        function _g(x, y, w)
-            ff = exp(-y * w' * x)
-            return -ff / (1 + ff) * y * x
-        end
-        _pure = vmapreduce(
-            (x, y) -> _g(x, y, w),
-            +,
-            X,
-            y
-        )
-        return _pure / N + λ * w
-    end
-    function hvp1(w, v, Hv; eps=1e-8)
-        function _hvp(x, y, q, w, v)
-            wx = w' * x
-            ff = exp(-y * wx)
-            return ff / (1 + ff)^2 * q * x' * v
-        end
-        _pure = vmapreduce(
-            (x, y, q) -> _hvp(x, y, q, w, v),
-            +,
-            X,
-            y,
-            P
-        )
-        # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
-        copyto!(Hv, _pure ./ N .+ λ .* v)
-    end
+    # function g1(w)
+    #     function _g(x, y, w)
+    #         ff = exp(-y * w' * x)
+    #         return -ff / (1 + ff) * y * x
+    #     end
+    #     _pure = vmapreduce(
+    #         (x, y) -> _g(x, y, w),
+    #         +,
+    #         X,
+    #         y
+    #     )
+    #     return _pure / N + λ * w
+    # end
+    # function hvp1(w, v, Hv; eps=1e-8)
+    #     function _hvp(x, y, q, w, v)
+    #         wx = w' * x
+    #         ff = exp(-y * wx)
+    #         return ff / (1 + ff)^2 * q * x' * v
+    #     end
+    #     _pure = vmapreduce(
+    #         (x, y, q) -> _hvp(x, y, q, w, v),
+    #         +,
+    #         X,
+    #         y,
+    #         P
+    #     )
+    #     # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
+    #     copyto!(Hv, _pure ./ N .+ λ .* v)
+    # end
 
-    function loss1(w)
-        _pure = vmapreduce(
-            (x, c) -> log(1 + exp(-c * w' * x)),
-            +,
-            X,
-            y
-        )
-        return _pure / N + 0.5 * λ * w'w
-    end
+    # function loss1(w)
+    #     _pure = vmapreduce(
+    #         (x, c) -> log(1 + exp(-c * w' * x)),
+    #         +,
+    #         X,
+    #         y
+    #     )
+    #     return _pure / N + 0.5 * λ * w'w
+    # end
 
     function loss(w)
         z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
@@ -157,7 +154,7 @@ if bool_q_preprocessed
     end
 
     @info "data preparation finished"
-    
+
     options = Optim.Options(
         g_tol=ε,
         iterations=10000,
@@ -208,9 +205,9 @@ if bool_opt
         eigtol=1e-9,
         direction=:warm
     )
-    
+
     ra = HSODM(name=Symbol("adaptive-HSODM"))(;
-            x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
         maxtime=500,
         direction=:warm, linesearch=:hagerzhang,
@@ -224,6 +221,12 @@ if bool_opt
         bool_trace=true,
         maxtime=500,
         direction=:warm
+    )
+
+    ru = UTR(name=Symbol("Universal-TRS"))(;
+        x0=copy(x0), f=loss, g=g, H=H,
+        maxiter=10000, tol=1e-6, freq=1,
+        direction=:warm, bool_subp_exact=0
     )
 end
 

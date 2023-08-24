@@ -40,8 +40,8 @@ function LanczosTridiag(
     A::Function,
     b::Vector;
     tol=1e-5,
-    bool_reorth::Bool=false,
-    k::Int=(b |> length)
+    k::Int=(b |> length),
+    bool_reorth::Bool=false
 )
 
     n = length(b)
@@ -84,8 +84,8 @@ function LanczosTridiag(
     b::Vector,
     lc::Lanczos;
     tol=1e-5,
-    bool_reorth::Bool=false,
-    k::Int=(b |> length)
+    k::Int=(b |> length),
+    bool_reorth::Bool=false
 )
     j = lc.j
     while j <= k - 1
@@ -126,10 +126,11 @@ function LanczosTrustRegionBisect(
     b::Vector,
     Δ::Real;
     tol=1e-5,
-    bool_reorth::Bool=true,
     k::Int=(b |> length),
     ϵ=1e-4,
-    ϵₗ=1e-4
+    ϵₗ=1e-4,
+    bool_reorth::Bool=false,
+    bool_interior::Bool=false
 )
     # do tridiagonalization
     T, V, γ, kᵢ = LanczosTridiag(A, b; tol=tol, bool_reorth=bool_reorth, k=k)
@@ -166,6 +167,7 @@ function LanczosTrustRegionBisect(
         dₙ = dₖ |> norm
         kₗ += 1
         if dₙ <= Δ - ϵ
+            bool_interior && break
             λᵤ = λₖ
         elseif dₙ >= Δ + ϵ
             λₗ = λₖ
@@ -184,7 +186,8 @@ function LanczosTrustRegionBisect(
     λₗ::Real,
     λᵤ::Real;
     ϵ=1e-4,
-    ϵₗ=1e-2
+    ϵₗ=1e-2,
+    bool_interior::Bool=false
 ) where {F}
     # a mild estimate
     bₜ = V' * b
@@ -215,6 +218,7 @@ function LanczosTrustRegionBisect(
         dₙ = dₖ |> norm
         kₗ += 1
         if dₙ <= Δ - ϵ
+            bool_interior && break
             λᵤ = λₖ
         elseif dₙ >= Δ + ϵ
             λₗ = λₖ
@@ -235,11 +239,12 @@ function InexactLanczosTrustRegionBisect(
     lc::Lanczos;
     tol=1e-5,
     σ=0.0,
-    bool_reorth::Bool=true,
     k::Int=(b |> length),
     ϵ=1e-4,
     ϵₗ=1e-2,
-    Ξ=1e-3
+    Ξ=1e-3,
+    bool_reorth::Bool=false,
+    bool_interior::Bool=false
 )
     kₗ = 1
     xₖ = zeros(lc.n)
@@ -323,6 +328,7 @@ function InexactLanczosTrustRegionBisect(
                     """
                 end
                 if dₙ <= Δ - ϵ
+                    bool_interior && break
                     λᵤ = λₖ
                 elseif dₙ >= Δ + ϵ
                     λₗ = λₖ
