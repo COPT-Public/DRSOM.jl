@@ -22,7 +22,3 @@ DRSOM.DRSOMIteration
 ```@docs
 DRSOM.SimpleTrustRegionSubproblem
 ```
-
-```@docs
-DRSOM.TrustRegionSubproblem
-```

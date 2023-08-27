@@ -232,7 +232,7 @@ function iterate_full_lanczos(
     λ₁ = eigvals(T, 1:1)[]
     σ = state.σ * grad_regularizer
     Δ = max(state.r * grad_regularizer, 1e-1)
-    λₗ = max(-λ₁, 0)
+    λ₁ = max(-λ₁, 0)
     λᵤ = state.ϵ / Δ
     Df = (η / ρ) * decs_regularizer
     while true
@@ -241,13 +241,13 @@ function iterate_full_lanczos(
             V,
             -state.∇f,
             Δ,
-            max(0, λₗ - σ),
+            max(0, λ₁ - σ),
             λᵤ;
             bool_interior=true
         )
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
-        @info """inner""" κ kᵢ
+        @debug """inner""" κ kᵢ
         # summarize
         x = y = state.z + v * state.α
         df = fz - fx
@@ -300,10 +300,10 @@ function Base.iterate(
     iter::UTRIteration,
     state::UTRState{R,Tx};
 ) where {R,Tx}
-
-    n = (state.x |> length)
+    # use inexact method (a Lanczos method)
     if (iter.bool_subp_exact == 0)
-        if n < 2e4
+        n = (state.x |> length)
+        if n < 2e3
             return iterate_full_lanczos(iter, state)
         else
             # use inexact method of evolving Lanczos
@@ -311,7 +311,14 @@ function Base.iterate(
         end
     end
 
-    throw(ErrorException("not implemented yet"))
+    state.z = z = state.x
+    state.fz = fz = state.fx
+    state.∇fz = state.∇f
+    state.∇f = iter.g(state.x)
+    state.ϵ = norm(state.∇f)
+    grad_regularizer = state.ϵ |> sqrt
+    decs_regularizer = grad_regularizer^3
+
     if iter.hvp === nothing
         H = iter.H(state.x)
     else
@@ -330,33 +337,27 @@ function Base.iterate(
     Df = (η / ρ) * decs_regularizer
     # initialize
     n = state.∇f |> length
+    # dual estimate
+    λ₁ = 0.0
     while true
-        F = cholesky(H, check=false)
 
-        if !issuccess(F)
-            lambda *= 2
-            continue
-        end
-        v, θ, kᵢ = LanczosTrustRegionBisect(
-            T + σ * I,
-            V,
-            -state.∇f,
-            Δ,
-            max(0, λₗ - σ),
-            λᵤ;
-            bool_interior=true
+        v, θ, λ₁, kᵢ = TrustRegionCholesky(
+            H,
+            state.∇f,
+            Δ;
+            λ₁=λ₁
         )
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
-        @info """inner""" kᵢ
         # summarize
         x = y = state.z + v * state.α
         df = fz - fx
         dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
         ρₐ = df / dq
         k₂ += 1
-
-        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
+        @debug """inner""" v |> norm, Δ, θ, λ₁, kᵢ, df, ρₐ
+        Δ = min(Δ, v |> norm)
+        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.6)))  # not satisfactory
             if abs(λ₁) >= 1e-3 # too cvx or ncvx
                 σ = 0.0
             else
@@ -365,6 +366,7 @@ function Base.iterate(
             # dec radius
             Δ /= γ
             Df /= γ
+            # in this case, λ (dual) must increase
             continue
         end
         if ρₐ > 0.9
@@ -372,7 +374,7 @@ function Base.iterate(
             Δ *= γ
         end
         # do this when accept
-        state.σ = max(1e-8, σ / grad_regularizer)
+        state.σ = max(1e-12, σ / grad_regularizer)
         state.r = max(Δ / grad_regularizer, 1e-1)
         state.k₂ += k₂
         state.kₜ = k₂

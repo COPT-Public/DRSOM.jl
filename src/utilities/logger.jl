@@ -19,7 +19,7 @@ const DEFAULT_LOGGER = current_logger() # Refers to the current logger
 const DATE_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS" # Specifies the format to use for dates in log messages
 const PARENT_MODULE = parentmodule(@__MODULE__) # Refers to the parent module of the current module
 const LOG_FOLDER =
-    isnothing(pkgdir(PARENT_MODULE)) ? joinpath(@__DIR__, "log") : joinpath(pkgdir(PARENT_MODULE), "log/") # Specifies the folder where log files will be saved
+  isnothing(pkgdir(PARENT_MODULE)) ? joinpath(@__DIR__, "log") : joinpath(pkgdir(PARENT_MODULE), "log/") # Specifies the folder where log files will be saved
 
 """
 A function to filter log messages by module.
@@ -35,9 +35,9 @@ Returns:
   - bool: `true` if the module of the log is equal to the current module or parent module of the current module, `false` otherwise.
 """
 function module_message_filter(log)
-    # println(log._module)
-    # log._module !== nothing && (log._module === PARENT_MODULE || parentmodule(log._module) === PARENT_MODULE)
-    return true
+  # println(log._module)
+  # log._module !== nothing && (log._module === PARENT_MODULE || parentmodule(log._module) === PARENT_MODULE)
+  return true
 end
 
 """
@@ -56,25 +56,25 @@ Returns:
   - FormatLogger: A logger that logs messages to a file with the specified name in the `LOG_FOLDER` directory.
 """
 function file_logger(; name="info", exceptions=true)
-    # The FormatLogger constructor takes a file path and a function that formats log messages
-    FormatLogger(joinpath(LOG_FOLDER, "$name.log"); append=false) do io, args
-        # Use datetime in log messages in files
-        date = Dates.format(now(), DATE_FORMAT)
-        # pad level, filename and lineno so things look nice
-        level = rpad(args.level, 5, " ")
-        filename = lpad(basename(args.file), 10, " ")
-        lineno = rpad(args.line, 5, " ")
-        message = args.message
-        # Write the formatted log message to the file
-        println(io, "$date | $level | $filename:$lineno - $message")
-        # If the log message includes an exception, print it explicitly
-        if exceptions && :exception ∈ keys(args.kwargs)
-            e, stacktrace = args.kwargs[:exception]
-            println(io, "exception = ")
-            showerror(io, e, stacktrace)
-            println(io)
-        end
+  # The FormatLogger constructor takes a file path and a function that formats log messages
+  FormatLogger(joinpath(LOG_FOLDER, "$name.log"); append=false) do io, args
+    # Use datetime in log messages in files
+    date = Dates.format(now(), DATE_FORMAT)
+    # pad level, filename and lineno so things look nice
+    level = rpad(args.level, 5, " ")
+    filename = lpad(basename(args.file), 10, " ")
+    lineno = rpad(args.line, 5, " ")
+    message = args.message
+    # Write the formatted log message to the file
+    println(io, "$date | $level | $filename:$lineno - $message")
+    # If the log message includes an exception, print it explicitly
+    if exceptions && :exception ∈ keys(args.kwargs)
+      e, stacktrace = args.kwargs[:exception]
+      println(io, "exception = ")
+      showerror(io, e, stacktrace)
+      println(io)
     end
+  end
 end
 
 """
@@ -91,9 +91,9 @@ Returns:
   - TransformerLogger: A new logger that includes the filename of the log message in the log message.
 """
 function filename_logger(logger)
-    TransformerLogger(logger) do log
-        merge(log, (; message="$(basename(log.file)) - $(log.message)"))
-    end
+  TransformerLogger(logger) do log
+    merge(log, (; message="$(basename(log.file)) - $(log.message)"))
+  end
 end
 
 """
@@ -103,27 +103,27 @@ This function initializes the logging system by creating the log folder if it do
 It also logs a message to indicate that the logger has been initialized.
 """
 function initialize()
-    # Create the log folder if it doesn't already exist
-    isdir(LOG_FOLDER) || mkpath(LOG_FOLDER)
-    # Initialize the global logger with several loggers:
-    global_logger(
-        # A logger that logs messages from the current module with a minimum level of Info to a file called "info.log" in the LOG_FOLDER directory
-        TeeLogger(
-            EarlyFilteredLogger(
-                module_message_filter,
-                MinLevelLogger(file_logger(; name="info", exceptions=false), Logging.Info),
-            ),
-            # A logger that logs messages with a minimum level of Debug to a file called "debug.log" in the LOG_FOLDER directory
-            EarlyFilteredLogger(module_message_filter, MinLevelLogger(file_logger(; name="debug"), Logging.Debug)),
-            # A logger that logs messages from the current module with the filename appended to the message to the current logger
-            EarlyFilteredLogger(module_message_filter, filename_logger(DEFAULT_LOGGER)),
-            # A logger that logs messages from other modules to the current logger
-            EarlyFilteredLogger(!module_message_filter, DEFAULT_LOGGER),
-        ),
-    )
-    # Log a message to indicate that the logger has been initialized
-    @info "Initialized logger"
-    nothing
+  # Create the log folder if it doesn't already exist
+  isdir(LOG_FOLDER) || mkpath(LOG_FOLDER)
+  # Initialize the global logger with several loggers:
+  global_logger(
+    # A logger that logs messages from the current module with a minimum level of Info to a file called "info.log" in the LOG_FOLDER directory
+    TeeLogger(
+      EarlyFilteredLogger(
+        module_message_filter,
+        MinLevelLogger(file_logger(; name="info", exceptions=false), Logging.Info),
+      ),
+      # A logger that logs messages with a minimum level of Debug to a file called "debug.log" in the LOG_FOLDER directory
+      EarlyFilteredLogger(module_message_filter, MinLevelLogger(file_logger(; name="debug"), Logging.Debug)),
+      # A logger that logs messages from the current module with the filename appended to the message to the current logger
+      EarlyFilteredLogger(module_message_filter, filename_logger(DEFAULT_LOGGER)),
+      # A logger that logs messages from other modules to the current logger
+      EarlyFilteredLogger(module_message_filter, DEFAULT_LOGGER),
+    ),
+  )
+  # Log a message to indicate that the logger has been initialized
+  @info "Initialized logger"
+  nothing
 end
 
 """
@@ -132,9 +132,9 @@ A function to reset the logger.
 This function resets the global logger to the original logger.
 """
 function reset()
-    # Reset the global logger to the original logger
-    global_logger(DEFAULT_LOGGER)
-    nothing
+  # Reset the global logger to the original logger
+  global_logger(DEFAULT_LOGGER)
+  nothing
 end
 
 end # module Logger

@@ -209,6 +209,7 @@ alg_utr = UTR(; name=:UTR)
 wrapper_utr(x, loss, g, H, options; kwargs...) =
     alg_utr(;
         x0=copy(x), f=loss, g=g, H=H,
+        bool_subp_exact=1,
         options...
     )
 

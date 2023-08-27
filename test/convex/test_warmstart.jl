@@ -1,16 +1,8 @@
-#############################################
-# project: DRSOM
-# created Date: Tu Mar 2022
-# -----
-# last Modified: Mon Apr 18 2022
-# modified By: Chuwen Zhang
-# -----
-# (c) 2022 Chuwen Zhang
-# -----
-# A script to test DRSOM on nonconvex logistic regression for 0-1 classification on LIBSVM
-# @reference:
-# 1. Zhu, X., Han, J., Jiang, B.: An Adaptive High Order Method for Finding Third-Order Critical Points of Nonconvex Optimization, http://arxiv.org/abs/2008.04191, (2020)
-###############
+@doc raw"""
+    We test if the last iterate helps in solving 
+     the current eigenvalue problem (the benefits of warm-starts).
+"""
+
 
 
 include("../lp.jl")

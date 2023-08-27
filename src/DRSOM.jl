@@ -7,15 +7,16 @@ const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
 
 # various utilities
-include("utilities/logger.jl")
-include("utilities/ad.jl")
-include("utilities/fb_tools.jl")
-include("utilities/iteration_tools.jl")
-include("utilities/display_tools.jl")
-include("utilities/trs.jl")
+# include("utilities/logger.jl")
+include("utilities/autodiff.jl")
+include("utilities/fbtools.jl")
+include("utilities/iterationtools.jl")
+include("utilities/displaytools.jl")
 include("utilities/counter.jl")
 include("utilities/interpolation.jl")
 include("utilities/adaptive.jl")
+include("utilities/linesearches.jl")
+include("utilities/trustregion.jl")
 include("utilities/lanczos.jl")
 
 
@@ -35,7 +36,7 @@ PFH = PathFollowingHSODM
 UTR = UniversalTrustRegion
 
 function __init__()
-    Logger.initialize()
+    # Logger.initialize()
 end
 
 export Result
