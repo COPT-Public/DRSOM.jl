@@ -18,7 +18,7 @@ function directional_interpolation(iter, state, V::Tv, c::Tc) where {Tv<:VecOrMa
 
     m = length(c)
     l = m * (m + 1) / 2 |> Int
-    a = [generate_sample_sphere(m) for i = 1:l] .* 0.01
+    a = [generate_sample_sphere(m) for i = 1:l] .* 1e-4
     A = hcat([build_natural_basis(z) for z in a]...)'
     d = [c' * z for z in a]
     # trial points

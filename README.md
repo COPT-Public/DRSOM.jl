@@ -43,7 +43,7 @@ You are welcome to cite our paper on DRSOM :)
 }
 ```
 and HSODM,
-```
+```bibtex
 @misc{zhang_homogenous_2022,
 	title = {A {Homogenous} {Second}-{Order} {Descent} {Method} for {Nonconvex} {Optimization}},
 	url = {http://arxiv.org/abs/2211.08212},

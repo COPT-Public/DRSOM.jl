@@ -2,7 +2,7 @@
 # file: test_snl.jl
 # project: test
 # created Date: Mo Apr yyyy
-# author: <<author>
+
 # -----
 # last Modified: Tue Apr 19 2022
 # modified By: Chuwen Zhang

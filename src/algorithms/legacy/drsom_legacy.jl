@@ -37,7 +37,7 @@ Base.@kwdef mutable struct DRSOMFreeState{R,Tx,Tq,Tc}
     a2::R             # stepsize 2 parameter of momentum
     Q::Tq             # Q for trs
     c::Tc             # c for trs
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
