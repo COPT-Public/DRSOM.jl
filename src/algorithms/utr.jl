@@ -327,7 +327,8 @@ function Base.iterate(
         )
     end
     k₂ = 0
-    γ = 1.5
+    γ₁ = 8.0
+    γ₂ = 5.0
     η = 1.0
     ρ = 1.0
 
@@ -339,13 +340,15 @@ function Base.iterate(
     n = state.∇f |> length
     # dual estimate
     λ₁ = 0.0
+    θ = σ
     while true
-
+        # if not accepted
+        #  λ (dual) must increase
         v, θ, λ₁, kᵢ = TrustRegionCholesky(
-            H,
+            H + σ * I,
             state.∇f,
             Δ;
-            λ₁=λ₁
+            λ₁=θ - σ
         )
         state.α = 1.0
         fx = iter.f(state.z + v * state.α)
@@ -357,21 +360,21 @@ function Base.iterate(
         k₂ += 1
         @debug """inner""" v |> norm, Δ, θ, λ₁, kᵢ, df, ρₐ
         Δ = min(Δ, v |> norm)
-        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.6)))  # not satisfactory
-            if abs(λ₁) >= 1e-3 # too cvx or ncvx
+        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
+            if abs(λ₁) >= 1e-8 # too cvx or ncvx
                 σ = 0.0
             else
-                σ *= γ
+                σ *= γ₁
             end
             # dec radius
-            Δ /= γ
-            Df /= γ
-            # in this case, λ (dual) must increase
+            Δ /= γ₂
+            Df /= γ₁
+
             continue
         end
         if ρₐ > 0.9
-            σ /= γ
-            Δ *= γ
+            σ /= γ₁
+            Δ *= γ₂
         end
         # do this when accept
         state.σ = max(1e-12, σ / grad_regularizer)

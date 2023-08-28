@@ -35,47 +35,50 @@ using LinearAlgebra
 using Statistics
 using LinearOperators
 using Optim
+using SparseArrays
 using .LP
 
 
 using LIBSVMFileIO
 
-bool_plot = true
+bool_plot = false
 bool_opt = false
+bool_setup = true
 
-Random.seed!(2)
-n = 500
-m = 1000
-μ = 5e-2
-X = [rand(Float64, n) * 2 .- 1 for _ in 1:m]
-Xm = hcat(X)'
-y = rand(Float64, m) * 2 .- 1
-# y = max.(y, 0)
-# loss
-x0 = ones(n) / 10
-function loss_orig(w)
-    loss_single(x, y0) = exp((w' * x - y0) / μ)
-    _pure = loss_single.(X, y) |> sum
-    return μ * log(_pure)
+if bool_setup
+    Random.seed!(2)
+    n = 500
+    m = 1000
+    μ = 5e-2
+    X = [rand(Float64, n) * 2 .- 1 for _ in 1:m]
+    Xm = hcat(X)'
+    y = rand(Float64, m) * 2 .- 1
+    # y = max.(y, 0)
+    # loss
+    x0 = ones(n) / 10
+    function loss_orig(w)
+        loss_single(x, y0) = exp((w' * x - y0) / μ)
+        _pure = loss_single.(X, y) |> sum
+        return μ * log(_pure)
+    end
+    function grad_orig(w)
+        a = (Xm * w - y) / μ
+        ax = exp.(a)
+        π0 = ax / (ax |> sum)
+        ∇ = Xm' * π0
+        return ∇
+    end
+    function hess(w)
+        a = (Xm * w - y) / μ
+        ax = exp.(a)
+        π0 = ax / (ax |> sum)
+        return Symmetric(sparse(1 / μ * (Xm' * Diagonal(π0) * Xm - Xm' * π0 * π0' * Xm)))
+    end
+    ∇₀ = grad_orig(zeros(x0 |> size))
+    grad(w) = grad_orig(w) - ∇₀
+    loss(w) = loss_orig(w) - ∇₀'w
+    ε = 1e-5
 end
-function grad_orig(w)
-    a = (Xm * w - y) / μ
-    ax = exp.(a)
-    π0 = ax / (ax |> sum)
-    ∇ = Xm' * π0
-    return ∇
-end
-function hess(w)
-    a = (Xm * w - y) / μ
-    ax = exp.(a)
-    π0 = ax / (ax |> sum)
-    return 1 / μ * (Xm' * Diagonal(π0) * Xm - Xm' * π0 * π0' * Xm)
-end
-∇₀ = grad_orig(zeros(x0 |> size))
-grad(w) = grad_orig(w) - ∇₀
-loss(w) = loss_orig(w) - ∇₀'w
-ε = 1e-5
-
 if bool_opt
     # compare with GD and LBFGS, Trust region newton,
     options = Optim.Options(
@@ -94,8 +97,8 @@ if bool_opt
     )
     r_newton = Optim.optimize(
         loss, grad, hess, x0,
-        Newton(; alphaguess=LineSearches.InitialStatic(),
-            linesearch=LineSearches.BackTracking()), options;
+        Newton(; alphaguess=LineSearches.InitialStatic()
+        ), options;
         inplace=false
     )
     r = HSODM()(;
@@ -111,6 +114,12 @@ if bool_opt
         bool_trace=true,
         maxtime=10000,
         direction=:warm
+    )
+
+    ru = UTR(;)(;
+        x0=copy(x0), f=loss, g=grad, H=hess,
+        maxiter=10000, tol=1e-6, freq=1,
+        direction=:warm, bool_subp_exact=1
     )
 end
 
