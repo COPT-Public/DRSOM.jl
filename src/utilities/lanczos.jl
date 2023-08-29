@@ -41,7 +41,7 @@ function LanczosTridiag(
     b::Vector;
     tol=1e-5,
     k::Int=(b |> length),
-    bool_reorth::Bool=false
+    bool_reorth::Bool=true
 )
 
     n = length(b)
@@ -85,7 +85,7 @@ function LanczosTridiag(
     lc::Lanczos;
     tol=1e-5,
     k::Int=(b |> length),
-    bool_reorth::Bool=false
+    bool_reorth::Bool=true
 )
     j = lc.j
     while j <= k - 1
@@ -240,10 +240,11 @@ function InexactLanczosTrustRegionBisect(
     tol=1e-5,
     σ=0.0,
     k::Int=(b |> length),
+    k₁::Int=0,
     ϵ=1e-4,
     ϵₗ=1e-2,
-    Ξ=1e-3,
-    bool_reorth::Bool=false,
+    Ξ=1e-1,
+    bool_reorth::Bool=true,
     bool_interior::Bool=false
 )
     kₗ = 1
@@ -270,9 +271,11 @@ function InexactLanczosTrustRegionBisect(
             γⱼ = norm(u)
             lc.V[:, j+1] = u / γⱼ
             lc.γ[j] = γⱼ
-
             j += 1
             lc.j = j
+            if (j < k₁) && (γⱼ > 1e-1)
+                continue
+            end
         end
 
         # now compute solution
@@ -293,9 +296,11 @@ function InexactLanczosTrustRegionBisect(
         dₖ = Sₖ \ bₜ
         dₙ = (dₖ |> norm)
 
+        code = 0
         if dₙ <= Δ
             # check if minimum λ produces an interior point
             xₖ = V * dₖ
+            code = 0
         else
             while true
                 Sₖ = ldlt(T + λᵤ * I)
@@ -308,12 +313,12 @@ function InexactLanczosTrustRegionBisect(
                     λᵤ *= 2
                 end
             end
-            @debug begin
-                """
-                [λₗ, λᵤ] [$λₗ,$λᵤ,$((b |> norm) / Δ + max(-λ₁, 0))]
+            # @debug begin
+            #     """
+            #     [λₗ, λᵤ] [$λₗ,$λᵤ,$((b |> norm) / Δ + max(-λ₁, 0))]
 
-                """
-            end
+            #     """
+            # end
             # otherwise, we initialize a search procedure
             # using bisection (sway to λₗ)
             while abs(λᵤ - λₗ) > ϵₗ
@@ -322,11 +327,11 @@ function InexactLanczosTrustRegionBisect(
                 dₖ = Sₖ \ bₜ
                 dₙ = dₖ |> norm
                 kₗ += 1
-                @debug begin
-                    """
-                     $dₙ $λₖ $λₗ $λᵤ
-                    """
-                end
+                # @debug begin
+                #     """
+                #      $dₙ $λₖ $λₗ $λᵤ
+                #     """
+                # end
                 if dₙ <= Δ - ϵ
                     bool_interior && break
                     λᵤ = λₖ
@@ -337,20 +342,28 @@ function InexactLanczosTrustRegionBisect(
                 end
             end
             xₖ = V * dₖ
+            code = 1
         end
         εₙ = (A(xₖ) + (σ + λₖ) * xₖ - b) |> norm
-        @debug begin
+        bool_acc = (max(min(dₙ^2, 1) * Ξ, 1e-6) >= εₙ) || (lc.γ[j-1] < tol) || (j >= k)
+        @debug """
+        try Lanczos size κ $j minimum: $k₁ 
+        - Lanczos residual: εₗ := $γⱼ; 
+        - Newton residual: εₙ := $(εₙ / max(dₙ^2, 1)) ∝ $εₙ / $(dₙ^2)  
+        """
+        ((mod(j, 20) == 0) || bool_acc) && @debug begin
             """
-            Κ    $j
-            abs  $εₙ, $(dₙ^2)
-            ls   $kₗ 
-             λₖ  $λₖ
-            |d|  $dₙ : $Δ
-            [λₗ, λᵤ] [$λₗ,$λᵤ]
-
+            terminated.
+            - κ :=  $j, code: $code (1-direct pass, 0-search over λₖ)
+            - εₗ := $γⱼ; 
+            - εₙ := $(εₙ / max(dₙ^2, 1)) ∝ $εₙ / $(dₙ^2)  
+            - ls := $kₗ 
+            - λₖ := $λₖ >= $λ₁ =: λ₁(H)
+            - |d| := $dₙ <= $Δ =: Δ
+            - [λₗ, λᵤ] := [$λₗ,$λᵤ]
             """
         end
-        if (dₙ^2 * Ξ >= εₙ) || (lc.γ[j-1] < tol) || j >= k
+        if bool_acc
             return xₖ, λₖ, LanczosInfo(εₙ=εₙ, kₗ=kₗ, λ₁=λ₁)
         end
 

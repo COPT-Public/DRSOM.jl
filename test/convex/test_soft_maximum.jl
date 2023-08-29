@@ -119,7 +119,7 @@ if bool_opt
     ru = UTR(;)(;
         x0=copy(x0), f=loss, g=grad, H=hess,
         maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, bool_subp_exact=1
+        direction=:warm, subpstrategy=:direct = 1
     )
 end
 

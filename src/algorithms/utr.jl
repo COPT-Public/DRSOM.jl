@@ -29,7 +29,7 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     linesearch = :none
     adaptive = :none
     verbose::Int64 = 1
-    bool_subp_exact::Int64 = 1
+    subpstrategy = :direct
     LOG_SLOTS::String = UTR_LOG_SLOTS
     ALIAS::String = "UTR"
     DESC::String = "Universal Trust-Region Method"
@@ -100,12 +100,12 @@ function Base.iterate(iter::UTRIteration)
         return state, state
     end
 
-    function hvp(y, v)
-        iter.hvp(state.x, v, Hv)
-        copy!(y, Hv)
-    end
-    iter.ff = (y, v) -> hvp(y, v)
 
+    function hvp(v)
+        iter.hvp(state.x, v, Hv)
+        return Hv
+    end
+    iter.ff = hvp
     return state, state
 end
 
@@ -122,15 +122,11 @@ function iterate_evolve_lanczos(
     grad_regularizer = state.ϵ |> sqrt
     decs_regularizer = grad_regularizer^3
 
-    if iter.hvp === nothing
-        H = iter.H(state.x)
-    else
-        throw(
-            ErrorException("currently only support Hessian mode")
-        )
-    end
+    n = (state.x |> length)
+
     k₂ = 0
-    γ = 1.5
+    γ₁ = 8.0
+    γ₂ = 2.0
     η = 1.0
     ρ = 1.0
 
@@ -143,132 +139,62 @@ function iterate_evolve_lanczos(
     Sₗ = DRSOM.Lanczos(n, 2n + 1, state.∇f)
     while true
         # use evolving subspaces
-        v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
-            H,
-            -state.∇f,
-            Δ,
-            Sₗ;
-            σ=σ,
-            k=Sₗ.k
-        )
+        state.α = 1.0
+        k₁ = (n <= 500) ? round(Int, n * 0.9) : round(Int, n * 0.4)
+        Ξ = 1e-1 * min(state.∇f |> norm |> sqrt, 1e0)
+        @debug "minimum subspace size $k₁"
+        if iter.hvp === nothing
+            H = iter.H(state.x)
+            v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
+                H,
+                -state.∇f,
+                Δ,
+                Sₗ;
+                σ=σ,
+                k=Sₗ.k,
+                k₁=k₁,
+                Ξ=Ξ
+            )
+            dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+        else
+            v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
+                iter.ff,
+                -state.∇f,
+                Δ,
+                Sₗ;
+                σ=σ,
+                k=Sₗ.k,
+                k₁=k₁,
+                Ξ=Ξ
+            )
+            dq = -state.α^2 * v'iter.ff(v) / 2 - state.α * v'state.∇f
+        end
+
         λ₁ = info.λ₁
 
-        # construct iterate
-        state.α = 1.0
         fx = iter.f(state.z + v * state.α)
-
         # summarize
         x = y = state.z + v * state.α
         df = fz - fx
-        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
-        ρₐ = sign(df) * df / dq
-        # @info df, dq
-        k₂ += 1
-        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
-            if abs(λ₁) >= 1e-3 # too cvx or ncvx
-                σ = 0.0
-            else
-                σ *= γ
-            end
-            # dec radius
-            Δ /= γ
-            Df /= γ
-            continue
-        end
-        if ρₐ > 0.9
-            σ /= γ
-            Δ *= γ
-        end
-        # do this when accept
-        state.σ = max(1e-8, σ / grad_regularizer)
-        state.r = max(Δ / grad_regularizer, 1e-1)
-        state.k₂ += k₂
-        state.kₜ = k₂
-        state.x = x
-        state.y = y
-        state.fx = fx
-        state.ρ = ρₐ
-        state.dq = dq
-        state.df = df
-        state.θ = θ
-        state.d = x - z
-        state.Δ = Δ
-        state.Δₙ = state.d |> norm
-        state.t = (Dates.now() - iter.t).value / 1e3
-        counting(iter, state)
-        state.status = true
-        # @info ρₐ
-        state.k += 1
-        return state, state
-    end
-end
-
-
-function iterate_full_lanczos(
-    iter::UTRIteration,
-    state::UTRState{R,Tx};
-) where {R,Tx}
-
-    state.z = z = state.x
-    state.fz = fz = state.fx
-    state.∇fz = state.∇f
-    state.∇f = iter.g(state.x)
-    state.ϵ = norm(state.∇f)
-    grad_regularizer = state.ϵ |> sqrt
-    decs_regularizer = grad_regularizer^3
-
-    if iter.hvp === nothing
-        H = iter.H(state.x)
-    else
-        throw(
-            ErrorException("currently only support Hessian mode")
-        )
-    end
-    k₂ = 0
-    γ = 1.5
-    η = 1.0
-    ρ = 1.0
-    T, V, _, κ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
-    λ₁ = eigvals(T, 1:1)[]
-    σ = state.σ * grad_regularizer
-    Δ = max(state.r * grad_regularizer, 1e-1)
-    λ₁ = max(-λ₁, 0)
-    λᵤ = state.ϵ / Δ
-    Df = (η / ρ) * decs_regularizer
-    while true
-        v, θ, kᵢ = LanczosTrustRegionBisect(
-            T + σ * I,
-            V,
-            -state.∇f,
-            Δ,
-            max(0, λ₁ - σ),
-            λᵤ;
-            bool_interior=true
-        )
-        state.α = 1.0
-        fx = iter.f(state.z + v * state.α)
-        @debug """inner""" κ kᵢ
-        # summarize
-        x = y = state.z + v * state.α
-        df = fz - fx
-        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
         ρₐ = df / dq
         k₂ += 1
-
-        if (df < 0) || ((df < Df) && (ρₐ < 0.6) && (Δ > 1e-6))  # not satisfactory
-            if abs(λ₁) >= 1e-3 # too cvx or ncvx
+        @debug """inner""" v |> norm, Δ, θ, λ₁, info.kₗ, df, ρₐ, k₁
+        Δ = min(Δ, v |> norm)
+        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
+            if abs(λ₁) >= 1e-8 # too cvx or ncvx
                 σ = 0.0
             else
-                σ *= γ
+                σ *= γ₁
             end
             # dec radius
-            Δ /= γ
-            Df /= γ
+            Δ /= γ₂
+            Df /= γ₁
+
             continue
         end
         if ρₐ > 0.9
-            σ /= γ
-            Δ *= γ
+            σ /= γ₁
+            Δ *= γ₂
         end
         # do this when accept
         state.σ = max(1e-8, σ / grad_regularizer)
@@ -292,8 +218,9 @@ function iterate_full_lanczos(
         state.k += 1
         return state, state
     end
-
 end
+
+
 
 
 function Base.iterate(
@@ -301,14 +228,13 @@ function Base.iterate(
     state::UTRState{R,Tx};
 ) where {R,Tx}
     # use inexact method (a Lanczos method)
-    if (iter.bool_subp_exact == 0)
-        n = (state.x |> length)
-        if n < 2e3
-            return iterate_full_lanczos(iter, state)
-        else
-            # use inexact method of evolving Lanczos
-            return iterate_evolve_lanczos(iter, state)
-        end
+    if (iter.subpstrategy != :direct)
+        # if n < 2e3
+        # return iterate_full_lanczos(iter, state)
+        # else
+        # use inexact method of evolving Lanczos
+        return iterate_evolve_lanczos(iter, state)
+        # end
     end
 
     state.z = z = state.x
@@ -323,12 +249,12 @@ function Base.iterate(
         H = iter.H(state.x)
     else
         throw(
-            ErrorException("currently only support Hessian mode")
+            ErrorException("only support Hessian mode for direct method")
         )
     end
     k₂ = 0
-    γ₁ = 8.0
-    γ₂ = 5.0
+    γ₁ = 2.0
+    γ₂ = 2.0
     η = 1.0
     ρ = 1.0
 
@@ -409,7 +335,7 @@ function counting(iter::T, state::S) where {T<:UTRIteration,S<:UTRState}
         state.kf = getfield(iter.f, :counter)
         state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
-        state.kh = 0 # todo, accept hvp iterative in the future
+        state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
     catch
     end
 end
@@ -458,7 +384,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     arr = Vector{S}()
     kwds = Dict(kwargs...)
 
-    for cf ∈ [:f :g :H]
+    for cf ∈ [:f :g :H :hvp]
         apply_counter(cf, kwds)
     end
     iter = T(; eigtol=eigtol, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
@@ -481,7 +407,7 @@ function Base.show(io::IO, t::T) where {T<:UTRIteration}
     @printf io "  algorithm alias       := %s\n" t.ALIAS
     @printf io "  algorithm description := %s\n" t.DESC
     @printf io "  inner iteration limit := %s\n" t.itermax
-    @printf io "  subproblem            := %s\n" t.bool_subp_exact
+    @printf io "  subproblem            := %s\n" t.subpstrategy
     if t.hvp !== nothing
         @printf io "      second-order info := using provided Hessian-vector product\n"
     elseif t.H !== nothing
@@ -502,7 +428,8 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:UTRIteration,S<:UTRStat
     println(io, "oracle calls:")
     @printf io " (main)          k       := %d  \n" s.k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg + s.kh
+    @printf io " (first-order)   hvp     := %d  \n" s.kh
     @printf io " (second-order)  H       := %d  \n" s.kH
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
     @printf io " (running time)  t       := %.3f  \n" s.t
@@ -513,3 +440,103 @@ end
 summarize(k::Int, t::T, s::S) where {T<:UTRIteration,S<:UTRState} =
     summarize(stdout, k, t, s)
 
+
+
+####################################################################################################
+# KEEP FOR REFERENCE
+# This is a check that lanczos tridiagonalization works,
+# @note, comment out later.
+####################################################################################################
+# function iterate_full_lanczos(
+#     iter::UTRIteration,
+#     state::UTRState{R,Tx};
+# ) where {R,Tx}
+#     state.z = z = state.x
+#     state.fz = fz = state.fx
+#     state.∇fz = state.∇f
+#     state.∇f = iter.g(state.x)
+#     state.ϵ = norm(state.∇f)
+#     grad_regularizer = state.ϵ |> sqrt
+#     decs_regularizer = grad_regularizer^3
+#     k₂ = 0
+#     γ₁ = 8.0
+#     γ₂ = 2.0
+#     η = 1.0
+#     ρ = 1.0
+#     if iter.hvp === nothing
+#         H = iter.H(state.x)
+#     else
+#         throw(
+#             ErrorException("only support Hessian mode for direct method")
+#         )
+#     end
+#     T, V, _, κ = LanczosTridiag(H, -state.∇f; tol=1e-5, bool_reorth=true)
+#     λ₁ = eigvals(T, 1:1)[]
+#     σ = state.σ * grad_regularizer
+#     Δ = max(state.r * grad_regularizer, 1e-1)
+#     λ₁ = max(-λ₁, 0)
+#     λᵤ = state.ϵ / Δ
+#     Df = (η / ρ) * decs_regularizer
+#     while true
+#         v, θ, kᵢ = LanczosTrustRegionBisect(
+#             T + σ * I,
+#             V,
+#             -state.∇f,
+#             Δ,
+#             max(0, λ₁ - σ),
+#             λᵤ;
+#             bool_interior=false
+#         )
+#         # construct iterate
+#         state.α = 1.0
+#         fx = iter.f(state.z + v * state.α)
+#         # summarize
+#         x = y = state.z + v * state.α
+#         df = fz - fx
+#         dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+#         ρₐ = df / dq
+#         k₂ += 1
+#         @info """inner 
+#         v |> norm: $(v |> norm), Δ: $Δ 
+#         θ:$θ,  λ₁:$λ₁, 
+#         kᵢ:$kᵢ, df:$df, ρₐ:$ρₐ 
+#         """
+#         Δ = min(Δ, v |> norm)
+#         if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
+#             if abs(λ₁) >= 1e-8 # too cvx or ncvx
+#                 σ = 0.0
+#             else
+#                 σ *= γ₁
+#             end
+#             # dec radius
+#             Δ /= γ₂
+#             Df /= γ₁
+#             continue
+#         end
+#         if ρₐ > 0.9
+#             σ /= γ₁
+#             Δ *= γ₂
+#         end
+#         # do this when accept
+#         state.σ = max(1e-12, σ / grad_regularizer)
+#         state.r = max(Δ / grad_regularizer, 1e-1)
+#         state.k₂ += k₂
+#         state.kₜ = k₂
+#         state.x = x
+#         state.y = y
+#         state.fx = fx
+#         state.ρ = ρₐ
+#         state.dq = dq
+#         state.df = df
+#         state.θ = θ
+#         state.d = x - z
+#         state.Δ = Δ
+#         state.Δₙ = state.d |> norm
+#         state.t = (Dates.now() - iter.t).value / 1e3
+#         counting(iter, state)
+#         state.status = true
+#         # @info ρₐ
+#         state.k += 1
+#         return state, state
+#     end
+# end
