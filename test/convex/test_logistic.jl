@@ -39,7 +39,7 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
-bool_opt = true
+bool_opt = false
 bool_plot = false
 bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
@@ -47,10 +47,10 @@ f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 ε = 1e-6 # * max(g(x0) |> norm, 1)
 λ = 1e-7
 if bool_q_preprocessed
-    name = "a4a"
+    # name = "a4a"
     # name = "a9a"
     # name = "w4a"
-    # name = "covtype"
+    name = "covtype"
     # name = "news20"
     # name = "rcv1"
 
@@ -226,7 +226,7 @@ if bool_opt
     ru = UTR(name=Symbol("Universal-TRS"))(;
         x0=copy(x0), f=loss, g=g, H=H,
         maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, bool_subp_exact=0
+        direction=:warm, subpstrategy=:direct = 1
     )
 end
 

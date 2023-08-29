@@ -37,7 +37,9 @@ end
 
 
 
-# adaptive GHMs wrapping ArC style
+@doc """
+    adaptive GHMs wrapping ArC style
+"""
 function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbose::Bool=false)
 
     k₂ = 1
@@ -119,7 +121,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
 
         if bool_adj
             # search for proper δ
-            linesearch(state, fa, adaptive_param; verbose=verbose, tracker=tracker)
+            δ_search(state, fa, adaptive_param; verbose=verbose, tracker=tracker)
         end
 
         if bool_acc || kᵥ >= 10
@@ -135,6 +137,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
         kᵥ += 1
     end
 end
+
 
 # adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
@@ -154,6 +157,51 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
     throw(ErrorException("LinearOperator style ArC HSODM is not finished"))
 end
 
+
+@doc """
+  search over δ
+"""
+function δ_search(state, fa, adaptive_param; verbose::Bool=false, method::Symbol=:order2, tracker=tracker)
+    # oracle
+    atol = log((adaptive_param.uₖ - adaptive_param.lₖ) / 2 + 1)
+    midpoint = log((adaptive_param.lₖ + adaptive_param.uₖ) / 2 + 1)
+
+    if method == :bisection
+        p = ZeroProblem(fa, (adaptive_param.l, adaptive_param.u))
+        M = Roots.Bisection()
+        if verbose
+            @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
+                adaptive_param.l, adaptive_param.u, adaptive_param.lₖ, adaptive_param.uₖ
+            )
+        end
+    elseif method == :order2
+        p = ZeroProblem(fa, state.δ)
+        M = Roots.Order2B()
+        if verbose
+            @printf("       |--- δ₀: %+.0e => σ:[%+.0e, %+.0e]\n",
+                state.δ, adaptive_param.lₖ, adaptive_param.uₖ
+            )
+        end
+    end
+    δ = solve(
+        p, M;
+        verbose=verbose,
+        atol=atol,
+        tracks=tracker,
+        p=midpoint
+    )
+    ~isnan(δ) && (state.δ = δ)
+    return δ
+end
+
+
+
+@doc """
+wrappers for generalized homogeneous model (GHMs),
+    see [1]
+references:
+1.  He, C., Jiang, Y., Zhang, C., Ge, D., Jiang, B., Ye, Y.: Homogeneous Second-Order Descent Framework: A Fast Alternative to Newton-Type Methods, http://arxiv.org/abs/2306.17516, (2023)
+"""
 function _inner_homogeneous_eigenvalue(
     B::Symmetric{Q,F}, iter, state
 ) where {Q<:Real,F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
@@ -204,7 +252,6 @@ function _inner_homogeneous_eigenvalue(f::Function, iter, state)
 end
 
 
-
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
 function eigenvalue(
@@ -244,40 +291,6 @@ function eigenvalue(f::Function, iter, state; bg=:krylov)
         end
     end
     return vals, vecs, info
-end
-
-
-function linesearch(state, fa, adaptive_param; verbose::Bool=false, method::Symbol=:order2, tracker=tracker)
-    # oracle
-    atol = log((adaptive_param.uₖ - adaptive_param.lₖ) / 2 + 1)
-    midpoint = log((adaptive_param.lₖ + adaptive_param.uₖ) / 2 + 1)
-
-    if method == :bisection
-        p = ZeroProblem(fa, (adaptive_param.l, adaptive_param.u))
-        M = Roots.Bisection()
-        if verbose
-            @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
-                adaptive_param.l, adaptive_param.u, adaptive_param.lₖ, adaptive_param.uₖ
-            )
-        end
-    elseif method == :order2
-        p = ZeroProblem(fa, state.δ)
-        M = Roots.Order2B()
-        if verbose
-            @printf("       |--- δ₀: %+.0e => σ:[%+.0e, %+.0e]\n",
-                state.δ, adaptive_param.lₖ, adaptive_param.uₖ
-            )
-        end
-    end
-    δ = solve(
-        p, M;
-        verbose=verbose,
-        atol=atol,
-        tracks=tracker,
-        p=midpoint
-    )
-    ~isnan(δ) && (state.δ = δ)
-    return δ
 end
 
 
@@ -326,52 +339,3 @@ function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
     return 1, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
 end
 
-###############################################################################
-# a vanilla bisection
-###############################################################################
-
-function bisection(h, adaptive_param, B, iter, state; verbose::Bool=false)
-    throw(ErrorException("This is a vanilla version of bisection, use line-search instead"))
-    l = adaptive_param.l
-    u = adaptive_param.u
-    if verbose
-        @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
-            l, u, adaptive_param.lₖ, adaptive_param.uₖ
-        )
-    end
-    ls = 0
-    k₂ = 0
-    while true
-        δ = (l + u) / 2
-        B[end, end] = δ
-        _, λ₁, ξ, t₀, __unused__ = homogeneous_eigenvalue(B, iter, state)
-
-        hv = h(t₀, -λ₁)
-        k₂ += 1
-        ls += 1
-        if hv > adaptive_param.uₖ
-            # too small, increase 
-            l = δ
-        elseif hv < adaptive_param.lₖ
-            u = δ
-        else
-            if verbose
-                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                    δ, ls, hv
-                )
-            end
-            state.δ = δ
-            break
-        end
-        if abs(l - u) < 1e-2
-            if verbose
-                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                    δ, ls, hv
-                )
-                @warn("The Line-search on δ failed")
-            end
-            break
-        end
-    end
-    return k₂
-end

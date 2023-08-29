@@ -33,7 +33,7 @@ filter_cutest_problem(nlp) = true
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
 # filter_optimization_method(k) = k == :HSODM
-filter_optimization_method(k) = k == :UTR
+filter_optimization_method(k) = k == [:UTR, :iUTR]
 # filter_optimization_method(k) = k == :ARC
 # filter_optimization_method(k) = k == :HSODMArC
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
