@@ -140,7 +140,7 @@ function iterate_evolve_lanczos(
     while true
         # use evolving subspaces
         state.α = 1.0
-        k₁ = (n <= 500) ? round(Int, n * 0.9) : round(Int, n * 0.4)
+        k₁ = (n <= 500) ? round(Int, n * 0.9) : round(Int, n * 0.02)
         Ξ = 1e-1 * min(state.∇f |> norm |> sqrt, 1e0)
         @debug "minimum subspace size $k₁"
         if iter.hvp === nothing
@@ -295,7 +295,6 @@ function Base.iterate(
             # dec radius
             Δ /= γ₂
             Df /= γ₁
-
             continue
         end
         if ρₐ > 0.9
@@ -322,6 +321,7 @@ function Base.iterate(
         state.status = true
         # @info ρₐ
         state.k += 1
+        checknan(state)
         return state, state
     end
 
@@ -340,6 +340,11 @@ function counting(iter::T, state::S) where {T<:UTRIteration,S<:UTRState}
     end
 end
 
+function checknan(state::S) where {S<:UTRState}
+    if any(isnan, state.x)
+        throw(ErrorException("NaN detected in Lanczos, use debugging to fix"))
+    end
+end
 
 function utr_display(k, state::UTRState)
     if k == 1 || mod(k, 30) == 0
