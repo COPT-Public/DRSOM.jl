@@ -48,7 +48,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
@@ -60,7 +60,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    δ::Float64 = -1.0  # smallest curvature if available
+    δ::Float64 = 1e-3  # smallest curvature if available
     ξ::Tx             # eigenvector
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
@@ -96,7 +96,7 @@ function Base.iterate(iter::HSODMIteration)
             ]
         )
         iter.fvp = fvp
-        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 1e-3)
+        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 0)
         vals, vecs, info = KrylovKit.eigsolve(
             ff, n + 1, 1, :SR, Float64;
             issymmetric=true, tol=iter.eigtol
@@ -184,6 +184,8 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     state.∇f = iter.g(state.x)
     n = state.∇f |> length
+    ng = norm(state.∇f)
+
     if iter.hvp === nothing
         H = iter.H(state.x)
         # construct homogeneous system
@@ -195,7 +197,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     else
 
         n = length(z)
-        ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, 0)
+        ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, state.δ)
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             ff, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
         )
@@ -245,8 +247,16 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.k₂ += k₂
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
-
     state.t = (Dates.now() - iter.t).value / 1e3
+
+    if ng > 5e-3
+        state.δ = 1e-1
+    end
+    if state.λ₁ < 0
+        state.δ = state.δ + 8e-3
+    else
+        state.δ = state.δ - 1e-2
+    end
     counting(iter, state)
     state.status = true
     return state, state
@@ -356,6 +366,7 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODM
     @printf io " (first-order)  hvp      := %d  \n" s.kh
     @printf io " (second-order)  H       := %d  \n" s.kH
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (sub-problem)   kₕ       := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

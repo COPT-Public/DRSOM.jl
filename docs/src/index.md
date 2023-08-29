@@ -1,6 +1,12 @@
 # DRSOM.jl
 
-DRSOM.jl is a Julia implementation of the Dimension-Reduced Second-Order Method for unconstrained smooth optimization. The DRSOM works with the following iteration:
+DRSOM.jl is a Julia implementation of the Dimension-Reduced Second-Order Method for unconstrained smooth optimization. 
+
+!!! note
+	DRSOM.jl is now a suite of second-order algorithms, including the variants of original DRSOM and the HSODM: a *Homogeneous Second-order Descent Method*.
+
+
+The original 2-dimensional DRSOM works with the following iteration:
 
 ```math
         x_{k+1}     = x_k- \alpha_k^1 g_k +\alpha_k^2 d_k, \\
@@ -36,11 +42,21 @@ c_k =\begin{bmatrix}
 	Instead, it requires Hessian-vector products (HVPs) or `interpolation` to contruct the quadratic model. The latter approach is now preferred.
 	
 
-DRSOM.jl is now a suite of algorithms, including the variants of original DRSOM and the HSODM: a *Homogeneous Second-order Descent Method*.
 
 
 
 ## Install DRSOM.jl
+
+DRSOM is now available at JuliaRegistries, simply try
+```
+(v1.8) pkg> add DRSOM
+```
+try the `dev` branch (most up-to-date)
+```
+(v1.8) pkg> add DRSOM#dev
+```
+
+### Try your own ideas
 !!! tip
     To try your own ideas with `DRSOM.jl`, 
 	use local path mode:
@@ -54,9 +70,9 @@ DRSOM.jl is now a suite of algorithms, including the variants of original DRSOM 
 
 
 
-## API Reference
+## Algorithms
 
-If you just want help on a specific function, see the [API Reference](@ref api_reference_list) page.
+If you just want help on a specific algorithm, see the [Algorithm Reference](@ref alg_reference_list) page.
 
 ## Known issues
 `DRSOM.jl` is still under active development. Please add issues on GitHub.

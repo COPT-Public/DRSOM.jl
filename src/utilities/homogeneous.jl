@@ -5,11 +5,10 @@
 using Roots
 using SparseArrays
 using ArnoldiMethod
-try
-    using MKL
-catch e
-    @warn("Unable to import MKL; fall back to BLAS")
-end
+using LDLFactorizations
+using Krylov
+using LinearOperators
+
 
 Base.@kwdef mutable struct AR
     ALIAS::String = "AR"
@@ -38,12 +37,14 @@ end
 
 
 
-# adaptive GHMs wrapping ArC style
+@doc """
+    adaptive GHMs wrapping ArC style
+"""
 function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbose::Bool=false)
-    kᵥ = 1
+
     k₂ = 1
     homogeneous_eigenvalue.counter = 0
-    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
+    kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
     # non-adaptive mode
     if iter.adaptive === :none
@@ -120,7 +121,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
 
         if bool_adj
             # search for proper δ
-            linesearch(state, fa, adaptive_param; verbose=verbose, tracker=tracker)
+            δ_search(state, fa, adaptive_param; verbose=verbose, tracker=tracker)
         end
 
         if bool_acc || kᵥ >= 10
@@ -137,23 +138,73 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
     end
 end
 
+
 # adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
-    kᵥ = 1
-    k₂ = 1
+    kᵥ = 1 # krylov iterations
+    k₂ = 1 # second-order eigenvalue calls
     homogeneous_eigenvalue.counter = 0
-    _, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
+    kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
 
     # non-adaptive mode
     if iter.adaptive === :none
         state.λ₁ = λ₁
-        state.ξ = ξ
+        # printstyled(ξ)
+        state.ξ = ξ[:, 1]
         return kᵥ, k₂, v, vn, vg, vHv
     end
     # todo, implement adaptive version.
+    throw(ErrorException("LinearOperator style ArC HSODM is not finished"))
 end
 
-function _inner_homogeneous_eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state)
+
+@doc """
+  search over δ
+"""
+function δ_search(state, fa, adaptive_param; verbose::Bool=false, method::Symbol=:order2, tracker=tracker)
+    # oracle
+    atol = log((adaptive_param.uₖ - adaptive_param.lₖ) / 2 + 1)
+    midpoint = log((adaptive_param.lₖ + adaptive_param.uₖ) / 2 + 1)
+
+    if method == :bisection
+        p = ZeroProblem(fa, (adaptive_param.l, adaptive_param.u))
+        M = Roots.Bisection()
+        if verbose
+            @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
+                adaptive_param.l, adaptive_param.u, adaptive_param.lₖ, adaptive_param.uₖ
+            )
+        end
+    elseif method == :order2
+        p = ZeroProblem(fa, state.δ)
+        M = Roots.Order2B()
+        if verbose
+            @printf("       |--- δ₀: %+.0e => σ:[%+.0e, %+.0e]\n",
+                state.δ, adaptive_param.lₖ, adaptive_param.uₖ
+            )
+        end
+    end
+    δ = solve(
+        p, M;
+        verbose=verbose,
+        atol=atol,
+        tracks=tracker,
+        p=midpoint
+    )
+    ~isnan(δ) && (state.δ = δ)
+    return δ
+end
+
+
+
+@doc """
+wrappers for generalized homogeneous model (GHMs),
+    see [1]
+references:
+1.  He, C., Jiang, Y., Zhang, C., Ge, D., Jiang, B., Ye, Y.: Homogeneous Second-Order Descent Framework: A Fast Alternative to Newton-Type Methods, http://arxiv.org/abs/2306.17516, (2023)
+"""
+function _inner_homogeneous_eigenvalue(
+    B::Symmetric{Q,F}, iter, state
+) where {Q<:Real,F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
     n = length(state.x)
     vals, vecs, info = eigenvalue(B, iter, state)
     λ₁ = vals |> real
@@ -201,28 +252,29 @@ function _inner_homogeneous_eigenvalue(f::Function, iter, state)
 end
 
 
-
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
-function eigenvalue(B::Symmetric{Float64,SparseMatrixCSC{Float64,Int64}}, iter, state; bg=:arnoldi)
+function eigenvalue(
+    B::Symmetric{Float64,F}, iter, state; bg=:krylov#:arnoldi
+) where {F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
 
     n = length(state.x)
     if bg == :krylov
         if iter.direction == :cold
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
         end
         return vals[1], vecs[1], info
     end
     if bg == :arnoldi
         try
             # arnoldi is not stable?
-            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=iter.eigtol, which=SR())
+            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, which=SR())
             vals, vecs = partialeigen(decomp)
             return vals[1], vecs, ArnoldiInfo(numops=1)
         catch
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
             return vals[1], vecs[1], info
         end
     end
@@ -233,100 +285,57 @@ function eigenvalue(f::Function, iter, state; bg=:krylov)
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
-            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
         end
     end
     return vals, vecs, info
 end
 
 
-function linesearch(state, fa, adaptive_param; verbose::Bool=false, method::Symbol=:order2, tracker=tracker)
-    # oracle
-    atol = log((adaptive_param.uₖ - adaptive_param.lₖ) / 2 + 1)
-    midpoint = log((adaptive_param.lₖ + adaptive_param.uₖ) / 2 + 1)
 
-    if method == :bisection
-        p = ZeroProblem(fa, (adaptive_param.l, adaptive_param.u))
-        M = Roots.Bisection()
-        if verbose
-            @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
-                adaptive_param.l, adaptive_param.u, adaptive_param.lₖ, adaptive_param.uₖ
-            )
-        end
-    elseif method == :order2
-        p = ZeroProblem(fa, state.δ)
-        M = Roots.Order2B()
-        if verbose
-            @printf("       |--- δ₀: %+.0e => σ:[%+.0e, %+.0e]\n",
-                state.δ, adaptive_param.lₖ, adaptive_param.uₖ
-            )
-        end
-    end
-    δ = solve(
-        p, M;
-        verbose=verbose,
-        atol=atol,
-        tracks=tracker,
-        p=midpoint
-    )
-    ~isnan(δ) && (state.δ = δ)
-    return δ
+function NewtonStep(
+    H::SparseMatrixCSC{R,T}, μ, g, state; verbose::Bool=false
+) where {R<:Real,T<:Int}
+    # d, __unused_info = KrylovKit.linsolve(
+    #     H + μ * SparseArrays.I, -Vector(g);
+    #     isposdef=true, issymmetric=true
+    # )
+    # d = -((H + μ * I) \ g)
+    cc = ldl(H + μ * I)
+    d = -cc \ g
+    return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
 
-
-
-function NewtonStep(H, μ, g, state; verbose::Bool=false)
+function NewtonStep(H::Matrix{R}, μ, g, state; verbose::Bool=false
+) where {R<:Real}
     d = -((H + μ * I) \ g)
     return 1, 1, d, norm(d), d' * state.∇f, d' * H * d
 end
-###############################################################################
-# a vanilla bisection
-###############################################################################
 
-function bisection(h, adaptive_param, B, iter, state; verbose::Bool=false)
-    throw(ErrorException("This is a vanilla version of bisection, use line-search instead"))
-    l = adaptive_param.l
-    u = adaptive_param.u
-    if verbose
-        @printf("       |--- δ:[%+.0e, %+.0e] => σ:[%+.0e, %+.0e]\n",
-            l, u, adaptive_param.lₖ, adaptive_param.uₖ
-        )
-    end
-    ls = 0
-    k₂ = 0
-    while true
-        δ = (l + u) / 2
-        B[end, end] = δ
-        _, λ₁, ξ, t₀, __unused__ = homogeneous_eigenvalue(B, iter, state)
-
-        hv = h(t₀, -λ₁)
-        k₂ += 1
-        ls += 1
-        if hv > adaptive_param.uₖ
-            # too small, increase 
-            l = δ
-        elseif hv < adaptive_param.lₖ
-            u = δ
-        else
-            if verbose
-                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                    δ, ls, hv
-                )
-            end
-            state.δ = δ
-            break
-        end
-        if abs(l - u) < 1e-2
-            if verbose
-                @printf("       |--- δ+:%+.0e, i:%+.0e, h(δ+):%+.0e\n",
-                    δ, ls, hv
-                )
-                @warn("The Line-search on δ failed")
-            end
-            break
-        end
-    end
-    return k₂
+@doc """
+@note, one can use cg from `KrylovKit.jl`, to me it seems to be the same
+`Krylov.jl` seems to be a little faster
+```julia
+d, __unused_info = KrylovKit.linsolve(
+    f, -Vector(g);
+    isposdef=true, issymmetric=true
+)
+```
+"""
+function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
+) where {I}
+    n = g |> length
+    opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
+    d, __unused_info = cg(opH, -Vector(g); verbose=0, atol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, itmax=200)
+    # if norm(d) < 1e-8
+    #     f(v) = iter.ff(state.∇fb, v)
+    #     d, __unused_info = KrylovKit.linsolve(
+    #         f, -Vector(g);
+    #         isposdef=true, issymmetric=true
+    #     )
+    # end
+    return 1, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
 end
+

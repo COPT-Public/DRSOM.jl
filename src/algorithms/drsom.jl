@@ -17,15 +17,13 @@ const DRSOM_LOG_SLOTS = @sprintf(
 Iteration object for DRSOM, to initialize an iterator, 
     you must specify the attributes, including 
 
-| attr | notes |
-|:-----:|:------|
-| x0   | initial point                   |
-| f    | the smooth function to minimize |
-| ϕ    | the nonsmooth function          |
-| g    | the gradient function           |
-| ga   | gradient function via forward or backward diff |
-| hvp  | hvp function via forward or backward diff
-| H    | hessian function |
+- ``x_0`` is initial point of the iterate                  
+- `f` is the smooth function to minimize 
+- `ϕ` is the nonsmooth function          
+- `g` is the gradient function           
+- `ga` is gradient function via forward or backward diff 
+- `hvp` is hvp function via forward or backward diff
+- `H` is hessian function 
 
 rest of the attributes have default options:
 ```julia
@@ -56,39 +54,14 @@ end
 Base.IteratorSize(::Type{<:DRSOMIteration}) = Base.IsInfinite()
 
 @doc raw"""
-State struct for DRSOM to keep the iterate information,
-We keep the following attributes:
+Struct for DRSOM to keep the iterate state,
+    including the following attributes e.g.,
 
-| attr | notes |
-|:-----------------:|:------|
-|x::Tx             | iterate | 
-|fx::R             | new value f at x: x(k) | 
-|fz::R             | old value f at z: x(k-1) | 
-|∇f::Tx            | gradient of f at x | 
-|∇fz::Tx           | gradient of f at z | 
-|∇hvp::Tx          | gradient buffer (for buffer use of hvps) | 
-|y::Tx             | forward point | 
-|z::Tx             | previous point | 
-|d::Tx             | momentum/fixed-point diff at iterate (= x - z) | 
-|α₁::R             | stepsize 1 parameter of gradient | 
-|α₂::R             | stepsize 2 parameter of momentum | 
-|Q::Tq             | Q for low-dimensional QP | 
-|c::Tc             | c for low-dimensional QP | 
-|G::Tq             | c for low-dimensional QP | 
-|Δ::R              | trs radius | 
-|dq::R             | decrease of estimated quadratic model | 
-|df::R             | decrease of the real function value | 
-|ρ::R              | trs descrease ratio: ρ = df/dq | 
-|ϵ::R              | eps: residual for gradient  | 
-|γ::R              | scaling parameter γ for λ | 
-|ψ::R              | 1-D linear search iteration |. if there is only one direction   | 
-|λ::R              | dual λ | 
-|kₜ::Int            | inner iterations for adjustment | 
-|kf::Int           | function evaluations | 
-|kg::Int           | gradient evaluations | 
-|kh::Int           | hvp      evaluations | 
-|kH::Int           | hessian  evaluations | 
-|t::R              | running time | 
+- `x` the current iterate, namely ``x``;
+- `fx` the function value, namely ``f(x)``;
+- `∇f` the gradient, namely ``\nabla f(x)``;
+- `t` the running time;
+- `ϵ` gradient norm ``\|\nabla f(x)\|``
 """
 Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     x::Tx             # iterate
@@ -105,7 +78,7 @@ Base.@kwdef mutable struct DRSOMState{R,Tx,Tq,Tc}
     Q::Tq             # Q for low-dimensional QP
     c::Tc             # c for low-dimensional QP
     G::Tq             # c for low-dimensional QP
-    Δ::R              # trs radius
+    Δ::R              # trust-region radius
     dq::R             # decrease of estimated quadratic model
     df::R             # decrease of the real function value
     ρ::R              # trs descrease ratio: ρ = df/dq
@@ -270,7 +243,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
     if bool_tr
         while true
 
-            α₁, α₂ = TrustRegionSubproblem(Q, c, state; G=state.G, mode=:free)
+            α₁, α₂ = SimpleTrustRegionSubproblem(Q, c, state; G=state.G, mode=:free)
 
             x = y = state.z - α₁ .* state.∇f / gₙ + α₂ .* state.d / dₙ
             fx = iter.f(x)
