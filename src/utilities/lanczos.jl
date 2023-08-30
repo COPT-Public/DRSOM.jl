@@ -352,7 +352,7 @@ function InexactLanczosTrustRegionBisect(
             code = 1
         end
         εₙ = (A(xₖ) + (σ + λₖ) * xₖ - b) |> norm
-        bool_acc = (max(min(dₙ^2 * Ξ, 1e-1), 1e-3) >= εₙ) || (lc.γ[j-1] < tol) || (j >= k)
+        bool_acc = (max(min(dₙ^2 * Ξ, 1e-1), 1e-8) >= εₙ) || (lc.γ[j-1] < tol) || (j >= k)
         # @debug """
         # try Lanczos size κ $j minimum: $k₁ 
         # - Lanczos residual: εₗ := $γⱼ; 

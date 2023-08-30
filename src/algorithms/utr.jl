@@ -150,7 +150,7 @@ function iterate_evolve_lanczos(
                 -state.∇f,
                 Δ,
                 Sₗ;
-                σ=σ,
+                σ=σ * (σ >= 1e-8),
                 k=Sₗ.k,
                 k₁=k₁,
                 Ξ=Ξ
@@ -162,7 +162,7 @@ function iterate_evolve_lanczos(
                 -state.∇f,
                 Δ,
                 Sₗ;
-                σ=σ,
+                σ=σ * (σ >= 1e-8),
                 k=Sₗ.k,
                 k₁=k₁,
                 Ξ=Ξ
@@ -178,10 +178,20 @@ function iterate_evolve_lanczos(
         df = fz - fx
         ρₐ = df / dq
         k₂ += 1
-        @debug """inner""" v |> norm, Δ, θ, λ₁, info.kₗ, df, ρₐ, k₁
+        @debug """periodic check (main iterate)
+            |d|: $(v |> norm):,
+            Ξ: $Ξ, 
+            Δ: $Δ, 
+            σ: $σ,
+            θ: $θ, 
+            λ₁: $λ₁, 
+            kᵢ: $info.kₗ, k₁: $k₁, 
+            df: $df, 
+            ρₐ: $ρₐ
+        """
         Δ = min(Δ, v |> norm)
         if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
-            if abs(λ₁) >= 1e-8 # too cvx or ncvx
+            if abs(λ₁) >= -1e-8 # too cvx or ncvx
                 σ = 0.0
             else
                 σ *= γ₁
@@ -189,7 +199,6 @@ function iterate_evolve_lanczos(
             # dec radius
             Δ /= γ₂
             Df /= γ₁
-
             continue
         end
         if ρₐ > 0.9
@@ -197,7 +206,7 @@ function iterate_evolve_lanczos(
             Δ *= γ₂
         end
         # do this when accept
-        state.σ = max(1e-8, σ / grad_regularizer)
+        state.σ = max(1e-18, σ / grad_regularizer)
         state.r = max(Δ / grad_regularizer, 1e-1)
         state.k₂ += k₂
         state.kₜ = k₂
@@ -284,7 +293,12 @@ function Base.iterate(
         dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
         ρₐ = df / dq
         k₂ += 1
-        @debug """inner""" v |> norm, Δ, θ, λ₁, kᵢ, df, ρₐ
+        @debug """periodic check (main iterate)
+            |d|: $(v |> norm):, Δ: $Δ, 
+            θ:  $θ, λ₁: $λ₁, 
+            kᵢ: $kᵢ, df: $df, 
+            ρₐ: $ρₐ
+        """
         Δ = min(Δ, v |> norm)
         if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
             if abs(λ₁) >= 1e-8 # too cvx or ncvx

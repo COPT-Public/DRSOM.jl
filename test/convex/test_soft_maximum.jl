@@ -42,8 +42,8 @@ using .LP
 using LIBSVMFileIO
 
 bool_plot = false
-bool_opt = false
-bool_setup = true
+bool_opt = true
+# bool_setup = true
 
 if bool_setup
     Random.seed!(2)
@@ -119,7 +119,7 @@ if bool_opt
     ru = UTR(;)(;
         x0=copy(x0), f=loss, g=grad, H=hess,
         maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, subpstrategy=:direct = 1
+        direction=:warm, subpstrategy=:direct
     )
 end
 

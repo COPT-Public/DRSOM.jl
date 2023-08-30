@@ -140,6 +140,28 @@ function wrapper_arc(nlp)
     return arc_to_result(nlp, stats, "ARC")
 end
 
+function wrapper_tr_st(nlp)
+    reset!(nlp)
+    stats = ST_TROp(
+        nlp,
+        max_time=max_time,
+        max_iter=max_iter,
+        max_eval=typemax(Int64),
+        verbose=true
+        # atol=atol,
+        # rtol=rtol,
+        # @note: how to set |g|?
+    )
+    # AdaptiveRegularization.jl to my style of results
+    return arc_to_result(nlp, stats, "TRST")
+end
+
+
+
+
+##########################################################
+# MY VARIANTS
+##########################################################
 
 alg_drsom = DRSOM2()
 wrapper_drsom(x, loss, g, H, options; kwargs...) =
@@ -190,7 +212,7 @@ wrapper_hsodm(x, loss, g, H, options; kwargs...) =
 alg_hsodm_hvp = HSODM()
 wrapper_hsodm_hvp(x, loss, g, H, options; kwargs...) =
     alg_hsodm_hvp(;
-        x0=copy(x), f=loss, g=g, H=H,
+        x0=copy(x), f=loss, g=g,
         linesearch=:hagerzhang,
         direction=:warm,
         kwargs...,
@@ -220,6 +242,14 @@ wrapper_iutr(x, loss, g, H, options; kwargs...) =
         options...
     )
 
+wrapper_iutr_hvp(x, loss, g, H, options; kwargs...) =
+    alg_utr(;
+        x0=copy(x), f=loss, g=g,
+        subpstrategy=:lanczos,
+        kwargs...,
+        options...
+    )
+
 
 
 # My solvers and those in Optim.jl
@@ -232,6 +262,7 @@ MY_OPTIMIZERS = Dict(
     # :HSODMArC => wrapper_hsodm_arc,
     :UTR => wrapper_utr,
     :iUTR => wrapper_iutr,
+    :iUTRhvp => wrapper_iutr_hvp,
 )
 
 OPTIMIZERS_OPTIM = Dict(
@@ -243,5 +274,6 @@ OPTIMIZERS_OPTIM = Dict(
 
 # solvers in AdaptiveRegularization.jl 
 OPTIMIZERS_NLP = Dict(
-    :ARC => wrapper_arc
+    :ARC => wrapper_arc, # adaptive cubic regularization
+    :TRST => wrapper_tr_st # trust-region with Steihaug–Toint CG
 )

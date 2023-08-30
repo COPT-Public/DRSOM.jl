@@ -39,20 +39,20 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
-bool_opt = false
+bool_opt = true
 bool_plot = false
 bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1e-6 # * max(g(x0) |> norm, 1)
-λ = 1e-7
+λ = 1e-5
 if bool_q_preprocessed
     # name = "a4a"
     # name = "a9a"
     # name = "w4a"
-    name = "covtype"
+    # name = "covtype"
     # name = "news20"
-    # name = "rcv1"
+    name = "rcv1"
 
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
@@ -178,41 +178,41 @@ if bool_opt
         time_limit=500
     )
 
-    rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=40, tol=ε, freq=1,
-        step=:newton, μ₀=0.0,
-        maxtime=500, linesearch=:backtrack,
-        bool_trace=true,
-        eigtol=1e-7,
-        direction=:warm
-    )
-    rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=60, tol=ε, freq=1,
-        step=:newton, μ₀=0.0,
-        maxtime=500, linesearch=:backtrack,
-        bool_trace=true,
-        eigtol=1e-8,
-        direction=:warm
-    )
-    rn3 = PFH(name=Symbol("iNewton-1e-9"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=60, tol=ε, freq=1,
-        step=:newton, μ₀=0.0,
-        maxtime=500, linesearch=:backtrack,
-        bool_trace=true,
-        eigtol=1e-9,
-        direction=:warm
-    )
+    # rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
+    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+    #     maxiter=40, tol=ε, freq=1,
+    #     step=:newton, μ₀=0.0,
+    #     maxtime=500, linesearch=:backtrack,
+    #     bool_trace=true,
+    #     eigtol=1e-7,
+    #     direction=:warm
+    # )
+    # rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
+    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+    #     maxiter=60, tol=ε, freq=1,
+    #     step=:newton, μ₀=0.0,
+    #     maxtime=500, linesearch=:backtrack,
+    #     bool_trace=true,
+    #     eigtol=1e-8,
+    #     direction=:warm
+    # )
+    # rn3 = PFH(name=Symbol("iNewton-1e-9"))(;
+    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+    #     maxiter=60, tol=ε, freq=1,
+    #     step=:newton, μ₀=0.0,
+    #     maxtime=500, linesearch=:backtrack,
+    #     bool_trace=true,
+    #     eigtol=1e-9,
+    #     direction=:warm
+    # )
 
-    ra = HSODM(name=Symbol("adaptive-HSODM"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        maxtime=500,
-        direction=:warm, linesearch=:hagerzhang,
-        adaptive=:none
-    )
+    # ra = HSODM(name=Symbol("adaptive-HSODM"))(;
+    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+    #     maxiter=10000, tol=ε, freq=1,
+    #     maxtime=500,
+    #     direction=:warm, linesearch=:hagerzhang,
+    #     adaptive=:none
+    # )
 
     rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
@@ -226,7 +226,7 @@ if bool_opt
     ru = UTR(name=Symbol("Universal-TRS"))(;
         x0=copy(x0), f=loss, g=g, H=H,
         maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, subpstrategy=:direct = 1
+        direction=:warm, subpstrategy=:lanczos
     )
 end
 
@@ -239,7 +239,8 @@ if bool_plot
         rh,
         rn1,
         rn2,
-        rn3
+        rn3,
+        ru
     ]
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
     method_names = [
@@ -248,6 +249,7 @@ if bool_plot
         L"\texttt{iNewton}-$10^{-7}$",
         L"\texttt{iNewton}-$10^{-8}$",
         L"\texttt{iNewton}-$10^{-9}$",
+        L"\texttt{Universal-TR}"
     ]
     for xaxis in (:t, :k)
         for metric in (:ϵ, :fx)
