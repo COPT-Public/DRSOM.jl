@@ -40,7 +40,7 @@ using LoopVectorization
 using LIBSVMFileIO
 
 bool_opt = true
-bool_plot = false
+bool_plot = true
 bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
@@ -178,15 +178,15 @@ if bool_opt
         time_limit=500
     )
 
-    # rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=40, tol=ε, freq=1,
-    #     step=:newton, μ₀=0.0,
-    #     maxtime=500, linesearch=:backtrack,
-    #     bool_trace=true,
-    #     eigtol=1e-7,
-    #     direction=:warm
-    # )
+    rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=40, tol=ε, freq=1,
+        step=:newton, μ₀=0.0,
+        maxtime=500, linesearch=:backtrack,
+        bool_trace=true,
+        eigtol=1e-7,
+        direction=:warm
+    )
     # rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
     #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
     #     maxiter=60, tol=ε, freq=1,

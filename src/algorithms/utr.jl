@@ -1,4 +1,3 @@
-
 using Base.Iterators
 using LinearAlgebra
 using Printf
@@ -22,6 +21,7 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
+    σ₀::Float64 = 1e-3
     adaptive_param = AR() # todo
     eigtol::Float64 = 1e-9
     itermax::Int64 = 20
@@ -29,7 +29,10 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     linesearch = :none
     adaptive = :none
     verbose::Int64 = 1
+    mainstrategy = :utr
     subpstrategy = :direct
+    adaptiverule = :utr
+    initializerule = :mishchenko
     LOG_SLOTS::String = UTR_LOG_SLOTS
     ALIAS::String = "UTR"
     DESC::String = "Universal Trust-Region Method"
@@ -58,8 +61,8 @@ Base.@kwdef mutable struct UTRState{R,Tx}
     df::R = 0.0       # decrease of the real function value
     ρ::R = 0.0        # trs descrease ratio: ρ = df/dq
     ϵ::R = 0.0        # eps 2: residual for gradient 
-    r::R = 1e1        # universal trust-region radius         parameter r
-    σ::R = 1e-1       # universal trust-region regularization parameter σ
+    r::R = 1e2        # universal trust-region radius         parameter r
+    σ::R = 1e-3       # universal trust-region regularization parameter σ
     k::Int = 1        # outer iterations
     kᵥ::Int = 1       # krylov iterations
     kₜ::Int = 1        # inner iterations 
@@ -70,7 +73,6 @@ Base.@kwdef mutable struct UTRState{R,Tx}
     kh::Int = 0       #      hvp evaluations
     k₂::Int = 0       # 2 oracle evaluations
 end
-
 
 @doc raw"""
  Initialize the state, change of behavior:
@@ -94,12 +96,12 @@ function Base.iterate(iter::UTRIteration)
         ∇fb=Hv,
         ∇fz=grad_f_x,
         ϵ=gₙ,
-        Δ=gₙ * 1e1
+        Δ=gₙ * 1e1,
+        σ=iter.σ₀
     )
     if iter.hvp === nothing
         return state, state
     end
-
 
     function hvp(v)
         iter.hvp(state.x, v, Hv)
@@ -109,6 +111,142 @@ function Base.iterate(iter::UTRIteration)
     return state, state
 end
 
+
+function Base.iterate(
+    iter::UTRIteration,
+    state::UTRState{R,Tx};
+) where {R,Tx}
+    # use inexact method (a Lanczos method)
+    if (iter.subpstrategy == :direct)
+        return iterate_cholesky(iter, state)
+    elseif (iter.subpstrategy == :lanczos)
+        return iterate_evolve_lanczos(iter, state)
+    else
+        throw(ErrorException("""
+        unsupported mode $(iter.subpstrategy),
+        currently: {:lanczos, :direct}
+        """
+        ))
+    end
+end
+
+function iterate_cholesky(
+    iter::UTRIteration,
+    state::UTRState{R,Tx};
+) where {R,Tx}
+
+    state.z = z = state.x
+    state.fz = fz = state.fx
+    state.∇fz = state.∇f
+    state.∇f = iter.g(state.x)
+    state.ϵ = norm(state.∇f)
+    grad_regularizer = state.ϵ |> sqrt
+    decs_regularizer = grad_regularizer^3
+
+    if iter.hvp === nothing
+        H = Symmetric(iter.H(state.x))
+    else
+        throw(
+            ErrorException("only support Hessian mode for direct method")
+        )
+    end
+    k₂ = 0
+    γ₁ = 2.0
+    γ₂ = 2.0
+    η = 1.0
+    ρ = 1.0
+
+    # initialize an estimation
+    if iter.initializerule == :mishchenko
+        σ₀, _, Df, bool_acc = initial_rules_mishchenko(
+            state, iter.g, H, iter.H,
+            state.σ
+        )
+        σ = σ₀ / 2
+        r = 1 / 3 / σ₀
+        σ₀ = σ₀ * grad_regularizer
+    else
+        σ = σ₀ = state.σ
+        r = max(state.r, 1e-1)
+    end
+    σ = σ * grad_regularizer
+    Δ = r * grad_regularizer
+    Df = (η / ρ) * decs_regularizer
+    # initialize
+    n = state.∇f |> length
+    θ = 0.0
+    while true
+        if iter.mainstrategy == :newton
+            # if you use Regularized Newton, 
+            #  make sure it is convex optimization
+            F = cholesky(H + σ₀ * I)
+            v = F \ (-state.∇f)
+            kᵢ = 1
+            θ = λ₁ = 0.0
+        else
+            # if not accepted
+            #  λ (dual) must increase
+            v, θ, λ₁, kᵢ = TrustRegionCholesky(
+                H + σ * I,
+                state.∇f,
+                1e3;
+                # λₗ=θ - σ
+            )
+            Δ = min(Δ, v |> norm)
+        end
+        state.α = 1.0
+        fx = iter.f(state.z + v * state.α)
+        # summarize
+        x = y = state.z + v * state.α
+        df = fz - fx
+        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+        ρₐ = df / dq
+        k₂ += 1
+        @debug """periodic check (main iterate)
+            |d|: $(v |> norm):, Δ: $Δ, 
+            θ:  $θ, λₗ: $λₗ, 
+            kᵢ: $kᵢ, df: $df, 
+            ρₐ: $ρₐ
+        """
+        if iter.adaptiverule == :utr
+            Δ, σ, Df, bool_acc = adaptive_rules_utr(
+                state, df,
+                Df, Δ, σ, ρₐ, γ₁, γ₂,
+                θ, λ₁ - σ
+            )
+        elseif iter.adaptiverule ∈ [:constant, :mishchenko]
+            # do nothing
+            bool_acc = true
+        else
+            throw(
+                ErrorException("unrecognized adaptive mode $(iter.adaptiverule)")
+            )
+        end
+        !bool_acc && continue
+        # do this when accept
+        state.σ = max(1e-12, σ / grad_regularizer)
+        state.r = max(Δ / grad_regularizer, 1e-1)
+        state.k₂ += k₂
+        state.kₜ = k₂
+        state.x = x
+        state.y = y
+        state.fx = fx
+        state.ρ = ρₐ
+        state.dq = dq
+        state.df = df
+        state.θ = θ
+        state.d = x - z
+        state.Δ = Δ
+        state.Δₙ = state.d |> norm
+        state.t = (Dates.now() - iter.t).value / 1e3
+        counting(iter, state)
+        state.status = true
+        # @info ρₐ
+        state.k += 1
+        checknan(state)
+        return state, state
+    end
+end
 
 function iterate_evolve_lanczos(
     iter::UTRIteration,
@@ -138,6 +276,9 @@ function iterate_evolve_lanczos(
     n = state.∇f |> length
     Sₗ = DRSOM.Lanczos(n, 2n + 1, state.∇f)
     while true
+        if iter.mainstrategy == :newton
+            throw(ErrorException("we do not support regularized Newton in Lanczos mode; use Cholesky instead"))
+        end
         # use evolving subspaces
         state.α = 1.0
         k₁ = (n <= 500) ? round(Int, n * 0.9) : round(Int, n * 0.02)
@@ -171,7 +312,6 @@ function iterate_evolve_lanczos(
         end
 
         λ₁ = info.λ₁
-
         fx = iter.f(state.z + v * state.α)
         # summarize
         x = y = state.z + v * state.α
@@ -190,21 +330,8 @@ function iterate_evolve_lanczos(
             ρₐ: $ρₐ
         """
         Δ = min(Δ, v |> norm)
-        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
-            if abs(λ₁) >= -1e-8 # too cvx or ncvx
-                σ = 0.0
-            else
-                σ *= γ₁
-            end
-            # dec radius
-            Δ /= γ₂
-            Df /= γ₁
-            continue
-        end
-        if ρₐ > 0.9
-            σ /= γ₁
-            Δ *= γ₂
-        end
+        Δ, σ, Df, bool_acc = adaptive_rules_utr(state, df, Df, Δ, σ, ρₐ, γ₁, γ₂, θ, λ₁)
+        !bool_acc && continue
         # do this when accept
         state.σ = max(1e-18, σ / grad_regularizer)
         state.r = max(Δ / grad_regularizer, 1e-1)
@@ -229,118 +356,67 @@ function iterate_evolve_lanczos(
     end
 end
 
-
-
-
-function Base.iterate(
-    iter::UTRIteration,
-    state::UTRState{R,Tx};
-) where {R,Tx}
-    # use inexact method (a Lanczos method)
-    if (iter.subpstrategy != :direct)
-        # if n < 2e3
-        # return iterate_full_lanczos(iter, state)
-        # else
-        # use inexact method of evolving Lanczos
-        return iterate_evolve_lanczos(iter, state)
-        # end
-    end
-
-    state.z = z = state.x
-    state.fz = fz = state.fx
-    state.∇fz = state.∇f
-    state.∇f = iter.g(state.x)
-    state.ϵ = norm(state.∇f)
-    grad_regularizer = state.ϵ |> sqrt
-    decs_regularizer = grad_regularizer^3
-
-    if iter.hvp === nothing
-        H = iter.H(state.x)
+@doc """
+    implement the strategy of Mishchenko [Algorithm 2.3, AdaN+](SIOPT, 2023)
+    this is always accepting method
+"""
+function initial_rules_mishchenko(state, funcg, Hx, funcH, args...)
+    σ, _... = args
+    Δ = 10.0
+    bool_acc = true
+    if state.k == 1
+        # first iteration
+        dx = randn(Float64, state.x |> size)
+        y = state.x + dx
+        gx = state.∇f
+        gy = funcg(y)
+        M = approximate_lip(dx, gx, gy, Hx)
+        σ1 = √M
     else
-        throw(
-            ErrorException("only support Hessian mode for direct method")
+        dx = state.d
+        gx = state.∇fz
+        Hx = funcH(state.z)
+        gy = state.∇f
+        M = approximate_lip(dx, gx, gy, Hx)
+        σ1 = max(
+            σ / √2,
+            √M
         )
     end
-    k₂ = 0
-    γ₁ = 2.0
-    γ₂ = 2.0
-    η = 1.0
-    ρ = 1.0
-
-    σ = state.σ * grad_regularizer
-    Δ = max(state.r * grad_regularizer, 1e-1)
-
-    Df = (η / ρ) * decs_regularizer
-    # initialize
-    n = state.∇f |> length
-    # dual estimate
-    λ₁ = 0.0
-    θ = σ
-    while true
-        # if not accepted
-        #  λ (dual) must increase
-        v, θ, λ₁, kᵢ = TrustRegionCholesky(
-            H + σ * I,
-            state.∇f,
-            Δ;
-            λ₁=θ - σ
-        )
-        state.α = 1.0
-        fx = iter.f(state.z + v * state.α)
-        # summarize
-        x = y = state.z + v * state.α
-        df = fz - fx
-        dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
-        ρₐ = df / dq
-        k₂ += 1
-        @debug """periodic check (main iterate)
-            |d|: $(v |> norm):, Δ: $Δ, 
-            θ:  $θ, λ₁: $λ₁, 
-            kᵢ: $kᵢ, df: $df, 
-            ρₐ: $ρₐ
-        """
-        Δ = min(Δ, v |> norm)
-        if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
-            if abs(λ₁) >= 1e-8 # too cvx or ncvx
-                σ = 0.0
-            else
-                σ *= γ₁
-            end
-            # dec radius
-            Δ /= γ₂
-            Df /= γ₁
-            continue
-        end
-        if ρₐ > 0.9
-            σ /= γ₁
-            Δ *= γ₂
-        end
-        # do this when accept
-        state.σ = max(1e-12, σ / grad_regularizer)
-        state.r = max(Δ / grad_regularizer, 1e-1)
-        state.k₂ += k₂
-        state.kₜ = k₂
-        state.x = x
-        state.y = y
-        state.fx = fx
-        state.ρ = ρₐ
-        state.dq = dq
-        state.df = df
-        state.θ = θ
-        state.d = x - z
-        state.Δ = Δ
-        state.Δₙ = state.d |> norm
-        state.t = (Dates.now() - iter.t).value / 1e3
-        counting(iter, state)
-        state.status = true
-        # @info ρₐ
-        state.k += 1
-        checknan(state)
-        return state, state
-    end
-
+    @debug "details:" norm(dx) norm(gy - gx) σ σ1
+    return σ1, M, 0.0, bool_acc
 end
 
+
+function adaptive_rules_utr(state, args...)
+    df, Df, Δ, σ, ρₐ, γ₁, γ₂, θ, λ₁, _... = args
+    # @info "details:" λ₁ σ
+    bool_acc = true
+    if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
+        if abs(λ₁) >= -1e-8 # too cvx or ncvx
+            σ = 0.0
+        else
+            σ *= γ₁
+        end
+        # dec radius
+        Δ /= γ₂
+        Df /= γ₁
+        bool_acc = false
+    end
+    if ρₐ > 0.9
+        σ /= γ₁
+        Δ *= γ₂
+    end
+    return Δ, σ, Df, bool_acc
+end
+
+function approximate_lip(dx, gx, gy, Hx)
+    return (norm(gy - gx - Hx * dx)) / norm(dx)^2
+end
+
+####################################################################################################
+# Basic Tools
+####################################################################################################
 utr_stopping_criterion(tol, state::UTRState) =
     (state.ϵ <= tol) || (state.Δ <= 1e-12)
 
@@ -356,7 +432,7 @@ end
 
 function checknan(state::S) where {S<:UTRState}
     if any(isnan, state.x)
-        throw(ErrorException("NaN detected in Lanczos, use debugging to fix"))
+        @warn(ErrorException("NaN detected in Lanczos, use debugging to fix"))
     end
 end
 
@@ -371,8 +447,6 @@ function utr_display(k, state::UTRState)
 end
 
 default_solution(::UTRIteration, state::UTRState) = state.x
-
-
 
 
 UniversalTrustRegion(;
@@ -426,7 +500,9 @@ function Base.show(io::IO, t::T) where {T<:UTRIteration}
     @printf io "  algorithm alias       := %s\n" t.ALIAS
     @printf io "  algorithm description := %s\n" t.DESC
     @printf io "  inner iteration limit := %s\n" t.itermax
-    @printf io "  subproblem            := %s\n" t.subpstrategy
+    @printf io "  main       strategy   := %s\n" t.mainstrategy
+    @printf io "  subproblem strategy   := %s\n" t.subpstrategy
+    @printf io "  adaptive (σ,Δ) rule   := %s\n" t.adaptiverule
     if t.hvp !== nothing
         @printf io "      second-order info := using provided Hessian-vector product\n"
     elseif t.H !== nothing
@@ -435,6 +511,10 @@ function Base.show(io::IO, t::T) where {T<:UTRIteration}
         @printf io " unknown mode to compute Hessian info\n"
         throw(ErrorException("unknown differentiation mode\n"))
     end
+
+    (t.mainstrategy == :newton) && @printf io "  !!! reduce to Regularized Newton Method\n"
+    (t.initializerule == :mishchenko) && @printf io "  !!! - use Mishchenko's strategy\n"
+    (t.adaptiverule == :constant) && @printf io "  !!! - use fixed regularization\n"
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
 end

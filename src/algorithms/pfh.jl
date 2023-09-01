@@ -156,7 +156,6 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
                 B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
             )
         else
-
             # H = iter.H(state.x)
             # B = Symmetric([H state.∇fμ; state.∇fμ' -state.μ])
             # q = randn((state.x |> length) + 1)
@@ -321,6 +320,7 @@ function Base.show(io::IO, t::T) where {T<:PFHIteration}
         @printf io " unknown mode to compute Hessian info\n"
         throw(ErrorException("unknown differentiation mode\n"))
     end
+    (t.μ₀ == 0) && @printf io "  !!! μ₀ ≈ 0, reduce to inexact Newton Method\n"
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
 end

@@ -162,11 +162,10 @@ function TrustRegionCholesky(
     c::Vector{Float64},
     Δ::Float64=0.0;
     Δϵ::Float64=1e-2,
-    λ₁=0.0,
+    λₗ=0.0,
     λᵤ=Inf
 )
-
-    F = cholesky(Q + λ₁ * I, check=false)
+    F = cholesky(Q + λₗ * I, check=false)
     if issuccess(F) # meaning psd
         x = F \ (-c)
         if norm(x) < Δϵ + Δ
@@ -176,7 +175,7 @@ function TrustRegionCholesky(
     # else it is indefinite.
     # mild estimate to ensure p.s.d
     if λᵤ < Inf
-        λₖ = (λ₁ + λᵤ) / 2
+        λₖ = (λₗ + λᵤ) / 2
     else
         λₖ = ((sum(abs, Q - Diagonal(Q), dims=1)[:] + abs.(diag(Q))) |> maximum) / 2
     end
@@ -192,7 +191,7 @@ function TrustRegionCholesky(
         end
         p === nothing ? F.p : p
         if bool_indef
-            λ₁ = λₖ / 1.02
+            λₗ = λₖ / 1.02
         end
         bool_indef = false
 
@@ -209,24 +208,24 @@ function TrustRegionCholesky(
         dℓ = -(l1 / (l2 + 1e-2))
         if dℓ < 0
             λᵤ = min(λᵤ, λₖ)
-            α = min(0.9995 * ((λₖ - λ₁) / -dℓ), 1.0)
+            α = min(0.9995 * ((λₖ - λₗ) / -dℓ), 1.0)
         else
-            λ₁ = max(λ₁, λₖ)
+            λₗ = max(λₗ, λₖ)
             α = min(0.9995 * ((λᵤ - λₖ) / dℓ), 1.0)
         end
 
         if (α <= 0.8) && (λᵤ < Inf)
-            λₖ = (λᵤ + λ₁) / 2
+            λₖ = (λᵤ + λₗ) / 2
         else
             λₖ += α * dℓ
         end
-        @debug """iterate""" k, [λ₁, λᵤ], λₖ, α, dℓ, norm2_s, (Δ^2)
+        @debug """iterate""" k, [λₗ, λᵤ], λₖ, α, dℓ, norm2_s, (Δ^2)
 
 
         k += 1
-        if (abs(l1) < Δϵ) || (k > 20) || ((λᵤ - λ₁) < Δϵ)
+        if (abs(l1) < Δϵ) || (k > 20) || ((λᵤ - λₗ) < Δϵ)
             break
         end
     end
-    return x, λₖ, λ₁, k, p
+    return x, λₖ, -λₗ, k, p
 end
