@@ -73,7 +73,24 @@ function arc_to_result(nlp, stats, name)
 
     return Result(name=name, iter=stats, state=state, k=stats.iter, trajectory=[])
 end
-export StateOptim, optim_to_result, arc_to_result
+
+function arc_stop_to_result(nlp, rr, name)
+    ts = rr.listofstates[1][1].current_time
+    traj = []
+    for i in 1:rr.listofstates.i
+        x = rr.listofstates[i]
+        st = StateOptim(fx=x[1].fx, ϵ=x[1].gx |> norm, t=x[1].current_time - ts)
+        push!(traj, st)
+    end
+    traj[end].kf = neval_obj(nlp)
+    traj[end].kg = neval_grad(nlp)
+    traj[end].kH = neval_hess(nlp)
+    traj[end].kh = neval_hprod(nlp)
+    stats = AdaptiveRegularization.stopping_to_stats(rr)
+    return Result(name=name, iter=rr, state=stats, k=stats.iter, trajectory=traj)
+end
+
+export StateOptim, optim_to_result, arc_to_result, arc_stop_to_result
 
 
 

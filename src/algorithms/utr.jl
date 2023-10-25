@@ -32,7 +32,7 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     mainstrategy = :utr
     subpstrategy = :direct
     adaptiverule = :utr
-    initializerule = :mishchenko
+    initializerule = :undef
     LOG_SLOTS::String = UTR_LOG_SLOTS
     ALIAS::String = "UTR"
     DESC::String = "Universal Trust-Region Method"
