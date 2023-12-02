@@ -43,7 +43,8 @@ name = "a4a"
 # name = "covtype"
 # name = "news20"
 # name = "rcv1"
-names = ["a4a"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
+# names = ["a4a"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
+names = ["covtype"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
 # names = ["a4a", "a9a", "w4a", "covtype", "rcv1"]
 @warn "news20 is very big..., consider run on a server"
 # use the data matrix of libsvm
@@ -61,7 +62,7 @@ if name in ["covtype"]
 else
 end
 
-γ = 1e-6
+γ = 1e-10
 n = Xv[1, :] |> length
 Random.seed!(1)
 N = y |> length
@@ -110,21 +111,22 @@ rl = KrylovKit.eigsolve(
 r["GHM-Lanczos"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
 r["GHM-Lanczos"].numops += rl[end].numops
 
-rl = KrylovKit.linsolve(
-    Hc, -g, w₀, CG(; tol=ε, maxiter=max_iteration, verbosity=3);
-)
-r["Newton-CG"].normres += ((hvp(rl[1]) + g) |> norm)
-r["Newton-CG"].numops += rl[end].numops
-rl = KrylovKit.linsolve(
-    Hc, -g, w₀, GMRES(; tol=ε, maxiter=1, krylovdim=max_iteration, verbosity=3);
-)
-r["Newton-GMRES"].normres += ((hvp(rl[1]) + g) |> norm)
-r["Newton-GMRES"].numops += rl[end].numops
-rl = KrylovKit.linsolve(
-    Hc, -g, w₀, GMRES(; tol=ε, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
-)
-r["Newton-rGMRES"].normres += ((hvp(rl[1]) + g) |> norm)
-r["Newton-rGMRES"].numops += rl[end].numops
+if false:
+    rl = KrylovKit.linsolve(
+        Hc, -g, w₀, CG(; tol=ε, maxiter=max_iteration, verbosity=3);
+    )
+    r["Newton-CG"].normres += ((hvp(rl[1]) + g) |> norm)
+    r["Newton-CG"].numops += rl[end].numops
+    rl = KrylovKit.linsolve(
+        Hc, -g, w₀, GMRES(; tol=ε, maxiter=1, krylovdim=max_iteration, verbosity=3);
+    )
+    r["Newton-GMRES"].normres += ((hvp(rl[1]) + g) |> norm)
+    r["Newton-GMRES"].numops += rl[end].numops
+    rl = KrylovKit.linsolve(
+        Hc, -g, w₀, GMRES(; tol=ε, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
+    )
+    r["Newton-rGMRES"].normres += ((hvp(rl[1]) + g) |> norm)
+    r["Newton-rGMRES"].numops += rl[end].numops
 
 ################################
 # ALTERNATIVELY, USE Krylov.jl
