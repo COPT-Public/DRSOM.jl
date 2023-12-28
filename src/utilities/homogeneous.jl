@@ -47,7 +47,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
     kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
     # non-adaptive mode
-    if iter.adaptive === :none
+    if iter.adaptive != :arc
         state.λ₁ = λ₁
         state.ξ = ξ
         return kᵥ, k₂, v, vn, vg, vHv
@@ -139,7 +139,6 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
 end
 
 
-# adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
     kᵥ = 1 # krylov iterations
     k₂ = 1 # second-order eigenvalue calls
@@ -147,7 +146,7 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
     kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
 
     # non-adaptive mode
-    if iter.adaptive === :none
+    if iter.adaptive != :arc
         state.λ₁ = λ₁
         # printstyled(ξ)
         state.ξ = ξ[:, 1]
