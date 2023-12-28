@@ -207,7 +207,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     #     state.δ = state.δ - 1e-2
     # end
     if iter.adaptive == :none
-        state.δ = -1e-3
+        state.δ = 0
     elseif iter.adaptive == :mishchenko
         if iter.hvp === nothing
             σ1 = hsodm_rules_mishchenko(iter, state, gₙ, H)
@@ -235,7 +235,7 @@ function hsodm_rules_mishchenko(iter, state, args...)
         gₙ, Hx, _... = args
         M = (norm(gy - gx - Hx * dx)) / norm(dx)^2
     else
-        iter.hvp(z, dx, state.∇fb)
+        iter.hvp(state.z, dx, state.∇fb)
         M = (norm(gy - gx - state.∇fb)) / norm(dx)^2
     end
     σ1 = max(

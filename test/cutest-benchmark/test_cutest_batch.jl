@@ -33,7 +33,7 @@ write(csvfile, join(header, ","), "\n")
 # todo, add field kf, kg, kH, and inner iteration #
 p = Progress(length(PROBLEMS); showspeed=true)
 for (f, param_combination) in PROBLEMS
-    for pc in param_combination
+    for pc in [param_combination][:]
         try
             nlp = CUTEstModel(f, "-param", pc)
             name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
