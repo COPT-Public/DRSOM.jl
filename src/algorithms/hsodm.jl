@@ -59,7 +59,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     σ::R = 1e3        # adaptive arc style parameter σ
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    δ::Float64 = 1e-3 # smallest curvature if available
+    δ::Float64 = -1e-4  # second diagonal if available
     #########################################################
     kₜ::Int = 1        #     inner iterations 
     kᵥ::Int = 1       #     krylov iterations

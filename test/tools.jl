@@ -224,6 +224,7 @@ wrapper_hsodm(x, loss, g, H, options; kwargs...) =
         x0=copy(x), f=loss, g=g, H=H,
         linesearch=:hagerzhang,
         direction=:warm,
+        adaptive=:mishchenko,
         options...
     )
 alg_hsodm_hvp = HSODM()
@@ -232,6 +233,7 @@ wrapper_hsodm_hvp(x, loss, g, H, options; kwargs...) =
         x0=copy(x), f=loss, g=g,
         linesearch=:hagerzhang,
         direction=:warm,
+        adaptive=:mishchenko,
         kwargs...,
         options...
     )

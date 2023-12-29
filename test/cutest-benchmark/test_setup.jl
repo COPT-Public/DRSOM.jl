@@ -32,9 +32,9 @@ filter_cutest_problem(nlp) = true
 # filter_optimization_method(k) = k == :LBFGS
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
-filter_optimization_method(k) = k == :HSODM
+# filter_optimization_method(k) = k == :HSODM
 # filter_optimization_method(k) = k == :HSODMhvp
-# filter_optimization_method(k) = k ∈ [:HSODMhvp, :HSODM]
+filter_optimization_method(k) = k ∈ [:HSODMhvp, :HSODM]
 # filter_optimization_method(k) = k ∈ [:iUTRhvp]
 # filter_optimization_method(k) = k == :ARC
 # filter_optimization_method(k) = k == :TRST
@@ -49,6 +49,7 @@ filter_optimization_method(k) = k == :HSODM
 # PROBLEMS = TEST
 # PROBLEMS = UNC_PROBLEMS_4to200
 # PROBLEMS = UNC_PROBLEMS_200to5000
+# PROBLEMS = UNC_PROBLEMS_GOOD
 PROBLEMS = UNC_PROBLEMS_COMB
 
 if test_before_start
