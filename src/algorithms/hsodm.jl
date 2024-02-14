@@ -65,6 +65,7 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     kᵥ::Int = 1       #     krylov iterations
     kf::Int = 0       #   function evaluations
     kg::Int = 0       #   gradient evaluations
+    kgh::Int = 0      # gradient + hvp evaluations
     kH::Int = 0       #    hessian evaluations
     kh::Int = 0       #        hvp evaluations
     k₂::Int = 0       # 2nd oracle evaluations
@@ -188,7 +189,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.dq = dq
     state.df = df
     state.d = x - z
-    state.kᵥ = kᵥ
+    state.kᵥ += kᵥ
     state.k₂ += k₂
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
@@ -257,9 +258,10 @@ hsodm_stopping_criterion(tol, state::HSODMState) =
 function counting(iter::T, state::S) where {T<:HSODMIteration,S<:HSODMState}
     try
         state.kf = getfield(iter.f, :counter)
-        state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
         state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
+        state.kg = getfield(iter.g, :counter)
+        state.kgh = state.kg + state.kh * 2
     catch
     end
 end
@@ -350,11 +352,12 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODM
     println(io, "oracle calls:")
     @printf io " (main)          k       := %d  \n" k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg + s.kh
-    @printf io " (first-order)  hvp      := %d  \n" s.kh
+    @printf io " (first-order)   g       := %d  \n" s.kg
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kgh
     @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (second-order)  hvp     := %d  \n" s.kh
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
-    @printf io " (sub-problem)   kₕ       := %d  \n" s.kᵥ
+    @printf io " (sub-calls)     kᵥ      := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

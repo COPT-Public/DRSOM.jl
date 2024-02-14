@@ -18,6 +18,8 @@ Base.@kwdef mutable struct UTRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     hvp::Th = nothing
     fvp::Union{Function,Nothing} = nothing
     ff::Union{Function,Nothing} = nothing
+    fc::Union{Function,Nothing} = nothing
+    opH::Union{LinearOperator,Nothing} = nothing
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
@@ -69,6 +71,7 @@ Base.@kwdef mutable struct UTRState{R,Tx}
     t::R = 0.0        # running time
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
+    kgh::Int = 0      # gradient + hvp evaluations
     kH::Int = 0       #  hessian evaluations
     kh::Int = 0       #      hvp evaluations
     k₂::Int = 0       # 2 oracle evaluations
@@ -85,6 +88,7 @@ function Base.iterate(iter::UTRIteration)
     grad_f_x = iter.g(z)
     Hv = similar(grad_f_x) # this is a buffer for Hvp
     gₙ = norm(grad_f_x, 2)
+    n = z |> length
     state = UTRState(
         x=z,
         y=z,
@@ -107,7 +111,13 @@ function Base.iterate(iter::UTRIteration)
         iter.hvp(state.x, v, Hv)
         return Hv
     end
-    iter.ff = hvp
+    iter.fc = hvp
+    function hvps(y, v)
+        iter.hvp(state.x, v, Hv)
+        copy!(y, Hv .+ state.σ * v)
+    end
+    iter.ff = (y, v) -> hvps(y, v)
+    iter.opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
     return state, state
 end
 
@@ -165,6 +175,9 @@ function iterate_cholesky(
         σ = σ₀ / 2
         r = 1 / 3 / σ₀
         σ₀ = σ₀ * grad_regularizer
+    elseif iter.initializerule == :unscaled
+        σ = iter.σ₀
+        r = max(state.r, 1e-1)
     else
         σ = σ₀ = state.σ
         r = max(state.r, 1e-1)
@@ -252,6 +265,7 @@ function iterate_evolve_lanczos(
     iter::UTRIteration,
     state::UTRState{R,Tx};
 ) where {R,Tx}
+    @debug "start @" Dates.now()
     state.z = z = state.x
     state.fz = fz = state.fx
     state.∇fz = state.∇f
@@ -263,55 +277,98 @@ function iterate_evolve_lanczos(
     n = (state.x |> length)
 
     k₂ = 0
-    γ₁ = 8.0
+    γ₁ = 2.0
     γ₂ = 2.0
     η = 1.0
     ρ = 1.0
 
-    σ = state.σ * grad_regularizer
-    Δ = max(state.r * grad_regularizer, 1e-1)
-
+    # initialize an estimation
+    if iter.initializerule == :mishchenko
+        throw(ErrorException("""
+         not implemented
+        """
+        ))
+        σ₀, _, Df, bool_acc = initial_rules_mishchenko(
+            state, iter.g, H, iter.H,
+            state.σ
+        )
+        σ = σ₀ / 2
+        r = 1 / 3 / σ₀
+        σ₀ = σ₀ * grad_regularizer
+        σ = σ * grad_regularizer
+        state.σ = σ
+    elseif iter.initializerule == :unscaled
+        state.σ = σ = iter.σ₀
+        r = max(state.r, 1e-1)
+    else
+        σ = σ₀ = state.σ
+        σ = σ * grad_regularizer
+        state.σ = σ
+        r = max(state.r, 1e-1)
+    end
+    @debug "initialization @" Dates.now()
+    Δ = r * grad_regularizer
     Df = (η / ρ) * decs_regularizer
     # initialize
     n = state.∇f |> length
-    Sₗ = DRSOM.Lanczos(n, 2n + 1, state.∇f)
+    θ = λ₁ = 0.0
     while true
-        if iter.mainstrategy == :newton
-            throw(ErrorException("we do not support regularized Newton in Lanczos mode; use Cholesky instead"))
-        end
+
         # use evolving subspaces
         state.α = 1.0
         k₁ = (n <= 500) ? round(Int, n * 0.9) : round(Int, n * 0.02)
         Ξ = 1e-1 * min(state.∇f |> norm |> sqrt, 1e0)
-        @debug "minimum subspace size $k₁"
-        if iter.hvp === nothing
-            H = iter.H(state.x)
-            v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
-                H,
-                -state.∇f,
-                Δ,
-                Sₗ;
-                σ=σ * (σ >= 1e-8),
-                k=Sₗ.k,
-                k₁=k₁,
-                Ξ=Ξ
-            )
-            dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
-        else
-            v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
-                iter.ff,
-                -state.∇f,
-                Δ,
-                Sₗ;
-                σ=σ * (σ >= 1e-8),
-                k=Sₗ.k,
-                k₁=k₁,
-                Ξ=Ξ
-            )
-            dq = -state.α^2 * v'iter.ff(v) / 2 - state.α * v'state.∇f
-        end
+        @debug "minimum subspace size $k₁ @" Dates.now()
 
-        λ₁ = info.λ₁
+        if iter.mainstrategy == :newton
+            # throw(ErrorException(
+            # "we do not support regularized Newton in Lanczos mode yet; use Cholesky instead"
+            # ))
+            # todo
+            if iter.hvp === nothing
+                H = iter.H(state.x)
+                kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
+                    H, state.σ, state.∇f, state; verbose=iter.verbose > 1
+                )
+            else
+                kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
+                    iter, state.σ, state.∇f, state; verbose=iter.verbose > 1
+                )
+            end
+            dq = -state.α^2 * vHv / 2 - state.α * vg
+            # @printf "NewtonStep: %d %d %e %e %e %e\n" kᵥ k₂ vn vg vHv dq
+        else
+            Sₗ = DRSOM.Lanczos(n, 2n + 1, state.∇f)
+            if iter.hvp === nothing
+                H = iter.H(state.x)
+                v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
+                    H,
+                    -state.∇f,
+                    Δ,
+                    Sₗ;
+                    σ=σ * (σ >= 1e-8),
+                    k=Sₗ.k,
+                    k₁=k₁,
+                    Ξ=Ξ
+                )
+                dq = -state.α^2 * v'H * v / 2 - state.α * v'state.∇f
+            else
+                v, θ, info = DRSOM.InexactLanczosTrustRegionBisect(
+                    iter.fc,
+                    -state.∇f,
+                    Δ,
+                    Sₗ;
+                    σ=σ * (σ >= 1e-8),
+                    k=Sₗ.k,
+                    k₁=k₁,
+                    Ξ=Ξ
+                )
+                dq = -state.α^2 * v'iter.fc(v) / 2 - state.α * v'state.∇f
+            end
+            Δ = min(Δ, v |> norm)
+            λ₁ = info.λ₁
+            kᵥ = info.kₗ
+        end
         fx = iter.f(state.z + v * state.α)
         # summarize
         x = y = state.z + v * state.α
@@ -325,17 +382,30 @@ function iterate_evolve_lanczos(
             σ: $σ,
             θ: $θ, 
             λ₁: $λ₁, 
-            kᵢ: $info.kₗ, k₁: $k₁, 
+            kᵢ: $kᵥ, k₁: $k₁, 
             df: $df, 
             ρₐ: $ρₐ
         """
-        Δ = min(Δ, v |> norm)
-        Δ, σ, Df, bool_acc = adaptive_rules_utr(state, df, Df, Δ, σ, ρₐ, γ₁, γ₂, θ, λ₁)
+        if iter.adaptiverule == :utr
+            Δ, σ, Df, bool_acc = adaptive_rules_utr(
+                state, df,
+                Df, Δ, σ, ρₐ, γ₁, γ₂,
+                θ, λ₁ - σ
+            )
+        elseif iter.adaptiverule ∈ [:constant, :mishchenko]
+            # do nothing
+            bool_acc = true
+        else
+            throw(
+                ErrorException("unrecognized adaptive mode $(iter.adaptiverule)")
+            )
+        end
         !bool_acc && continue
         # do this when accept
         state.σ = max(1e-18, σ / grad_regularizer)
         state.r = max(Δ / grad_regularizer, 1e-1)
         state.k₂ += k₂
+        state.kᵥ += kᵥ
         state.kₜ = k₂
         state.x = x
         state.y = y
@@ -423,9 +493,10 @@ utr_stopping_criterion(tol, state::UTRState) =
 function counting(iter::T, state::S) where {T<:UTRIteration,S<:UTRState}
     try
         state.kf = getfield(iter.f, :counter)
-        state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
         state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
+        state.kg = getfield(iter.g, :counter)
+        state.kgh = state.kg + state.kh * 2
     catch
     end
 end
@@ -514,6 +585,7 @@ function Base.show(io::IO, t::T) where {T<:UTRIteration}
 
     (t.mainstrategy == :newton) && @printf io "  !!! reduce to Regularized Newton Method\n"
     (t.initializerule == :mishchenko) && @printf io "  !!! - use Mishchenko's strategy\n"
+    (t.initializerule == :unscaled) && @printf io "  !!! - use regularization without gradient norm\n"
     (t.adaptiverule == :constant) && @printf io "  !!! - use fixed regularization\n"
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
@@ -527,10 +599,12 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:UTRIteration,S<:UTRStat
     println(io, "oracle calls:")
     @printf io " (main)          k       := %d  \n" s.k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg + s.kh
-    @printf io " (first-order)   hvp     := %d  \n" s.kh
+    @printf io " (first-order)   g       := %d  \n" s.kg
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kgh
     @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (second-order)  hvp     := %d  \n" s.kh
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (sub-calls)     kᵥ      := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

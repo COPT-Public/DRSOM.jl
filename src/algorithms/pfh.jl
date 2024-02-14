@@ -75,6 +75,7 @@ Base.@kwdef mutable struct PFHState{R,Tx,Tg}
     ξ::Tx             # eigenvector
     kf::Int = 0       # function evaluations
     kg::Int = 0       # gradient evaluations
+    kgh::Int = 0      # gradient + hvp evaluations
     kH::Int = 0       #  hessian evaluations
     kh::Int = 0       #      hvp evaluations
     k₂::Int = 0       # 2 oracle evaluations
@@ -176,8 +177,6 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
                 H, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
         else
-
-            # println(hvp(state.x))
             kᵥ, k₂, v, vn, vg, vHv = NewtonStep(
                 iter, state.μ, state.∇fμ, state; verbose=iter.verbose > 1
             )
@@ -208,14 +207,13 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.dq = dq
     state.df = df
     state.d = x - z
-    state.kᵥ = kᵥ
+    state.kᵥ += kᵥ
     state.k₂ += k₂
     state.kₜ += 1
     state.ϵ = norm(state.∇f)
     state.ϵμ = norm(state.∇fμ)
 
     if (state.ϵμ < min(5e-1, 10 * state.μ)) || state.kₜ > 10
-
         # state.μ = state.μ < 2e-6 ? 0 : 0.06 * state.μ
         state.μ = 0.02 * state.μ
         state.kᵤ += 1
@@ -234,9 +232,10 @@ pfh_stopping_criterion(tol, state::PFHState) =
 function counting(iter::T, state::S) where {T<:PFHIteration,S<:PFHState}
     try
         state.kf = getfield(iter.f, :counter)
-        state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
-        state.kh = 0 # todo, accept hvp iterative in the future
+        state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
+        state.kg = getfield(iter.g, :counter)
+        state.kgh = state.kg + state.kh * 2
     catch
     end
 end
@@ -286,7 +285,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     arr = Vector{S}()
     kwds = Dict(kwargs...)
 
-    for cf ∈ [:f :g :H]
+    for cf ∈ [:f :g :H :hvp]
         apply_counter(cf, kwds)
     end
     iter = T(; μ₀=μ₀, eigtol=eigtol, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
@@ -323,6 +322,7 @@ function Base.show(io::IO, t::T) where {T<:PFHIteration}
     (t.μ₀ == 0) && @printf io "  !!! μ₀ ≈ 0, reduce to inexact Newton Method\n"
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)
+
 end
 
 function summarize(io::IO, k::Int, t::T, s::S) where {T<:PFHIteration,S<:PFHState}
@@ -334,9 +334,12 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:PFHIteration,S<:PFHStat
     @printf io " (main)          kᵤ      := %d  \n" s.kᵤ
     @printf io " (main-total)    k       := %d  \n" k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg
+    @printf io " (first-order)   g       := %d  \n" s.kg
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kgh
     @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (second-order)  hvp     := %d  \n" s.kh
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
+    @printf io " (sub-calls)     kᵥ      := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

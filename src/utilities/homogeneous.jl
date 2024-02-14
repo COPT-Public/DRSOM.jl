@@ -1,12 +1,13 @@
 # beta: adaptive hsodm subproblem
 
-# Base.@kwdef mutable struct AdaptiveHomogeneousSubproblem
-
+using Dates
 using Roots
 using SparseArrays
 using ArnoldiMethod
 using LDLFactorizations
-using Krylov
+
+# using Krylov
+using KrylovKit
 using LinearOperators
 
 
@@ -325,16 +326,65 @@ d, __unused_info = KrylovKit.linsolve(
 """
 function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
 ) where {I}
+    @debug "started Newton-step @" Dates.now()
+
     n = g |> length
     opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
-    d, __unused_info = cg(opH, -Vector(g); verbose=0, atol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, itmax=200)
-    # if norm(d) < 1e-8
-    #     f(v) = iter.ff(state.∇fb, v)
-    #     d, __unused_info = KrylovKit.linsolve(
-    #         f, -Vector(g);
-    #         isposdef=true, issymmetric=true
-    #     )
-    # end
-    return 1, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    d, _info = cg(
+        opH, -Vector(g);
+        # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+        rtol=(g |> norm) * 1e-4,
+        itmax=200,
+        verbose=verbose ? 3 : 0
+    )
+
+    return _info.niter, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    # f(v) = iter.ff(state.∇fb, v)
+    # d, _info = KrylovKit.linsolve(
+    #     f, -Vector(g), -Vector(g),
+    #     # isposdef=true,
+    #     # issymmetric=true,
+    #     # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+    #     # maxiter=200,
+    #     # verbosity=3
+    #     CG(;
+    #         # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol,
+    #         tol=1e-4 * (g |> norm),
+    #         maxiter=n * 2,
+    #         verbosity=verbose ? 3 : 0
+    #     ),
+    # )
+    # return _info.numops, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+end
+
+function NewtonStep(opH::LinearOperator, g, state; verbose::Bool=false)
+    @debug "started Newton-step @" Dates.now()
+    n = g |> length
+    gn = (g |> norm)
+    d, _info = cg(
+        opH, -Vector(g);
+        # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+        rtol=state.ϵ > 1e-4 ? gn * 1e-4 : gn * 1e-5,
+        itmax=200,
+        verbose=verbose ? 3 : 0
+    )
+
+    return _info.niter, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    # f(v) = iter.ff(state.∇fb, v)
+    # d, _info = KrylovKit.linsolve(
+    #     f, -Vector(g), -Vector(g),
+    #     # isposdef=true,
+    #     # issymmetric=true,
+    #     # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+    #     # maxiter=200,
+    #     # verbosity=3
+    #     CG(; 
+    #         # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol,
+    #         tol=1e-4*(g|>norm),
+    #         maxiter=n*2, 
+    #         verbosity=3
+    #     ),
+    # )
+
 end
 

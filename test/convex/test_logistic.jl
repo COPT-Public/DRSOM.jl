@@ -44,15 +44,15 @@ bool_plot = true
 bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
-ε = 1e-6 # * max(g(x0) |> norm, 1)
+ε = 2e-8 # * max(g(x0) |> norm, 1)
 λ = 1e-5
 if bool_q_preprocessed
     # name = "a4a"
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    # name = "news20"
-    name = "rcv1"
+    name = "news20"
+    # name = "rcv1"
 
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
@@ -178,88 +178,101 @@ if bool_opt
         time_limit=500
     )
 
-    rn1 = PFH(name=Symbol("iNewton-1e-7"))(;
+    rn1 = PFH(name=Symbol("iNewton"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=40, tol=ε, freq=1,
+        maxiter=300, tol=ε, freq=1,
         step=:newton, μ₀=0.0,
         maxtime=500, linesearch=:backtrack,
         bool_trace=true,
-        eigtol=1e-7,
         direction=:warm
     )
-    # rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=60, tol=ε, freq=1,
-    #     step=:newton, μ₀=0.0,
-    #     maxtime=500, linesearch=:backtrack,
-    #     bool_trace=true,
-    #     eigtol=1e-8,
-    #     direction=:warm
-    # )
-    # rn3 = PFH(name=Symbol("iNewton-1e-9"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=60, tol=ε, freq=1,
-    #     step=:newton, μ₀=0.0,
-    #     maxtime=500, linesearch=:backtrack,
-    #     bool_trace=true,
-    #     eigtol=1e-9,
-    #     direction=:warm
-    # )
 
-    # ra = HSODM(name=Symbol("adaptive-HSODM"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=10000, tol=ε, freq=1,
-    #     maxtime=500,
-    #     direction=:warm, linesearch=:hagerzhang,
-    #     adaptive=:none
-    # )
+    rn2 = UTR(name=Symbol("iNewton-Grad-1e-4"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=300, tol=ε, freq=1,
+        bool_trace=true,
+        subpstrategy=:lanczos,
+        mainstrategy=:newton,
+        initializerule=:unscaled,
+        adaptiverule=:constant,
+        σ₀=1e-4,
+        maxtime=1500
+    )
+
+    rn3 = UTR(name=Symbol("iNewton-Grad-1e-3"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=300, tol=ε, freq=1,
+        bool_trace=true,
+        subpstrategy=:lanczos,
+        mainstrategy=:newton,
+        initializerule=:undef,
+        adaptiverule=:constant,
+        σ₀=1e-3,
+        maxtime=1500
+    )
+
+    ra = HSODM(name=Symbol("Adaptive-HSODM"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=10000, tol=ε, freq=1,
+        direction=:warm, linesearch=:hagerzhang,
+        adaptive=:none,
+        maxtime=1500
+    )
 
     rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
         step=:hsodm, μ₀=5e-2,
         bool_trace=true,
+        direction=:warm,
         maxtime=500,
-        direction=:warm
     )
 
-    ru = UTR(name=Symbol("Universal-TRS"))(;
-        x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, subpstrategy=:lanczos
-    )
+    # ru = UTR(name=Symbol("Universal-TRS"))(;
+    #     x0=copy(x0), f=loss, g=g, H=H,
+    #     maxiter=10000, tol=1e-6, freq=1,
+    #     direction=:warm, subpstrategy=:lanczos
+    # )
 end
 
 
 if bool_plot
     results = [
-        # optim_to_result(res1, "GD+Wolfe"),
-        # optim_to_result(r_lbfgs, "LBFGS+Wolfe"),
         ra,
         rh,
         rn1,
         rn2,
         rn3,
-        ru
+        # ru
     ]
-    linestyles = [:dash, :dot, :dashdot, :dashdotdot]
     method_names = [
         L"\texttt{Adaptive-HSODM}",
         L"\texttt{Homotopy-HSODM}",
-        L"\texttt{iNewton}-$10^{-7}$",
-        L"\texttt{iNewton}-$10^{-8}$",
-        L"\texttt{iNewton}-$10^{-9}$",
-        L"\texttt{Universal-TR}"
+        L"\texttt{iNewton}",
+        L"\texttt{iNewton-Grad-1e-4}",
+        L"\texttt{iNewton-Grad-1e-3}",
+        # L"\texttt{Universal-TR}"
     ]
-    for xaxis in (:t, :k)
-        for metric in (:ϵ, :fx)
+    # for xaxis in (:t, :k, :kg)
+    for xaxis in (:t, :k, :kgh)
+        # for metric in (:ϵ, :fx)
+        for metric in [:ϵ]
             @printf("plotting results\n")
 
             pgfplotsx()
             title = L"Logistic Regression $\texttt{name}:=\texttt{%$(name)}$, $n:=$%$(n), $N:=$%$(N)"
+            if xaxis == :t
+                xtitle = L"$\textrm{Time}$"
+            elseif xaxis == :k
+                xtitle = L"$\textrm{Iterations}$"
+            else
+                xtitle = L"$\textrm{Grad-Evaluations}$"
+            end
             fig = plot(
-                xlabel=xaxis == :t ? L"\textrm{Running Time (s)}" : L"\textrm{Iterations}",
+                xlabel=xtitle,
                 ylabel=metric == :ϵ ? L"\|\nabla f\|" : L"f(x)",
+                yaxis=(formatter = y -> @sprintf("%.1e", y)),
+                # formatter=:scientific,
                 title=title,
                 size=(600, 500),
                 yticks=[1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e-1, 1e0, 1e1],
@@ -278,8 +291,16 @@ if bool_plot
             )
             for (k, rv) in enumerate(results)
                 yv = getresultfield(rv, metric)
+                if xaxis == :t
+                    xa = getresultfield(rv, :t)
+                elseif xaxis == :k
+                    xa = 1:(yv|>length)
+                else
+                    xa = getresultfield(rv, :kgh)
+                end
+
                 plot!(fig,
-                    xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
+                    xa,
                     yv,
                     label=method_names[k],
                     linewidth=1.5,
@@ -290,9 +311,9 @@ if bool_plot
                     # seriescolor=colors[k]
                 )
             end
-            savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.tex")
-            savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.pdf")
-            savefig(fig, "/tmp/$metric-logistic-$name-$xaxis.png")
+            # savefig(fig, "./$metric-logistic-$name-$xaxis.tex")
+            savefig(fig, "./$metric-logistic-$name-$xaxis.pdf")
+            savefig(fig, "./$metric-logistic-$name-$xaxis.png")
         end
     end
 end
