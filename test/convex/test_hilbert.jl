@@ -44,53 +44,57 @@ Random.seed!(1)
 
 
 H = Hilbert(n)
+# H = rand(Float64, n, n)
+# H = H'H + 1e-6 * I
 g = rand(Float64, n)
 
 for δ in [1e-5, 1e-7, 1e-9, 1e-10]
 
     r = Dict()
     # 
-    r["GHM-Lanczos"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-CG"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-GMRES"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-rGMRES"] = KrylovInfo(normres=0.0, numops=0)
+    r["GHM (Lanczos)"] = KrylovInfo(normres=0.0, numops=0)
+    r["CG"] = KrylovInfo(normres=0.0, numops=0)
+    r["GMRES"] = KrylovInfo(normres=0.0, numops=0)
+    r["rGMRES"] = KrylovInfo(normres=0.0, numops=0)
     samples = 5
     κ = LinearAlgebra.cond(H + δ .* LinearAlgebra.I)
     for idx in 1:samples
         w₀ = rand(Float64, n)
-        Fw(w) = [H * w[1:end-1] + g .* w[end]; w[1:end-1]' * g + δ * w[end]]
+        Fw(w) = [H * w[1:end-1] + g .* w[end]; w[1:end-1]' * g - δ * w[end]]
         Hw(w) = (H + δ .* LinearAlgebra.I) * w
         Fc = DRSOM.Counting(Fw)
         Hc = DRSOM.Counting(Hw)
         @info "data reading finished"
 
         max_iteration = 200
-        ε = 1e-6
+        ε = 1e-7
+        gₙ = g |> norm
+        εₙ = 1e-4 * gₙ
 
         rl = KrylovKit.eigsolve(
-            Fc, [w₀; 1], 1, :SR, Lanczos(tol=ε / 10, maxiter=max_iteration, verbosity=3, eager=true);
+            Fc, [w₀; 1], 1, :SR, Lanczos(tol=ε, maxiter=max_iteration, verbosity=3, eager=true);
         )
         λ₁ = rl[1]
         ξ₁ = rl[2][1]
 
-        r["GHM-Lanczos"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
-        r["GHM-Lanczos"].numops += rl[end].numops
+        r["GHM (Lanczos)"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
+        r["GHM (Lanczos)"].numops += rl[end].numops
 
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, CG(; tol=ε, maxiter=max_iteration, verbosity=3);
+            Hc, -g, w₀, CG(; tol=εₙ, maxiter=max_iteration, verbosity=3);
         )
-        r["Newton-CG"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-CG"].numops += rl[end].numops
+        r["CG"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["CG"].numops += rl[end].numops
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, GMRES(; tol=ε, maxiter=1, krylovdim=max_iteration, verbosity=3);
+            Hc, -g, w₀, GMRES(; tol=εₙ, maxiter=1, krylovdim=max_iteration, verbosity=3);
         )
-        r["Newton-GMRES"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-GMRES"].numops += rl[end].numops
+        r["GMRES"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["GMRES"].numops += rl[end].numops
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, GMRES(; tol=ε, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
+            Hc, -g, w₀, GMRES(; tol=εₙ, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
         )
-        r["Newton-rGMRES"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-rGMRES"].numops += rl[end].numops
+        r["rGMRES"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["rGMRES"].numops += rl[end].numops
     end
 
     for (k, v) in r
@@ -126,7 +130,8 @@ fig = groupedbar(
     bar_position=:dodge,
     group=df.kappa,
     palette=:Paired_8,
-    xlabel="Method",
+    # xlabel="Method",
+    leg=:topright,
     legendfontsize=14,
     labelfontsize=14,
     ylabel=L"Krylov Iterations: $K$"

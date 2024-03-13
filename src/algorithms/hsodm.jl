@@ -22,7 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-12
+    eigtol::Float64 = 1e-8
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang
@@ -144,10 +144,11 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
     end
     if (state.α == 0) || (iter.linesearch == :trustregion)
+        # use a trust-region-style line-search algorithm
         state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
     end
     if (state.α == 0) || (iter.linesearch == :backtrack)
-        # use Hager-Zhang line-search algorithm
+        # use backtrack line-search algorithm
         s = v
         x = state.x
         state.α, fx, kₜ = BacktrackLineSearch(iter, state.∇f, state.fx, x, s)

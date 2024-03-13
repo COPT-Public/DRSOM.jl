@@ -39,20 +39,19 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
-bool_opt = true
+bool_q_preprocessed = bool_opt = false
 bool_plot = true
-bool_q_preprocessed = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
-ε = 2e-8 # * max(g(x0) |> norm, 1)
-λ = 1e-5
+ε = 1.5e-8 # * max(g(x0) |> norm, 1)
+λ = 5e-6
 if bool_q_preprocessed
     # name = "a4a"
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    name = "news20"
     # name = "rcv1"
+    name = "news20"
 
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
@@ -84,46 +83,6 @@ if bool_q_preprocessed
     N = y |> length
 
     x0 = 10 * randn(Float64, n)
-
-    # function g1(w)
-    #     function _g(x, y, w)
-    #         ff = exp(-y * w' * x)
-    #         return -ff / (1 + ff) * y * x
-    #     end
-    #     _pure = vmapreduce(
-    #         (x, y) -> _g(x, y, w),
-    #         +,
-    #         X,
-    #         y
-    #     )
-    #     return _pure / N + λ * w
-    # end
-    # function hvp1(w, v, Hv; eps=1e-8)
-    #     function _hvp(x, y, q, w, v)
-    #         wx = w' * x
-    #         ff = exp(-y * wx)
-    #         return ff / (1 + ff)^2 * q * x' * v
-    #     end
-    #     _pure = vmapreduce(
-    #         (x, y, q) -> _hvp(x, y, q, w, v),
-    #         +,
-    #         X,
-    #         y,
-    #         P
-    #     )
-    #     # copyto!(Hv, 1 / eps .* g(w + eps .* v) - 1 / eps .* g(w))
-    #     copyto!(Hv, _pure ./ N .+ λ .* v)
-    # end
-
-    # function loss1(w)
-    #     _pure = vmapreduce(
-    #         (x, c) -> log(1 + exp(-c * w' * x)),
-    #         +,
-    #         X,
-    #         y
-    #     )
-    #     return _pure / N + 0.5 * λ * w'w
-    # end
 
     function loss(w)
         z = log.(1 .+ exp.(-y .* (Xv * w))) |> sum
@@ -178,13 +137,16 @@ if bool_opt
         time_limit=500
     )
 
-    rn1 = PFH(name=Symbol("iNewton"))(;
+    rn1 = UTR(name=Symbol("iNewton-Grad-1e-5"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=300, tol=ε, freq=1,
-        step=:newton, μ₀=0.0,
-        maxtime=500, linesearch=:backtrack,
         bool_trace=true,
-        direction=:warm
+        subpstrategy=:lanczos,
+        mainstrategy=:newton,
+        initializerule=:unscaled,
+        adaptiverule=:constant,
+        σ₀=5e-5,
+        maxtime=1500
     )
 
     rn2 = UTR(name=Symbol("iNewton-Grad-1e-4"))(;
@@ -211,14 +173,6 @@ if bool_opt
         maxtime=1500
     )
 
-    ra = HSODM(name=Symbol("Adaptive-HSODM"))(;
-        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        direction=:warm, linesearch=:hagerzhang,
-        adaptive=:none,
-        maxtime=1500
-    )
-
     rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
         maxiter=10000, tol=ε, freq=1,
@@ -228,11 +182,14 @@ if bool_opt
         maxtime=500,
     )
 
-    # ru = UTR(name=Symbol("Universal-TRS"))(;
-    #     x0=copy(x0), f=loss, g=g, H=H,
-    #     maxiter=10000, tol=1e-6, freq=1,
-    #     direction=:warm, subpstrategy=:lanczos
-    # )
+    ra = HSODM(name=Symbol("Adaptive-HSODM"))(;
+        x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
+        maxiter=10000, tol=ε, freq=1,
+        direction=:warm, linesearch=:hagerzhang,
+        adaptive=:none,
+        maxtime=1500
+    )
+
 end
 
 
@@ -248,7 +205,7 @@ if bool_plot
     method_names = [
         L"\texttt{Adaptive-HSODM}",
         L"\texttt{Homotopy-HSODM}",
-        L"\texttt{iNewton}",
+        L"\texttt{iNewton-Grad-1e-5}",
         L"\texttt{iNewton-Grad-1e-4}",
         L"\texttt{iNewton-Grad-1e-3}",
         # L"\texttt{Universal-TR}"

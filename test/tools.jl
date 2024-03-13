@@ -92,183 +92,193 @@ end
 
 export StateOptim, optim_to_result, arc_to_result, arc_stop_to_result
 
+add_optim = true
+add_adaptive_reg_jl = true
+if add_optim
+    wrapper_gd(x, loss, g, H, options; kwargs...) =
+        optim_to_result(
+            Optim.optimize(
+                loss, g, x,
+                GradientDescent(;
+                    alphaguess=LineSearches.InitialStatic(),
+                    linesearch=LineSearches.HagerZhang()
+                ),
+                options;
+                inplace=false
+            ), "GD+Wolfe"
+        )
 
-
-wrapper_gd(x, loss, g, H, options; kwargs...) =
-    optim_to_result(
-        Optim.optimize(
-            loss, g, x,
-            GradientDescent(;
-                alphaguess=LineSearches.InitialStatic(),
-                linesearch=LineSearches.HagerZhang()
-            ),
-            options;
-            inplace=false
-        ), "GD+Wolfe"
-    )
-
-wrapper_cg(x, loss, g, H, options; kwargs...) =
-    optim_to_result(
-        Optim.optimize(
-            loss, g, x,
-            ConjugateGradient(;
-                alphaguess=LineSearches.InitialStatic(),
-                linesearch=LineSearches.HagerZhang()
-            ),
-            options;
-            inplace=false
-        ), "CG"
-    )
-wrapper_lbfgs(x, loss, g, H, options; kwargs...) =
-    optim_to_result(
-        Optim.optimize(
-            loss, g, x,
-            LBFGS(;
-                m=10,
-                alphaguess=LineSearches.InitialStatic(),
-                linesearch=LineSearches.HagerZhang()
-            ),
-            options;
-            inplace=false
-        ), "LBFGS+Wolfe"
-    )
-wrapper_newton(x, loss, g, H, options; kwargs...) =
-    optim_to_result(
-        Optim.optimize(
-            loss, g, H, x,
-            NewtonTrustRegion(),
-            options;
-            inplace=false
-        ), "Newton+TR"
-    )
-function wrapper_arc(nlp)
-    reset!(nlp)
-    stats = ARCqKOp(
-        nlp,
-        max_time=max_time,
-        max_iter=max_iter,
-        max_eval=typemax(Int64),
-        verbose=true
-        # atol=atol,
-        # rtol=rtol,
-        # @note: how to set |g|?
-    )
-    # AdaptiveRegularization.jl to my style of results
-    return arc_to_result(nlp, stats, "ARC")
+    wrapper_cg(x, loss, g, H, options; kwargs...) =
+        optim_to_result(
+            Optim.optimize(
+                loss, g, x,
+                ConjugateGradient(;
+                    alphaguess=LineSearches.InitialStatic(),
+                    linesearch=LineSearches.HagerZhang()
+                ),
+                options;
+                inplace=false
+            ), "CG"
+        )
+    wrapper_lbfgs(x, loss, g, H, options; kwargs...) =
+        optim_to_result(
+            Optim.optimize(
+                loss, g, x,
+                LBFGS(;
+                    m=10,
+                    alphaguess=LineSearches.InitialStatic(),
+                    linesearch=LineSearches.HagerZhang()
+                ),
+                options;
+                inplace=false
+            ), "LBFGS+Wolfe"
+        )
+    wrapper_newton(x, loss, g, H, options; kwargs...) =
+        optim_to_result(
+            Optim.optimize(
+                loss, g, H, x,
+                NewtonTrustRegion(),
+                options;
+                inplace=false
+            ), "Newton+TR"
+        )
 end
+if add_adaptive_reg_jl
+    function wrapper_arc(nlp)
+        reset!(nlp)
+        stats, _ = ARCqKOp(
+            nlp,
+            max_time=max_time,
+            max_iter=max_iter,
+            max_eval=typemax(Int64),
+            verbose=true
+            # atol=atol,
+            # rtol=rtol,
+            # @note: how to set |g|?
+        )
+        # AdaptiveRegularization.jl to my style of results
+        return arc_to_result(nlp, stats, "ARC")
+    end
 
-function wrapper_tr_st(nlp)
-    reset!(nlp)
-    stats = ST_TROp(
-        nlp,
-        max_time=max_time,
-        max_iter=max_iter,
-        max_eval=typemax(Int64),
-        verbose=true
-        # atol=atol,
-        # rtol=rtol,
-        # @note: how to set |g|?
-    )
-    # AdaptiveRegularization.jl to my style of results
-    return arc_to_result(nlp, stats, "TRST")
+    function wrapper_tr_st(nlp)
+        reset!(nlp)
+        stats, _ = ST_TROp(
+            nlp,
+            max_time=max_time,
+            max_iter=max_iter,
+            max_eval=typemax(Int64),
+            verbose=true
+            # atol=atol,
+            # rtol=rtol,
+            # @note: how to set |g|?
+        )
+        # AdaptiveRegularization.jl to my style of results
+        return arc_to_result(nlp, stats, "TRST")
+    end
 end
-
 
 
 
 ##########################################################
 # MY VARIANTS
 ##########################################################
+add_drsom = true
+add_hsodm = true
+add_utr = true
+if add_drsom
+    alg_drsom = DRSOM2()
+    wrapper_drsom(x, loss, g, H, options; kwargs...) =
+        alg_drsom(;
+            x0=copy(x), f=loss, g=g, H=H,
+            fog=:direct,
+            sog=:hess,
+            options...
+        )
+    wrapper_drsomh(x, loss, g, H, options; kwargs...) =
+        alg_drsom(;
+            x0=copy(x), f=loss, g=g, H=H,
+            fog=:direct,
+            sog=:hess,
+            options...
+        )
+    wrapper_drsomf(x, loss, g, H, options; kwargs...) =
+        alg_drsom(;
+            x0=copy(x), f=loss,
+            fog=:forward,
+            sog=:forward,
+            options...
+        )
+    wrapper_drsomb(x, loss, g, H, options; kwargs...) =
+        alg_drsom(;
+            x0=copy(x), f=loss,
+            fog=:backward,
+            sog=:backward,
+            options...
+        )
+    wrapper_drsomd(x, loss, g, H, options; kwargs...) =
+        alg_drsom(;
+            x0=copy(x), f=loss, g=g,
+            fog=:direct,
+            sog=:prov,
+            kwargs...,
+            options...
+        )
+end
+if add_hsodm
+    alg_hsodm = HSODM()
+    wrapper_hsodm(x, loss, g, H, options; kwargs...) =
+        alg_hsodm(;
+            x0=copy(x), f=loss, g=g, H=H,
+            linesearch=:hagerzhang,
+            direction=:warm,
+            adaptive=:mishchenko,
+            options...
+        )
+    alg_hsodm_hvp = HSODM()
+    wrapper_hsodm_hvp(x, loss, g, H, options; kwargs...) =
+        alg_hsodm_hvp(;
+            x0=copy(x), f=loss, g=g,
+            linesearch=:hagerzhang,
+            # linesearch=:backtrack,
+            direction=:warm,
+            adaptive=:mishchenko,
+            kwargs...,
+            options...
+        )
+    alg_hsodm_arc = HSODM(; name=:HSODMA)
+    wrapper_hsodm_arc(x, loss, g, H, options; kwargs...) =
+        alg_hsodm_arc(;
+            x0=copy(x), f=loss, g=g, H=H,
+            linesearch=:none,
+            direction=:warm,
+            adaptive=:arc,
+            options...
+        )
+end
+if add_utr
+    alg_utr = UTR(; name=:UTR)
+    wrapper_utr(x, loss, g, H, options; kwargs...) =
+        alg_utr(;
+            x0=copy(x), f=loss, g=g, H=H,
+            subpstrategy=:direct,
+            options...
+        )
 
-alg_drsom = DRSOM2()
-wrapper_drsom(x, loss, g, H, options; kwargs...) =
-    alg_drsom(;
-        x0=copy(x), f=loss, g=g, H=H,
-        fog=:direct,
-        sog=:hess,
-        options...
-    )
-wrapper_drsomh(x, loss, g, H, options; kwargs...) =
-    alg_drsom(;
-        x0=copy(x), f=loss, g=g, H=H,
-        fog=:direct,
-        sog=:hess,
-        options...
-    )
-wrapper_drsomf(x, loss, g, H, options; kwargs...) =
-    alg_drsom(;
-        x0=copy(x), f=loss,
-        fog=:forward,
-        sog=:forward,
-        options...
-    )
-wrapper_drsomb(x, loss, g, H, options; kwargs...) =
-    alg_drsom(;
-        x0=copy(x), f=loss,
-        fog=:backward,
-        sog=:backward,
-        options...
-    )
-wrapper_drsomd(x, loss, g, H, options; kwargs...) =
-    alg_drsom(;
-        x0=copy(x), f=loss, g=g,
-        fog=:direct,
-        sog=:prov,
-        kwargs...,
-        options...
-    )
+    wrapper_iutr(x, loss, g, H, options; kwargs...) =
+        alg_utr(;
+            x0=copy(x), f=loss, g=g, H=H,
+            subpstrategy=:lanczos,
+            options...
+        )
 
-alg_hsodm = HSODM()
-wrapper_hsodm(x, loss, g, H, options; kwargs...) =
-    alg_hsodm(;
-        x0=copy(x), f=loss, g=g, H=H,
-        linesearch=:hagerzhang,
-        direction=:warm,
-        adaptive=:mishchenko,
-        options...
-    )
-alg_hsodm_hvp = HSODM()
-wrapper_hsodm_hvp(x, loss, g, H, options; kwargs...) =
-    alg_hsodm_hvp(;
-        x0=copy(x), f=loss, g=g,
-        linesearch=:hagerzhang,
-        direction=:warm,
-        adaptive=:mishchenko,
-        kwargs...,
-        options...
-    )
-alg_hsodm_arc = HSODM(; name=:HSODMArC)
-wrapper_hsodm_arc(x, loss, g, H, options; kwargs...) =
-    alg_hsodm_arc(;
-        x0=copy(x), f=loss, g=g, H=H,
-        linesearch=:none,
-        direction=:warm,
-        adaptive=:arc,
-        options...
-    )
-alg_utr = UTR(; name=:UTR)
-wrapper_utr(x, loss, g, H, options; kwargs...) =
-    alg_utr(;
-        x0=copy(x), f=loss, g=g, H=H,
-        subpstrategy=:direct,
-        options...
-    )
-
-wrapper_iutr(x, loss, g, H, options; kwargs...) =
-    alg_utr(;
-        x0=copy(x), f=loss, g=g, H=H,
-        subpstrategy=:lanczos,
-        options...
-    )
-
-wrapper_iutr_hvp(x, loss, g, H, options; kwargs...) =
-    alg_utr(;
-        x0=copy(x), f=loss, g=g,
-        subpstrategy=:lanczos,
-        kwargs...,
-        options...
-    )
-
+    wrapper_iutr_hvp(x, loss, g, H, options; kwargs...) =
+        alg_utr(;
+            x0=copy(x), f=loss, g=g,
+            subpstrategy=:lanczos,
+            kwargs...,
+            options...
+        )
+end
 
 
 # My solvers and those in Optim.jl

@@ -72,7 +72,8 @@ for (f, param_combination) in PROBLEMS
                     r = v(x0, loss, g, H, options_drsom; hvp=hvp)
                     line = [
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
-                        r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
+                        # r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
+                        r.k, neval_obj(nlp), neval_grad(nlp) + neval_hprod(nlp), neval_hess(nlp),
                         r.state.ϵ, r.state.fx, r.state.t,
                         r.state.ϵ <= this_tol
                     ]
