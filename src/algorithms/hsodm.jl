@@ -18,11 +18,11 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     g::Tg = nothing   # gradient function
     H::TH = nothing   # hessian function
     hvp::Th = nothing # hessian-vector product
-    fvp::Union{Function,Nothing} = nothing # hessian-vector product of Fk (defined from hvp)
+    fvp::Union{Function,Nothing} = nothing # hessian-vector product of Fₖ (defined from hvp)
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-12
+    eigtol::Float64 = 1e-8
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang
@@ -42,31 +42,35 @@ Base.@kwdef mutable struct HSODMState{R,Tx}
     x::Tx             # iterate
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
-    ∇f::Tx            # gradient of f at x
-    ∇fz::Tx           # gradient of f at z
-    ∇fb::Tx           # buffer of hvps
     y::Tx             # forward point
     z::Tx             # previous point
     d::Tx             # momentum/fixed-point diff at iterate (= x - z)
-    Δ::R              # trust-region radius
-    dq::R             # decrease of estimated quadratic model
-    df::R             # decrease of the real function value
-    ρ::R              # trs descrease ratio: ρ = df/dq
-    ϵ::R              # eps 2: residual for gradient 
+    ξ::Tx             # eigenvector
+    ∇f::Tx            # gradient of f at x
+    ∇fz::Tx           # gradient of f at z
+    ∇fb::Tx           # buffer of hvps
+    Δ::R = 1e10       # "trust-region" radius
+    dq::R = 0.0       # decrease of estimated quadratic model
+    df::R = 0.0       # decrease of the real function value
+    ρ::R = 0.0        # trs descrease ratio: ρ = df/dq
+    ϵ::R = 0.0        # eps: residual for gradient 
     α::R = 1e-5       # step size
     γ::R = 1e-5       # trust-region style parameter γ
     σ::R = 1e3        # adaptive arc style parameter σ
-    kᵥ::Int = 1       # krylov iterations
-    kₜ::Int = 1        # inner iterations 
     t::R = 0.0        # running time
     λ₁::Float64 = 0.0 # smallest curvature if available
-    δ::Float64 = 1e-3  # smallest curvature if available
-    ξ::Tx             # eigenvector
-    kf::Int = 0       # function evaluations
-    kg::Int = 0       # gradient evaluations
-    kH::Int = 0       #  hessian evaluations
-    kh::Int = 0       #      hvp evaluations
-    k₂::Int = 0       # 2 oracle evaluations
+    δ::Float64 = -1e-4  # second diagonal if available
+    #########################################################
+    kₜ::Int = 1        #     inner iterations 
+    kᵥ::Int = 1       #     krylov iterations
+    kf::Int = 0       #   function evaluations
+    kg::Int = 0       #   gradient evaluations
+    kgh::Int = 0      # gradient + hvp evaluations
+    kH::Int = 0       #    hessian evaluations
+    kh::Int = 0       #        hvp evaluations
+    k₂::Int = 0       # 2nd oracle evaluations
+    kₛ::Int = 0       #  stagnation counter
+    #########################################################
 end
 
 
@@ -75,102 +79,34 @@ function Base.iterate(iter::HSODMIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
-    grad_f_x = similar(z)
     grad_f_x = iter.g(z)
     n = length(z)
     Hv = similar(grad_f_x)
-    if iter.hvp === nothing
-        H = iter.H(z)
-        # construct homogeneous system
-        B = Symmetric([H grad_f_x; SparseArrays.spzeros(n)' -1e-3])
-        vals, vecs, info = KrylovKit.eigsolve(
-            B, n + 1, 1, :SR, Float64;
-            issymmetric=true, tol=iter.eigtol
-        )
-    else
-        fvp(x, g, v, Hv, d) = (
-            iter.hvp(x, v[1:end-1], Hv);
-            [
-                Hv + v[end] * g
-                g'v[1:end-1] + d * v[end]
-            ]
-        )
-        iter.fvp = fvp
-        ff(v) = iter.fvp(z, grad_f_x, v, Hv, 0)
-        vals, vecs, info = KrylovKit.eigsolve(
-            ff, n + 1, 1, :SR, Float64;
-            issymmetric=true, tol=iter.eigtol
-        )
-    end
-    kᵥ = info.numops
-    λ₁ = vals[1]
-    ξ = vecs[1]
-    v = reshape(ξ[1:end-1], n)
-    t₀ = ξ[end]
-    (abs(t₀) > 1e-3) && (v = v / t₀)
-
-    vn = norm(v)
-    if iter.hvp === nothing
-        vHv = (v'*H*v/2)[]
-    else
-        vHv = v' * Hv
-    end
-    vg = (v'*grad_f_x)[]
-    bool_reverse_v = vg > 0
-    # reverse this v if g'v > 0
-    v = (-1)^bool_reverse_v * v
-    vg = (-1)^bool_reverse_v * vg
-    α = 0.0
-    # now use a LS to solve (state.α)
-    if iter.linesearch == :hagerzhang
-        # use Hager-Zhang line-search algorithm
-        α, fx, kₜ = HagerZhangLineSearch(iter, grad_f_x, fz, z, v)
-    end
-    if (α == 0) || (iter.linesearch == :trustregion)
-        α, fx, kₜ = TRStyleLineSearch(iter, z, v, vHv, vg, 1.0)
-    end
-    if (α == 0) || (iter.linesearch == :backtrack)
-        # use Hager-Zhang line-search algorithm
-        α, fx, kₜ = BacktrackLineSearch(iter, grad_f_x, fz, z, v)
-    end
-    if (α == 0) || (iter.linesearch == :none)
-        α = 1.0
-        fx = iter.f(z + v * α)
-        kₜ = 1
-    else
-    end
-    y = z + α .* v
-    fx = iter.f(y)
-    dq = -α^2 * vHv / 2 - α * vg
-    df = fz - fx
-    ro = df / dq
-    Δ = vn * α
-    t = (Dates.now() - iter.t).value / 1e3
-    d = y - z
     state = HSODMState(
-        x=y,
-        y=y,
+        x=z,
+        y=z,
         z=z,
-        fx=fx,
+        d=zeros(n),
+        fx=fz,
         fz=fz,
         ∇f=grad_f_x,
         ∇fz=z,
         ∇fb=Hv,
-        α=α,
-        d=d,
-        Δ=Δ,
-        dq=dq,
-        df=df,
-        ρ=ro,
-        ϵ=norm(grad_f_x, 2),
-        γ=1e-6,
-        kᵥ=kᵥ,
-        kₜ=kₜ,
-        t=t,
-        δ=0.0,
-        ξ=ones(length(z) + 1),
-        λ₁=λ₁
+        ξ=ones(Float64, n + 1),
+        ϵ=grad_f_x |> norm,
     )
+    if iter.hvp === nothing
+        return state, state
+    end
+    fvp(x, g, v, Hv, d) = (
+        iter.hvp(x, v[1:end-1], Hv);
+        [
+            Hv + v[end] * g
+            g'v[1:end-1] + d * v[end]
+        ]
+    )
+    iter.fvp = fvp
+    ff(v) = iter.fvp(z, grad_f_x, v, Hv, 0)
     return state, state
 end
 
@@ -184,18 +120,16 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
 
     state.∇f = iter.g(state.x)
     n = state.∇f |> length
-    ng = norm(state.∇f)
+    gₙ = norm(state.∇f)
 
+    # construct homogeneous system and solve
     if iter.hvp === nothing
         H = iter.H(state.x)
-        # construct homogeneous system
         B = Symmetric([H state.∇f; SparseArrays.spzeros(n)' state.δ])
-
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
             B, iter, state, iter.adaptive_param; verbose=iter.verbose > 1
         )
     else
-
         n = length(z)
         ff(v) = iter.fvp(state.x, state.∇f, v, state.∇fb, state.δ)
         kᵥ, k₂, v, vn, vg, vHv = AdaptiveHomogeneousSubproblem(
@@ -210,10 +144,11 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         state.α, fx, kₜ = HagerZhangLineSearch(iter, state.∇f, state.fx, x, s)
     end
     if (state.α == 0) || (iter.linesearch == :trustregion)
+        # use a trust-region-style line-search algorithm
         state.α, fx, kₜ = TRStyleLineSearch(iter, state.z, v, vHv, vg, 4 * state.Δ / vn)
     end
     if (state.α == 0) || (iter.linesearch == :backtrack)
-        # use Hager-Zhang line-search algorithm
+        # use backtrack line-search algorithm
         s = v
         x = state.x
         state.α, fx, kₜ = BacktrackLineSearch(iter, state.∇f, state.fx, x, s)
@@ -230,7 +165,19 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
         )
         return state, state
     end
+    #################################################################
     # summarize
+    #################################################################
+    if hsodm_stucking_criterion(iter, state)
+        state.kₛ += 1
+    else
+        state.kₛ = 0
+    end
+    if state.kₛ > 10
+        state.status = false
+    else
+        state.status = true
+    end
     state.Δ = state.α * vn
     x = y = state.z + v * state.α
     dq = -state.α^2 * vHv / 2 - state.α * vg
@@ -243,24 +190,67 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.dq = dq
     state.df = df
     state.d = x - z
-    state.kᵥ = kᵥ
+    state.kᵥ += kᵥ
     state.k₂ += k₂
     state.kₜ = kₜ
     state.ϵ = norm(state.∇f)
     state.t = (Dates.now() - iter.t).value / 1e3
 
-    if ng > 5e-3
-        state.δ = 1e-1
-    end
-    if state.λ₁ < 0
-        state.δ = state.δ + 8e-3
-    else
-        state.δ = state.δ - 1e-2
+    #################################################################
+    # adjust δ, 
+    #   if it is not adjusted in the ArC style
+    #################################################################
+    # if ng > 5e-3
+    #     state.δ = 1e-1
+    # end
+    # if state.λ₁ < 0
+    #     state.δ = state.δ + 8e-3
+    # else
+    #     state.δ = state.δ - 1e-2
+    # end
+    if iter.adaptive == :none
+        state.δ = 0
+    elseif iter.adaptive == :mishchenko
+        if iter.hvp === nothing
+            σ1 = hsodm_rules_mishchenko(iter, state, gₙ, H)
+        else
+            σ1 = hsodm_rules_mishchenko(iter, state, gₙ)
+        end
+        state.δ = -state.ϵ / σ1
     end
     counting(iter, state)
-    state.status = true
+
     return state, state
 
+end
+
+@doc """
+    implement the strategy of Mishchenko [Algorithm 2.3, AdaN+](SIOPT, 2023)
+    this is always accepting method
+"""
+function hsodm_rules_mishchenko(iter, state, args...)
+    σ = (iter.g(state.z) |> norm) / abs(state.δ)
+    dx = state.d
+    gx = state.∇fz
+    gy = state.∇f
+    if iter.hvp === nothing
+        gₙ, Hx, _... = args
+        M = (norm(gy - gx - Hx * dx)) / norm(dx)^2
+    else
+        iter.hvp(state.z, dx, state.∇fb)
+        M = (norm(gy - gx - state.∇fb)) / norm(dx)^2
+    end
+    σ1 = max(
+        σ / √2,
+        √M
+    )
+    @debug "details:" norm(dx) norm(gy - gx) σ σ1
+    return σ1
+end
+
+
+function hsodm_stucking_criterion(iter::HSODMIteration, state::HSODMState)
+    return false
 end
 
 hsodm_stopping_criterion(tol, state::HSODMState) =
@@ -269,9 +259,10 @@ hsodm_stopping_criterion(tol, state::HSODMState) =
 function counting(iter::T, state::S) where {T<:HSODMIteration,S<:HSODMState}
     try
         state.kf = getfield(iter.f, :counter)
-        state.kg = getfield(iter.g, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
         state.kh = hasproperty(iter.hvp, :counter) ? getfield(iter.hvp, :counter) : 0
+        state.kg = getfield(iter.g, :counter)
+        state.kgh = state.kg + state.kh * 2
     catch
     end
 end
@@ -362,11 +353,12 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:HSODMIteration,S<:HSODM
     println(io, "oracle calls:")
     @printf io " (main)          k       := %d  \n" k
     @printf io " (function)      f       := %d  \n" s.kf
-    @printf io " (first-order)   g(+hvp) := %d  \n" s.kg + s.kh
-    @printf io " (first-order)  hvp      := %d  \n" s.kh
+    @printf io " (first-order)   g       := %d  \n" s.kg
+    @printf io " (first-order)   g(+hvp) := %d  \n" s.kgh
     @printf io " (second-order)  H       := %d  \n" s.kH
+    @printf io " (second-order)  hvp     := %d  \n" s.kh
     @printf io " (sub-problem)   P       := %d  \n" s.k₂
-    @printf io " (sub-problem)   kₕ       := %d  \n" s.kᵥ
+    @printf io " (sub-calls)     kᵥ      := %d  \n" s.kᵥ
     @printf io " (running time)  t       := %.3f  \n" s.t
     println(io, "-"^length(t.LOG_SLOTS))
     flush(io)

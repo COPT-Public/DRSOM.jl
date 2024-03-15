@@ -91,7 +91,7 @@ function TRARC end
 function TRARC(nlp::AbstractNLPModel{T, S}; kwargs...) where {T, S}
   nlpstop = NLPStopping(nlp; optimality_check = (pb, state) -> norm(state.gx), kwargs...)
   nlpstop = TRARC(nlpstop; kwargs...)
-  return stopping_to_stats(nlpstop)
+  return stopping_to_stats(nlpstop), nlpstop #stopping_to_stats(nlpstop)
 end
 
 for fun in union(keys(solvers_const), keys(solvers_nls_const))
@@ -112,7 +112,7 @@ for fun in union(keys(solvers_const), keys(solvers_nls_const))
     function $fun(nlp::AbstractNLPModel{T, S}; kwargs...) where {T, S}
       nlpstop = NLPStopping(nlp; optimality_check = (pb, state) -> norm(state.gx), kwargs...)
       nlpstop = $fun(nlpstop; kwargs...)
-      return stopping_to_stats(nlpstop)
+      return stopping_to_stats(nlpstop), nlpstop
     end
   end
   @eval export $fun

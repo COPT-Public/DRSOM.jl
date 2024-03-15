@@ -1,12 +1,13 @@
 # beta: adaptive hsodm subproblem
 
-# Base.@kwdef mutable struct AdaptiveHomogeneousSubproblem
-
+using Dates
 using Roots
 using SparseArrays
 using ArnoldiMethod
 using LDLFactorizations
-using Krylov
+
+# using Krylov
+using KrylovKit
 using LinearOperators
 
 
@@ -47,7 +48,7 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
     kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(B, iter, state)
 
     # non-adaptive mode
-    if iter.adaptive === :none
+    if iter.adaptive != :arc
         state.λ₁ = λ₁
         state.ξ = ξ
         return kᵥ, k₂, v, vn, vg, vHv
@@ -139,7 +140,6 @@ function AdaptiveHomogeneousSubproblem(B, iter, state, adaptive_param::AR; verbo
 end
 
 
-# adaptive GHMs wrapping ArC style
 function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param::AR; verbose::Bool=false)
     kᵥ = 1 # krylov iterations
     k₂ = 1 # second-order eigenvalue calls
@@ -147,7 +147,7 @@ function AdaptiveHomogeneousSubproblem(f::Function, iter, state, adaptive_param:
     kᵥ, λ₁, ξ, t₀, v, vn, vg, vHv = homogeneous_eigenvalue(f, iter, state)
 
     # non-adaptive mode
-    if iter.adaptive === :none
+    if iter.adaptive != :arc
         state.λ₁ = λ₁
         # printstyled(ξ)
         state.ξ = ξ[:, 1]
@@ -255,26 +255,28 @@ end
 homogeneous_eigenvalue = Counting(_inner_homogeneous_eigenvalue)
 
 function eigenvalue(
-    B::Symmetric{Float64,F}, iter, state; bg=:krylov#:arnoldi
+    B::Symmetric{Float64,F}, iter, state; bg=:arnoldi
 ) where {F<:Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}}
 
     n = length(state.x)
+    _reltol = state.ϵ > 1e-4 ? 1e-5 : iter.eigtol
+    _tol = _reltol # * state.ϵ
     if bg == :krylov
         if iter.direction == :cold
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         end
         return vals[1], vecs[1], info
     end
     if bg == :arnoldi
         try
             # arnoldi is not stable?
-            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, which=SR())
+            decomp, history = ArnoldiMethod.partialschur(B, nev=1, restarts=50000, tol=_reltol, which=SR())
             vals, vecs = partialeigen(decomp)
             return vals[1], vecs, ArnoldiInfo(numops=1)
         catch
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
             return vals[1], vecs[1], info
         end
     end
@@ -282,12 +284,13 @@ end
 
 
 function eigenvalue(f::Function, iter, state; bg=:krylov)
+    _tol = (state.ϵ > 1e-4 ? 1e-5 : iter.eigtol) # * state.ϵ
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
-            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
         else
-            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=state.ϵ > 1e-4 ? 1e-6 : iter.eigtol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         end
     end
     return vals, vecs, info
@@ -326,16 +329,65 @@ d, __unused_info = KrylovKit.linsolve(
 """
 function NewtonStep(iter::I, μ, g, state; verbose::Bool=false
 ) where {I}
+    @debug "started Newton-step @" Dates.now()
+
     n = g |> length
+    gn = (g |> norm)
     opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
-    d, __unused_info = cg(opH, -Vector(g); verbose=0, atol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, itmax=200)
-    # if norm(d) < 1e-8
-    #     f(v) = iter.ff(state.∇fb, v)
-    #     d, __unused_info = KrylovKit.linsolve(
-    #         f, -Vector(g);
-    #         isposdef=true, issymmetric=true
-    #     )
-    # end
-    return 1, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    d, _info = cg(
+        opH, -Vector(g);
+        # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+        rtol=state.ϵ > 1e-4 ? gn * 1e-4 : gn * 1e-6,
+        itmax=200,
+        verbose=verbose ? 3 : 0
+    )
+
+    return _info.niter, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    # f(v) = iter.ff(state.∇fb, v)
+    # d, _info = KrylovKit.linsolve(
+    #     f, -Vector(g), -Vector(g),
+    #     # isposdef=true,
+    #     # issymmetric=true,
+    #     # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+    #     # maxiter=200,
+    #     # verbosity=3
+    #     CG(;
+    #         # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol,
+    #         tol=1e-4 * (g |> norm),
+    #         maxiter=n * 2,
+    #         verbosity=verbose ? 3 : 0
+    #     ),
+    # )
+    # return _info.numops, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+end
+
+function NewtonStep(opH::LinearOperator, g, state; verbose::Bool=false)
+    @debug "started Newton-step @" Dates.now()
+    n = g |> length
+    gn = (g |> norm)
+    d, _info = cg(
+        opH, -Vector(g);
+        rtol=state.ϵ > 1e-4 ? gn * 1e-4 : gn * 1e-6,
+        itmax=200,
+        verbose=verbose ? 3 : 0
+    )
+
+    return _info.niter, 1, d, norm(d), d' * state.∇f, d' * state.∇fb
+    # f(v) = iter.ff(state.∇fb, v)
+    # d, _info = KrylovKit.linsolve(
+    #     f, -Vector(g), -Vector(g),
+    #     # isposdef=true,
+    #     # issymmetric=true,
+    #     # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol, 
+    #     # maxiter=200,
+    #     # verbosity=3
+    #     CG(; 
+    #         # rtol=state.ϵ > 1e-4 ? 1e-7 : iter.eigtol,
+    #         tol=1e-4*(g|>norm),
+    #         maxiter=n*2, 
+    #         verbosity=3
+    #     ),
+    # )
+
 end
 

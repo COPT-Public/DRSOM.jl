@@ -6,7 +6,7 @@ log_freq = 200
 precision = tol_grad = 1e-5
 max_iter = 20000
 max_time = 200.0
-test_before_start = false
+test_before_start = true
 
 
 ##########################################
@@ -33,8 +33,11 @@ filter_cutest_problem(nlp) = true
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
 # filter_optimization_method(k) = k == :HSODM
-filter_optimization_method(k) = k == [:UTR, :iUTR]
+filter_optimization_method(k) = k == :HSODMhvp
+# filter_optimization_method(k) = k ∈ [:HSODMhvp, :ARC, :TRST]
+# filter_optimization_method(k) = k ∈ [:iUTRhvp]
 # filter_optimization_method(k) = k == :ARC
+# filter_optimization_method(k) = k == :TRST
 # filter_optimization_method(k) = k == :HSODMArC
 # filter_optimization_method(k) = k ∈ [:HSODM, :DRSOMHomo]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :HSODM, :DRSOMHomo]
@@ -44,8 +47,11 @@ filter_optimization_method(k) = k == [:UTR, :iUTR]
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104
 # PROBLEMS = TEST
-PROBLEMS = UNC_PROBLEMS_4to200
+# PROBLEMS = UNC_PROBLEMS_4to200
 # PROBLEMS = UNC_PROBLEMS_200to5000
+# PROBLEMS = UNC_PROBLEMS_GOOD
+PROBLEMS = UNC_PROBLEMS_COMB[155:end]
+# PROBLEMS = UNC_PROBLEM_NO_PARAMS
 
 if test_before_start
     ######################################################################
@@ -61,26 +67,26 @@ if test_before_start
         hvp(x, v, Hv) = NLPModels.hprod!(nlp, x, v, Hv)
 
 
-        @testset "DRSOM" begin
-            options_drsom = Dict(
-                :maxiter => max_iter,
-                :maxtime => max_time,
-                :tol => 1e-5,
-                :freq => log_freq
-            )
-            r = wrapper_drsom(x0, loss, g, H, options_drsom)
-            @test r.state.ϵ < 1e-4
-        end
-        @testset "DRSOM-d" begin
-            options_drsom = Dict(
-                :maxiter => max_iter,
-                :maxtime => max_time,
-                :tol => 1e-5,
-                :freq => log_freq
-            )
-            r = wrapper_drsomd(x0, loss, g, H, options_drsom; hvp=hvp)
-            @test r.state.ϵ < 1e-4
-        end
+        # @testset "DRSOM" begin
+        #     options_drsom = Dict(
+        #         :maxiter => max_iter,
+        #         :maxtime => max_time,
+        #         :tol => 1e-5,
+        #         :freq => log_freq
+        #     )
+        #     r = wrapper_drsom(x0, loss, g, H, options_drsom)
+        #     @test r.state.ϵ < 1e-4
+        # end
+        # @testset "DRSOM-d" begin
+        #     options_drsom = Dict(
+        #         :maxiter => max_iter,
+        #         :maxtime => max_time,
+        #         :tol => 1e-5,
+        #         :freq => log_freq
+        #     )
+        #     r = wrapper_drsomd(x0, loss, g, H, options_drsom; hvp=hvp)
+        #     @test r.state.ϵ < 1e-4
+        # end
         @testset "HSODM" begin
             options_drsom = Dict(
                 :maxiter => max_iter,
@@ -91,6 +97,26 @@ if test_before_start
             r = wrapper_hsodm(x0, loss, g, H, options_drsom)
             @test r.state.ϵ < 1e-4
         end
+        # @testset "UTR" begin
+        #     options_drsom = Dict(
+        #         :maxiter => max_iter,
+        #         :maxtime => max_time,
+        #         :tol => 1e-5,
+        #         :freq => log_freq
+        #     )
+        #     r = wrapper_utr(x0, loss, g, H, options_drsom)
+        #     @test r.state.ϵ < 1e-4
+        # end
+        # @testset "UTR" begin
+        #     options_drsom = Dict(
+        #         :maxiter => max_iter,
+        #         :maxtime => max_time,
+        #         :tol => 1e-5,
+        #         :freq => log_freq
+        #     )
+        #     r = wrapper_iutr_hvp(x0, loss, g, H, options_drsom; hvp=hvp)
+        #     @test r.state.ϵ < 1e-4
+        # end
         finalize(nlp)
     end
 end
