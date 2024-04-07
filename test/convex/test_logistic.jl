@@ -39,19 +39,19 @@ using .LP
 using LoopVectorization
 using LIBSVMFileIO
 
-bool_q_preprocessed = bool_opt = false
+bool_q_preprocessed = bool_opt = true
 bool_plot = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1.5e-8 # * max(g(x0) |> norm, 1)
-λ = 5e-6
+λ = 1e-6
 if bool_q_preprocessed
     # name = "a4a"
     # name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    # name = "rcv1"
-    name = "news20"
+    name = "rcv1"
+    # name = "news20"
 
     X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
     Xv = hcat(X...)'
