@@ -14,7 +14,7 @@ const lsa::HagerZhangEx = HagerZhangEx(
 const lsb::BackTrackingEx = BackTrackingEx(
     ρ_hi=0.8,
     ρ_lo=0.1,
-    order=2
+    order=3
 )
 
 @doc raw"""

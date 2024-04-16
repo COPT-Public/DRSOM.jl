@@ -333,6 +333,7 @@ function Base.show(io::IO, t::T) where {T<:HSODMIteration}
     @printf io " inner iteration limit := %s\n" t.itermax
     @printf io " line-search algorithm := %s\n" t.linesearch
     @printf io "    adaptive  strategy := %s\n" t.adaptive
+    @printf io "       eigenvalue init := %s\n" t.direction
     if t.hvp !== nothing
         @printf io "     second-order info := using provided Hessian-vector product\n"
     elseif t.H !== nothing

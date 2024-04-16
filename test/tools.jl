@@ -240,7 +240,7 @@ if add_hsodm
             x0=copy(x), f=loss, g=g,
             linesearch=:hagerzhang,
             # linesearch=:backtrack,
-            direction=:warm,
+            direction=:cold,
             adaptive=:mishchenko,
             kwargs...,
             options...

@@ -261,10 +261,13 @@ function _eigenvalue(
     n = length(state.x)
     # _reltol = state.ϵ > 1e-4 ? 1e-5 : iter.eigtol
     # _tol = _reltol * state.ϵ
-    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-3 * state.ϵ)
+    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-2 * state.ϵ)
     if bg == :krylov
         if iter.direction == :cold
-            vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
+            q = zeros(n+1)
+            q[end]=1.0
+            # vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
+            vals, vecs, info = KrylovKit.eigsolve(B, q, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         else
             vals, vecs, info = KrylovKit.eigsolve(B, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         end
@@ -285,11 +288,13 @@ end
 
 
 function _eigenvalue(f::Function, iter, state; bg=:krylov)
-    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-3 * state.ϵ)
+    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-2 * state.ϵ)
     if bg == :krylov
         if iter.direction == :cold
             n = length(state.x)
-            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
+            q = zeros(n+1)
+            q[end]=1.0
+            vals, vecs, info = KrylovKit.eigsolve(f, q, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         else
             vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         end
