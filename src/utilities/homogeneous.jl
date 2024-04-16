@@ -264,8 +264,8 @@ function _eigenvalue(
     _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-2 * state.ϵ)
     if bg == :krylov
         if iter.direction == :cold
-            q = zeros(n+1)
-            q[end]=1.0
+            q = zeros(n + 1)
+            q[end] = 1.0
             # vals, vecs, info = KrylovKit.eigsolve(B, n + 1, 1, :SR, Float64; tol=_tol, issymmetric=true, eager=true)
             vals, vecs, info = KrylovKit.eigsolve(B, q, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         else
@@ -288,14 +288,25 @@ end
 
 
 function _eigenvalue(f::Function, iter, state; bg=:krylov)
-    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-2 * state.ϵ)
+    _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-1 * state.ϵ)
     if bg == :krylov
+        n = length(state.x)
         if iter.direction == :cold
-            n = length(state.x)
-            q = zeros(n+1)
-            q[end]=1.0
+            vals, vecs, info = KrylovKit.eigsolve(f, n + 1, 1, :SR; tol=_tol, issymmetric=true, eager=true)
+        elseif iter.direction == :skewed
+            q = zeros(n + 1)
+            q[end] = 1.0
             vals, vecs, info = KrylovKit.eigsolve(f, q, 1, :SR; tol=_tol, issymmetric=true, eager=true)
-        else
+        elseif iter.direction == :warm
+            vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
+        elseif iter.direction == :auto
+            q = zeros(n + 1)
+            if state.α < 1
+                q = state.ξ
+            else
+                # q[1:end-1] = (rand(Float64, n) |> normalize) * 0.05
+                q[end] = 1.0
+            end
             vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         end
     end
@@ -303,7 +314,9 @@ function _eigenvalue(f::Function, iter, state; bg=:krylov)
 end
 
 
-
+################################################################################
+# NEWTON STEPS
+################################################################################
 function NewtonStep(
     H::SparseMatrixCSC{R,T}, μ, g, state; verbose::Bool=false
 ) where {R<:Real,T<:Int}
