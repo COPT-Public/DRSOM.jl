@@ -32,6 +32,8 @@ using LIBSVMFileIO
 using DataFrames
 using CSV
 using SpecialMatrices
+using CategoricalArrays
+
 Base.@kwdef mutable struct KrylovInfo
     normres::Float64
     numops::Float64
@@ -52,7 +54,7 @@ for δ in [1e-5, 1e-7, 1e-9, 1e-10]
 
     r = Dict()
     # 
-    r["GHM (Lanczos)"] = KrylovInfo(normres=0.0, numops=0)
+    r["Lanczos (GHM)"] = KrylovInfo(normres=0.0, numops=0)
     r["CG"] = KrylovInfo(normres=0.0, numops=0)
     r["GMRES"] = KrylovInfo(normres=0.0, numops=0)
     r["rGMRES"] = KrylovInfo(normres=0.0, numops=0)
@@ -77,8 +79,8 @@ for δ in [1e-5, 1e-7, 1e-9, 1e-10]
         λ₁ = rl[1]
         ξ₁ = rl[2][1]
 
-        r["GHM (Lanczos)"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
-        r["GHM (Lanczos)"].numops += rl[end].numops
+        r["Lanczos (GHM)"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
+        r["Lanczos (GHM)"].numops += rl[end].numops
 
         rl = KrylovKit.linsolve(
             Hc, -g, w₀, CG(; tol=εₙ, maxiter=max_iteration, verbosity=3);
@@ -108,7 +110,7 @@ kappa = [@sprintf "%0.1e" k for k in tmat[2, :]]
 
 df = DataFrame(
     delta=[L"$\delta=$%$k" for k in delta],
-    kappa=[L"$\kappa_H=$%$k" for k in kappa],
+    kappa=["$k" for k in kappa],
     method=tmat[3, :],
     k=tmat[4, :],
     ϵ=tmat[5, :]
@@ -123,20 +125,33 @@ print(df.set_index(["delta", "kappa", "method"]).to_latex(multirow=True, longtab
 """
 
 using StatsPlots
+
+
+function Base.unique(ctg::CategoricalArray)
+    l = levels(ctg)
+    newctg = CategoricalArray(l)
+    levels!(newctg, l)
+end
+
+ctg = CategoricalArray(df.method)
+levels!(ctg, ["Lanczos (GHM)", "GMRES", "rGMRES", "CG"])
+
+
 pgfplotsx()
 fig = groupedbar(
-    df.method,
+    ctg,
     convert(Vector{Float64}, df.k),
     bar_position=:dodge,
     group=df.kappa,
     palette=:Paired_8,
-    # xlabel="Method",
-    leg=:topright,
+    leg=:topleft,
     legendfontsize=14,
     labelfontsize=14,
-    ylabel=L"Krylov Iterations: $K$"
+    ylabel=L"$K$: Krylov Iterations",
+    ytickfont=font(12),
+    xtickfont=font(12),
 )
 
 savefig(fig, "/tmp/hilbert.tex")
 savefig(fig, "/tmp/hilbert.pdf")
-savefig(fig, "/tmp/hilbert.png")
+# savefig(fig, "/tmp/hilbert.png")
