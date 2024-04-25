@@ -33,7 +33,7 @@ write(csvfile, join(header, ","), "\n")
 # todo, add field kf, kg, kH, and inner iteration #
 p = Progress(length(PROBLEMS); showspeed=true)
 for (f, param_combination) in PROBLEMS
-    for pc in param_combination
+    for pc in [param_combination][:]
         try
             nlp = CUTEstModel(f, "-param", pc)
             name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
@@ -72,7 +72,8 @@ for (f, param_combination) in PROBLEMS
                     r = v(x0, loss, g, H, options_drsom; hvp=hvp)
                     line = [
                         precision, nlp.meta.name, "\"$pc\"", nlp.meta.nvar, k,
-                        r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
+                        # r.k, r.state.kf, r.state.kg + r.state.kh, r.state.kH,
+                        r.k, neval_obj(nlp), neval_grad(nlp) + neval_hprod(nlp), neval_hess(nlp),
                         r.state.ϵ, r.state.fx, r.state.t,
                         r.state.ϵ <= this_tol
                     ]

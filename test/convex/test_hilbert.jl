@@ -32,6 +32,8 @@ using LIBSVMFileIO
 using DataFrames
 using CSV
 using SpecialMatrices
+using CategoricalArrays
+
 Base.@kwdef mutable struct KrylovInfo
     normres::Float64
     numops::Float64
@@ -44,53 +46,57 @@ Random.seed!(1)
 
 
 H = Hilbert(n)
+# H = rand(Float64, n, n)
+# H = H'H + 1e-6 * I
 g = rand(Float64, n)
 
 for δ in [1e-5, 1e-7, 1e-9, 1e-10]
 
     r = Dict()
     # 
-    r["GHM-Lanczos"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-CG"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-GMRES"] = KrylovInfo(normres=0.0, numops=0)
-    r["Newton-rGMRES"] = KrylovInfo(normres=0.0, numops=0)
+    r["Lanczos (GHM)"] = KrylovInfo(normres=0.0, numops=0)
+    r["CG"] = KrylovInfo(normres=0.0, numops=0)
+    r["GMRES"] = KrylovInfo(normres=0.0, numops=0)
+    r["rGMRES"] = KrylovInfo(normres=0.0, numops=0)
     samples = 5
     κ = LinearAlgebra.cond(H + δ .* LinearAlgebra.I)
     for idx in 1:samples
         w₀ = rand(Float64, n)
-        Fw(w) = [H * w[1:end-1] + g .* w[end]; w[1:end-1]' * g + δ * w[end]]
+        Fw(w) = [H * w[1:end-1] + g .* w[end]; w[1:end-1]' * g - δ * w[end]]
         Hw(w) = (H + δ .* LinearAlgebra.I) * w
         Fc = DRSOM.Counting(Fw)
         Hc = DRSOM.Counting(Hw)
         @info "data reading finished"
 
         max_iteration = 200
-        ε = 1e-6
+        ε = 1e-7
+        gₙ = g |> norm
+        εₙ = 1e-4 * gₙ
 
         rl = KrylovKit.eigsolve(
-            Fc, [w₀; 1], 1, :SR, Lanczos(tol=ε / 10, maxiter=max_iteration, verbosity=3, eager=true);
+            Fc, [w₀; 1], 1, :SR, Lanczos(tol=ε, maxiter=max_iteration, verbosity=3, eager=true);
         )
         λ₁ = rl[1]
         ξ₁ = rl[2][1]
 
-        r["GHM-Lanczos"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
-        r["GHM-Lanczos"].numops += rl[end].numops
+        r["Lanczos (GHM)"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
+        r["Lanczos (GHM)"].numops += rl[end].numops
 
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, CG(; tol=ε, maxiter=max_iteration, verbosity=3);
+            Hc, -g, w₀, CG(; tol=εₙ, maxiter=max_iteration, verbosity=3);
         )
-        r["Newton-CG"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-CG"].numops += rl[end].numops
+        r["CG"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["CG"].numops += rl[end].numops
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, GMRES(; tol=ε, maxiter=1, krylovdim=max_iteration, verbosity=3);
+            Hc, -g, w₀, GMRES(; tol=εₙ, maxiter=1, krylovdim=max_iteration, verbosity=3);
         )
-        r["Newton-GMRES"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-GMRES"].numops += rl[end].numops
+        r["GMRES"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["GMRES"].numops += rl[end].numops
         rl = KrylovKit.linsolve(
-            Hc, -g, w₀, GMRES(; tol=ε, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
+            Hc, -g, w₀, GMRES(; tol=εₙ, maxiter=4, krylovdim=div(max_iteration, 4), verbosity=3);
         )
-        r["Newton-rGMRES"].normres += ((Hw(rl[1]) + g) |> norm)
-        r["Newton-rGMRES"].numops += rl[end].numops
+        r["rGMRES"].normres += ((Hw(rl[1]) + g) |> norm)
+        r["rGMRES"].numops += rl[end].numops
     end
 
     for (k, v) in r
@@ -104,7 +110,7 @@ kappa = [@sprintf "%0.1e" k for k in tmat[2, :]]
 
 df = DataFrame(
     delta=[L"$\delta=$%$k" for k in delta],
-    kappa=[L"$\kappa_H=$%$k" for k in kappa],
+    kappa=["$k" for k in kappa],
     method=tmat[3, :],
     k=tmat[4, :],
     ϵ=tmat[5, :]
@@ -119,19 +125,33 @@ print(df.set_index(["delta", "kappa", "method"]).to_latex(multirow=True, longtab
 """
 
 using StatsPlots
+
+
+function Base.unique(ctg::CategoricalArray)
+    l = levels(ctg)
+    newctg = CategoricalArray(l)
+    levels!(newctg, l)
+end
+
+ctg = CategoricalArray(df.method)
+levels!(ctg, ["Lanczos (GHM)", "GMRES", "rGMRES", "CG"])
+
+
 pgfplotsx()
 fig = groupedbar(
-    df.method,
+    ctg,
     convert(Vector{Float64}, df.k),
     bar_position=:dodge,
     group=df.kappa,
     palette=:Paired_8,
-    xlabel="Method",
+    leg=:topleft,
     legendfontsize=14,
     labelfontsize=14,
-    ylabel=L"Krylov Iterations: $K$"
+    ylabel=L"$K$: Krylov Iterations",
+    ytickfont=font(12),
+    xtickfont=font(12),
 )
 
 savefig(fig, "/tmp/hilbert.tex")
 savefig(fig, "/tmp/hilbert.pdf")
-savefig(fig, "/tmp/hilbert.png")
+# savefig(fig, "/tmp/hilbert.png")

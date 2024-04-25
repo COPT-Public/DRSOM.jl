@@ -9,6 +9,7 @@ there exists a factor ρ = ρ(c₁) such that α' ≦ ρ α.
 This is a modification of the algorithm described in Nocedal Wright (2nd ed), Sec. 3.5.
 """
 
+using NaNMath
 using Parameters
 @with_kw struct BackTrackingEx{TF,TI}
     c_1::TF = 1e-4
@@ -116,5 +117,5 @@ function (ls::BackTrackingEx)(ϕ, αinitial::Tα, ϕ_0, dϕ_0) where {Tα}
         ϕx_0, ϕx_1 = ϕx_1, ϕ(α_2)
     end
 
-    return α_2, ϕx_1
+    return α_2, ϕx_1, iteration
 end

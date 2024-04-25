@@ -42,7 +42,7 @@ using .LP
 using LIBSVMFileIO
 
 bool_plot = false
-bool_opt = false
+bool_opt = true
 bool_setup = true
 
 if bool_setup
@@ -89,24 +89,24 @@ if bool_opt
         show_every=10,
         time_limit=500
     )
-    r_lbfgs = Optim.optimize(
-        loss, grad, x0,
-        LBFGS(; alphaguess=LineSearches.InitialStatic(),
-            linesearch=LineSearches.BackTracking()), options;
-        inplace=false
-    )
+    # r_lbfgs = Optim.optimize(
+    #     loss, grad, x0,
+    #     LBFGS(; alphaguess=LineSearches.InitialStatic(),
+    #         linesearch=LineSearches.BackTracking()), options;
+    #     inplace=false
+    # )
     r_newton = Optim.optimize(
         loss, grad, hess, x0,
         Newton(; alphaguess=LineSearches.InitialStatic()
         ), options;
         inplace=false
     )
-    r = HSODM()(;
-        x0=copy(x0), f=loss, g=grad, H=hess,
-        maxiter=10000, tol=ε, freq=1,
-        direction=:warm, linesearch=:hagerzhang
-    )
-    r.name = "Adaptive HSODM"
+    # r = HSODM()(;
+    #     x0=copy(x0), f=loss, g=grad, H=hess,
+    #     maxiter=10000, tol=ε, freq=1,
+    #     direction=:warm, linesearch=:hagerzhang
+    # )
+    # r.name = "Adaptive HSODM"
     rh = PFH()(;
         x0=copy(x0), f=loss, g=grad, H=hess,
         maxiter=10000, tol=ε, freq=1,
@@ -119,7 +119,7 @@ if bool_opt
     ru = UTR(;)(;
         x0=copy(x0), f=loss, g=grad, H=hess,
         maxiter=10000, tol=1e-6, freq=1,
-        direction=:warm, subpstrategy=:direct = 1
+        direction=:warm, subpstrategy=:direct
     )
 end
 
