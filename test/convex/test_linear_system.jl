@@ -37,7 +37,6 @@ Base.@kwdef mutable struct KrylovInfo
     numops::Float64
 end
 table = []
-name = "a4a"
 # name = "a9a"
 # name = "w4a"
 # name = "covtype"
@@ -45,7 +44,8 @@ name = "a4a"
 # name = "rcv1"
 # names = ["a4a"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
 # names = ["covtype"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
-names = ["a4a", "a9a", "w4a", "covtype", "rcv1"]
+names = ["news20"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
+# names = ["a4a", "a9a", "w4a", "covtype", "rcv1"]
 @warn "news20 is very big..., consider run on a server"
 # use the data matrix of libsvm
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
