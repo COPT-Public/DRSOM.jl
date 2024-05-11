@@ -22,7 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-8
+    eigtol::Float64 = 1e-7
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang

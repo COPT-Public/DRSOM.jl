@@ -51,25 +51,31 @@ names = ["news20"] #, "a9a", "w4a", "covtype", "rcv1", "news20"]
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 Random.seed!(1)
 
+Xv = nothing
+y = nothing
+Q = nothing
+n = nothing
+
 for name in names
+    global Xv, y, Q, n
     @info "run $name"
-    X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
-    Xv = hcat(X...)'
-    Rc = 1 ./ f1(Xv)[:]
-    Xv = (Rc |> Diagonal) * Xv
-    if name in ["covtype"]
-        y = convert(Vector{Float64}, (y .- 1.5) * 2)
-    else
+    if true
+        X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
+        Xv = hcat(X...)'
+        Rc = 1 ./ f1(Xv)[:]
+        Xv = (Rc |> Diagonal) * Xv
+        if name in ["covtype"]
+            y = convert(Vector{Float64}, (y .- 1.5) * 2)
+        else
+        end
+        n = Xv[1, :] |> length
+        Random.seed!(1)
+        N = y |> length
+        @info "load successful $n $N $(nnz(Xv))"
     end
-
-    γ = 1e-4
-    n = Xv[1, :] |> length
-    Random.seed!(1)
-    N = y |> length
-
-    Q = Xv' * Xv
+    γ = 1e-6
     function gfs(w)
-        return (Q * w - Xv' * y) / N + γ * w
+        return (Xv' * Xv * w - Xv' * y) / N + γ * w
     end
     r = Dict()
     # 
@@ -78,7 +84,7 @@ for name in names
     r["Newton-GMRES"] = KrylovInfo(normres=0.0, numops=0)
     r["Newton-rGMRES"] = KrylovInfo(normres=0.0, numops=0)
 
-    samples = 5
+    samples = 4
     for idx in 1:samples
         w₀ = rand(Float64, n)
         g = gfs(w₀)
@@ -165,7 +171,7 @@ print(
 ).to_latex(
     multirow=True, 
     longtable=True,
-    float_format="%.1e"
+    float_format="%.1f"
 )
 )
 """

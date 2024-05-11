@@ -239,7 +239,6 @@ if add_hsodm
         alg_hsodm_hvp(;
             x0=copy(x), f=loss, g=g,
             linesearch=:hagerzhang,
-            # linesearch=:backtrack,
             direction=:auto,
             adaptive=:mishchenko,
             kwargs...,
