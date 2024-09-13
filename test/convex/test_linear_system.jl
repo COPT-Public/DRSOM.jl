@@ -9,7 +9,7 @@ include("../tools.jl")
 
 using ArgParse
 using DRSOM
-using Distributions
+
 using LineSearches
 using Optim
 using ProximalOperators

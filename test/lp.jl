@@ -18,9 +18,8 @@ using ArgParse
 using HTTP
 using LinearAlgebra
 using ProximalOperators
-using Statistics
-using Distributions
 using Printf
+using SparseArrays
 
 splitlines(s) = split(s, "\n")
 splitfields(s) = split(s, "\t")
@@ -94,64 +93,25 @@ Base.@kwdef mutable struct LPMinimizationParams
     n::Int64 = 10
     m::Int64 = 100
     p::Float64 = 1
-    nnz::Float64 = 0.5
-    λ::Float64 = 1 / 2
+    nnz::Float64 = 0.15
+    nnzv::Float64 = 0.5
+    λ::Float64 = 5e-2
 end
 
 function create_random_lp(params::LPMinimizationParams)
     n = params.n
     m = params.m
-    D = Normal(0.0, 1.0)
-    A = rand(D, (n, m)) .* rand(Bernoulli(0.15), (n, m))
-    v = rand(Normal(0.0, 1 / n), m) .* rand(Bernoulli(0.5), m)
-    b = A * v + rand(D, (n))
+    A = sprandn(n, m, params.nnz)
+    v = sprandn(m, 1, params.nnzv)
+    v = Matrix(v)[:]
+    b = A * v #+ randn(n)
     return A, v, b
 end
 
-function huberloss(λ, δ, x::Real)
-    if abs(x) <= δ
-        return 0.5 * λ / δ * x^2
-    else
-        return λ * (abs(x) - δ / 2)
-    end
-end
-
-function huberloss(λ, δ, x::Vector)
-    cc = huberloss.(λ, δ, x)
-    return cc |> sum
-end
 # a Lipschitz smoothed version of |x|_p^p, 
 # see: 
 # [1] Ge, D., Jiang, X., Ye, Y.: A note on the complexity of Lp minimization. Mathematical Programming. 129, 285–299 (2011). 
-# [2] Chen, X., Ge, D., Wang, Z., Ye, Y.: Complexity of unconstrained $$L_2-L_p$$ minimization. Math. Program. 143, 371–383 (2014). https://doi.org/10.1007/s10107-012-0613-0
-# using function (|x| + ϵ)^p
-function smoothlp(λ, ϵ, p::Real, x::Real)
-    return λ * (abs(x) + ϵ)^p
-
-end
-
-function smoothlp(λ, ϵ, p::Real, x::Vector)
-    smoothlp.(λ, ϵ, p, x) |> sum
-end
-
-function smoothlpg(λ, ϵ, p::Real, x::Real)
-    λ * p * (abs(x) + ϵ)^(p - 1) * sign(x)
-end
-
-function smoothlpg(λ, ϵ, p::Real, x::Vector)
-    smoothlpg.(λ, ϵ, p, x)
-end
-
-function smoothlph(λ, ϵ, p::Real, x::Real)
-    λ * p * (p - 1) * (abs(x) + ϵ)^(p - 2)
-end
-
-function smoothlph(λ, ϵ, p::Real, x::Vector)
-    smoothlph.(λ, ϵ, p, x) |> Diagonal
-end
-
-
-# a really smoothed version
+# [2] Chen, X., Ge, D., Wang, Z., Ye, Y.: Complexity of unconstrained $$L_2-L_p$$ minimization. Math. Program. 143, 371–383 (2014).
 function huberlike(λ, ϵ, p::Real, x::Real)
     if abs(x) > ϵ
         return λ * abs(x)^p

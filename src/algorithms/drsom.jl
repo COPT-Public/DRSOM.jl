@@ -100,7 +100,7 @@ function construct_quadratic_model(
     gf::V, hvp::V, z::V
 ) where {V<:VecOrMat}
     if iter.fog == :direct
-        copy!(gf, iter.g(z))
+        copyto!(gf, iter.g(z))
     else
         iter.ga(gf, z)
     end
@@ -123,7 +123,7 @@ end
 function construct_quadratic_model(
     iter::DRSOMIteration, state::DRSOMState
 )
-    if iter.fog == :direct
+    if !isnothing(iter.g)
         copy!(state.∇f, iter.g(state.x))
     else
         iter.ga(state.∇f, state.x)
@@ -145,7 +145,7 @@ function construct_quadratic_model(
             H = iter.H(state.x)
             Hg = H * state.∇f
             Hd = H * state.d
-        elseif iter.sog == :prov
+        elseif iter.sog == :hvp
             # means the hvp is provided,
             #   e.g. in the NLPModels
             iter.hvp(state.x, state.∇f, Hg)
@@ -210,7 +210,7 @@ function Base.iterate(iter::DRSOMIteration)
         Δ=α₁,
         dq=dq,
         df=df,
-        ρ=ro,
+        ρ=isnan(ro) ? -1e6 : ro,
         ϵ=norm(gx),
         γ=1e-6,
         λ=1e-6,
@@ -262,7 +262,7 @@ function Base.iterate(iter::DRSOMIteration, state::DRSOMState)
                 state.x = x
                 state.y = y
                 state.fx = fx
-                state.ρ = ro
+                state.ρ = isnan(ro) ? -1e6 : ro
                 state.dq = dq
                 state.df = df
                 state.d = x - z
@@ -419,7 +419,7 @@ function Base.show(io::IO, t::T) where {T<:DRSOMIteration}
         @printf io "use interpolation\n"
     elseif t.sog == :hess
         @printf io "use provided Hessian\n"
-    elseif t.sog == :prov
+    elseif t.sog == :hvp
         @printf io "use provided Hessian-vector product\n"
     else
         throw(ErrorException("unknown differentiation mode\n"))

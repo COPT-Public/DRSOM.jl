@@ -7,7 +7,6 @@ const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
 
 # various utilities
-# include("utilities/logger.jl")
 include("utilities/autodiff.jl")
 include("utilities/fbtools.jl")
 include("utilities/iterationtools.jl")
@@ -24,6 +23,7 @@ include("utilities/lanczos.jl")
 include("algorithms/interface.jl")
 include("algorithms/legacy/drsom_legacy.jl")
 include("algorithms/drsom.jl")
+include("algorithms/drsomex.jl")
 include("algorithms/hsodm.jl")
 include("algorithms/pfh.jl")
 include("algorithms/utr.jl")
@@ -33,6 +33,7 @@ include("nonsmooth/fbedrsom.jl")
 
 # Algorithm Aliases
 DRSOM2 = DimensionReducedSecondOrderMethod
+DRSOMEx = DimensionReducedSecondOrderMethodEx
 HSODM = HomogeneousSecondOrderDescentMethod
 PFH = PathFollowingHSODM
 UTR = UniversalTrustRegion
@@ -43,5 +44,5 @@ function __init__()
 end
 
 export Result
-export DRSOM2, HSODM, PFH, UTR, FBEDRSOM
+export DRSOM2, HSODM, PFH, UTR, FBEDRSOM, DRSOMEx
 end # module

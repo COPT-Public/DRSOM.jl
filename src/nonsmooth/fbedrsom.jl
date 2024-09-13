@@ -239,7 +239,7 @@ function Base.iterate(iter::FBEDRSOMIteration, state::FBEDRSOMState)
                 state.α₂ = α₂
                 # @note: save the trial step
                 state.y = y
-                state.ρ = ro
+                state.ρ = isnan(ro) ? -1e6 : ro
                 state.dq = dq
                 state.dϕ = dϕ
                 state.kₜ = kₜ
@@ -402,7 +402,7 @@ function Base.show(io::IO, t::T) where {T<:FBEDRSOMIteration}
         @printf io "use interpolation\n"
     elseif t.sog == :hess
         @printf io "use provided Hessian\n"
-    elseif t.sog == :prov
+    elseif t.sog == :hvp
         @printf io "use provided Hessian-vector product\n"
     else
         throw(ErrorException("unknown differentiation mode\n"))

@@ -10,7 +10,7 @@ include("../tools.jl")
 
 using ArgParse
 using DRSOM
-using Distributions
+
 using LineSearches
 using Optim
 using ProximalOperators
@@ -144,7 +144,7 @@ if bool_opt
             maxtime=500,
             direction=:cold
         )
-        push!(r[:cold], getresultfield(rc,  :kᵥ)) 
+        push!(r[:cold], getresultfield(rc, :kᵥ))
         rh = PFH(name=Symbol("PF-HSODM"))(;
             x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
             maxiter=10000, tol=ε, freq=1,
@@ -153,13 +153,13 @@ if bool_opt
             maxtime=500,
             direction=:warm
         )
-        push!(r[:warm], getresultfield(rh,  :kᵥ))
+        push!(r[:warm], getresultfield(rh, :kᵥ))
     end
 end
 
 
 if bool_plot
-    
+
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
     method_id = Dict(
         :warm => 2,
@@ -171,7 +171,7 @@ if bool_plot
     )
     colors = palette(:default)[1:2]
     xaxis = :k
-    metric = :kᵥ 
+    metric = :kᵥ
     @printf("plotting results\n")
 
     pgfplotsx()
@@ -200,7 +200,7 @@ if bool_plot
         println(yv)
         errorline!(fig,
             1:60,
-            convert(Matrix{Float64}, yv)[1:60,:],
+            convert(Matrix{Float64}, yv)[1:60, :],
             label=method_names[k],
             linewidth=0.5,
             # errorstyle=:plume,
@@ -211,12 +211,12 @@ if bool_plot
             # markercolor=:match,
             # linestyle=linestyles[k]
             # seriescolor=colors[k]
-            
+
         )
     end
     savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.tex")
     savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.pdf")
     savefig(fig, "/tmp/$metric-warmstart-$name-$xaxis.png")
-    
+
 end
 

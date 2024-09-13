@@ -3,7 +3,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
+
 
 
 @doc raw"""
@@ -34,16 +34,7 @@ function SimpleTrustRegionSubproblem(
     # the dimension of Q and G should not be two big.
     _Q, _G = Symmetric(Q), Symmetric(G)
     _c = c
-    if mode == :reg
-        ######################################
-        # the strict regularization mode
-        ######################################
-        # strictly solve a quadratic regularization problems
-        #   given a regularizer :λ 
-        ######################################
-        alpha = -(_Q + λ .* _G) \ _c
-        return alpha
-    end
+
     if (mode == :free) && (length(_c) == 2)
         ######################################
         # the radius free mode
@@ -77,12 +68,28 @@ function SimpleTrustRegionSubproblem(
     ######################################
     # compute eigenvalues.
     ######################################
-    eigvalues = eigvals(_Q, _G)
+    eigvalues = begin
+        try
+            eigvals(_Q + 1e-10I, _G)
+        catch e
+            eigvals(_Q + 1e1I, _G)
+        end
+    end
     sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(1e-8, -lmin)
+    lmin, lmax = eigvalues[1], eigvalues[end]
+    lb = max(1e-15, -lmin)
     ub = max(lb, lmax) + Δl
-
+    if mode == :reg
+        ######################################
+        # the strict regularization mode
+        ######################################
+        # strictly solve a quadratic regularization problems
+        #   given a regularizer :λ 
+        ######################################
+        state.λ = λ = state.γ * lmax + max(1 - state.γ, 0) * lb
+        alpha = -(_Q + λ .* _G) \ _c
+        return alpha
+    end
     if mode == :trbisect
         ######################################
         # the strict radius mode

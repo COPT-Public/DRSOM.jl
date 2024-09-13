@@ -16,7 +16,7 @@ using ProximalOperators
 using DRSOM
 using ProximalAlgorithms
 using Random
-using Distributions
+
 using Plots
 using Printf
 using LazyStack
@@ -26,6 +26,7 @@ using LaTeXStrings
 using LinearAlgebra
 using Statistics
 using LinearOperators
+using SparseArrays
 using Optim
 using Test
 using .LP
@@ -34,10 +35,9 @@ using CUTEst
 
 params = LP.parse_commandline()
 m = n = params.n
-D = Normal(0.0, 1.0)
-A = rand(D, (n, m)) .* rand(Bernoulli(0.85), (n, m))
-v = rand(D, m) .* rand(Bernoulli(0.5), m)
-b = A * v + rand(D, (n))
+A = sprand(n, m, 0.85)
+v = rand(m)
+b = A * v + rand(n)
 x0 = zeros(m)
 
 Q = A' * A
@@ -47,32 +47,35 @@ L, _ = LinearOperators.normest(Q, 1e-4)
 @printf("preprocessing finished\n")
 
 
-f_composite(x) = 1 / 2 * x' * Q * x - h' * x
+f(x) = 1 / 2 * x' * Q * x - h' * x
 g(x) = Q * x - h
+hvp(x, v, buff) = copyto!(buff, Q * v)
 H(x) = Q
 
 
 @testset "INTERFACE" begin
     @testset "DRSOM" begin
         alg = DRSOM2()
-        @testset "direct hess" begin
-            r = alg(x0=copy(x0), f=f_composite, g=g, H=H, fog=:direct, sog=:hess)
+        @testset "grad & hess" begin
+            r = alg(x0=copy(x0), f=f, g=g, H=H, sog=:hess)
         end
-        @testset "direct direct" begin
-            r = alg(x0=copy(x0), f=f_composite, g=g, fog=:direct, sog=:direct)
+        @testset "grad & direct" begin
+            r = alg(x0=copy(x0), f=f, g=g, sog=:direct)
         end
-
+        @testset "grad & hvp" begin
+            r = alg(x0=copy(x0), f=f, g=g, hvp=hvp, sog=:hvp)
+        end
         @testset "forward direct" begin
-            r = alg(x0=copy(x0), f=f_composite, fog=:forward, sog=:direct)
+            r = alg(x0=copy(x0), f=f, fog=:forward, sog=:direct)
         end
         @testset "forward forward" begin
-            r = alg(x0=copy(x0), f=f_composite, fog=:forward, sog=:forward)
+            r = alg(x0=copy(x0), f=f, fog=:forward, sog=:forward)
         end
         @testset "backward direct" begin
-            r = alg(x0=copy(x0), f=f_composite, fog=:backward, sog=:direct)
+            r = alg(x0=copy(x0), f=f, fog=:backward, sog=:direct)
         end
         @testset "backward backward" begin
-            r = alg(x0=copy(x0), f=f_composite, fog=:backward, sog=:backward)
+            r = alg(x0=copy(x0), f=f, fog=:backward, sog=:backward)
         end
     end
 

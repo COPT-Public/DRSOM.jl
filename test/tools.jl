@@ -6,7 +6,7 @@ using AdaptiveRegularization
 using ArgParse
 using DRSOM
 using Dates
-using Distributions
+
 using HTTP
 using KrylovKit
 using LaTeXStrings
