@@ -39,7 +39,7 @@ Base.@kwdef mutable struct KrylovInfo
     numops::Float64
 end
 
-n = 100
+n = 300
 table = []
 
 Random.seed!(1)
@@ -48,9 +48,13 @@ Random.seed!(1)
 H = Hilbert(n)
 # H = rand(Float64, n, n)
 # H = H'H + 1e-6 * I
-g = rand(Float64, n)
+g₀ = rand(Float64, n) / 20 / 1e6
+gₙ = g₀ |> norm
 
-for δ in [1e-5, 1e-7, 1e-9, 1e-10]
+# for (iseq, δ₀) in enumerate([1e-3, 1e-5, 1e-7, 1e-8, gₙ^2])
+for (iseq, δ₀) in enumerate([1e-3, 1e-5, 1e-7, 1e-8])
+    δ = δ₀
+    g = copy(g₀)
 
     r = Dict()
     # 
@@ -68,17 +72,16 @@ for δ in [1e-5, 1e-7, 1e-9, 1e-10]
         Hc = DRSOM.Counting(Hw)
         @info "data reading finished"
 
-        max_iteration = 200
+        max_iteration = 2000
         ε = 1e-7
-        gₙ = g |> norm
-        εₙ = 1e-4 * gₙ
+        εₙ = 1e-6
 
         rl = KrylovKit.eigsolve(
             Fc, [w₀; 1], 1, :SR, Lanczos(tol=ε, maxiter=max_iteration, verbosity=3, eager=true);
         )
-        λ₁ = rl[1]
+        λ₁ = rl[1][1]
         ξ₁ = rl[2][1]
-
+        @info "" Fc(ξ₁) λ₁ ξ₁
         r["Lanczos (GHM)"].normres += (Fc(ξ₁) - λ₁ .* ξ₁) |> norm
         r["Lanczos (GHM)"].numops += rl[end].numops
 
@@ -101,6 +104,7 @@ for δ in [1e-5, 1e-7, 1e-9, 1e-10]
 
     for (k, v) in r
         push!(table, [δ, κ, k, v.numops / samples, v.normres / samples])
+        # push!(table, [gₙ, κ, k, v.numops / samples, v.normres / samples])
     end
 end
 
@@ -109,7 +113,10 @@ delta = [@sprintf "%0.1e" k for k in tmat[1, :]]
 kappa = [@sprintf "%0.1e" k for k in tmat[2, :]]
 
 df = DataFrame(
-    delta=[L"$\delta=$%$k" for k in delta],
+    delta=[
+        iseq >= 17 ? L"$\epsilon_{\small\textrm{N}}=$%$k$=\|g_k\|^2$" : L"$\epsilon_{\small\textrm{N}}=$%$k"
+        for (iseq, k) in enumerate(delta)
+    ],
     kappa=["$k" for k in kappa],
     method=tmat[3, :],
     k=tmat[4, :],
@@ -142,14 +149,15 @@ fig = groupedbar(
     ctg,
     convert(Vector{Float64}, df.k),
     bar_position=:dodge,
-    group=df.kappa,
+    group=df.delta,
     palette=:Paired_8,
     leg=:topleft,
     legendfontsize=14,
     labelfontsize=14,
-    ylabel=L"$K$: Krylov Iterations",
+    ylabel="Krylov Iterations",
     ytickfont=font(12),
     xtickfont=font(12),
+    legendfonthalign=:left,
 )
 
 savefig(fig, "/tmp/hilbert.tex")
