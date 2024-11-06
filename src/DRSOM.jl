@@ -27,6 +27,7 @@ include("algorithms/drsomex.jl")
 include("algorithms/hsodm.jl")
 include("algorithms/pfh.jl")
 include("algorithms/utr.jl")
+include("algorithms/atr.jl")
 # nonsmooth algorithms
 include("nonsmooth/fbe.jl")
 include("nonsmooth/fbedrsom.jl")
@@ -36,13 +37,16 @@ DRSOM2 = DimensionReducedSecondOrderMethod
 DRSOMEx = DimensionReducedSecondOrderMethodEx
 HSODM = HomogeneousSecondOrderDescentMethod
 PFH = PathFollowingHSODM
-UTR = UniversalTrustRegion
 FBEDRSOM = ForwardBackwardDimensionReducedSecondOrderMethod
-
+UTR = UniversalTrustRegion
+ATR = AcceleratedUniversalTrustRegion
 function __init__()
     # Logger.initialize()
 end
 
 export Result
-export DRSOM2, HSODM, PFH, UTR, FBEDRSOM, DRSOMEx
+export DRSOM2, DRSOMEx
+export FBEDRSOM
+export HSODM, PFH
+export UTR, ATR
 end # module

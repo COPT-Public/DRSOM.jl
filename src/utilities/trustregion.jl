@@ -154,13 +154,13 @@ using a hybrid bisection + regularized Newton's approach
 ```
 """
 function TrustRegionCholesky(
-    Q,
-    c::Vector{Float64},
-    Δ::Float64=0.0;
-    Δϵ::Float64=1e-2,
+    Q::Union{SparseMatrixCSC,Symmetric{R,SparseMatrixCSC{R,Int}}},
+    c::Vector{R},
+    Δ::R=0.0;
+    Δϵ::R=1e-2,
     λₗ=0.0,
     λᵤ=Inf
-)
+) where {R}
     F = cholesky(Q + λₗ * I, check=false)
     if issuccess(F) # meaning psd
         x = F \ (-c)
@@ -173,13 +173,14 @@ function TrustRegionCholesky(
     if λᵤ < Inf
         λₖ = (λₗ + λᵤ) / 2
     else
+        # use diagonal dominance
         λₖ = ((sum(abs, Q - Diagonal(Q), dims=1)[:] + abs.(diag(Q))) |> maximum) / 2
     end
     k = 1
     bool_indef = false
     p = nothing
     while true
-        F = cholesky(Q + λₖ * I, check=false, perm=p)
+        F = cholesky(Q + λₖ * I; check=false, perm=p)
         if !issuccess(F)
             bool_indef = true
             λₖ *= 1.05
@@ -198,8 +199,6 @@ function TrustRegionCholesky(
 
         l2 = dot(q_l, q_l) / sqrt(norm2_s)^3
         l1 = -(sqrt(norm2_s) - Δ) / sqrt(norm2_s) / Δ
-
-        # @info "this" (-l1 / l2) (norm2_s * (sqrt(norm2_s) - Δ) / (Δ * dot(q_l, q_l)))
 
         dℓ = -(l1 / (l2 + 1e-2))
         if dℓ < 0

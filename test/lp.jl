@@ -152,4 +152,41 @@ function huberlikeh(λ, ϵ, p::Real, x::Vector)
     huberlikeh.(λ, ϵ, p, x) |> Diagonal
 end
 
+function vec_of_sparsevec_to_sparsematrix(vec::Vector{SparseVector{Float64,Int}})
+    ncols = length(X)
+    # Determine the number of rows
+    nrows = maximum(v.n for v in X)
+
+    # Calculate total number of non-zero elements
+    total_nnz = sum(length(v.indices) for v in X)
+
+    # Preallocate column pointers (ncols + 1)
+    colptr = Vector{Int}(undef, ncols + 1)
+    colptr[1] = 1  # Start at index 1
+
+    for j in 1:ncols
+        colptr[j+1] = colptr[j] + length(X[j].indices)
+    end
+
+    # Preallocate row indices and values
+    row_indices = Vector{Int}(undef, total_nnz)
+    values = Vector{Float64}(undef, total_nnz)
+
+    # Fill row_indices and values
+    ptr = 1
+    for j in 1:ncols
+        sv = X[j]
+        for k in 1:length(sv.indices)
+            row_indices[ptr] = sv.indices[k]
+            values[ptr] = sv.values[k]
+            ptr += 1
+        end
+    end
+
+    # Construct the SparseMatrixCSC
+    S = SparseMatrixCSC(nrows, ncols, colptr, row_indices, values)
+    return S
+end
+
+
 end # module

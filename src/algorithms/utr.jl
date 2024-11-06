@@ -217,7 +217,7 @@ function iterate_cholesky(
         k₂ += 1
         @debug """periodic check (main iterate)
             |d|: $(v |> norm):, Δ: $Δ, 
-            θ:  $θ, λₗ: $λₗ, 
+            θ:  $θ, λₗ: $λ₁, 
             kᵢ: $kᵢ, df: $df, 
             ρₐ: $ρₐ
         """
@@ -430,7 +430,7 @@ end
     implement the strategy of Mishchenko [Algorithm 2.3, AdaN+](SIOPT, 2023)
     this is always accepting method
 """
-function initial_rules_mishchenko(state, funcg, Hx, funcH, args...)
+function initial_rules_mishchenko(state::UTRState, funcg, Hx, funcH, args...)
     σ, _... = args
     Δ = 10.0
     bool_acc = true
