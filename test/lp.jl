@@ -15,7 +15,6 @@ see the papers:
 """
 module LP
 using ArgParse
-using HTTP
 using LinearAlgebra
 using ProximalOperators
 using Printf

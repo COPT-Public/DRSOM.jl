@@ -56,8 +56,11 @@ if bool_q_preprocessed
     # name = "news20"
     # name = "rcv1"
 
-    X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
-    Xv = hcat(X...)'
+    X, y = libsvmread("test/instances/$name.libsvm"; dense=false)
+    Is = vcat([x.nzind for (j, x) in enumerate(X)]...)
+    Js = vcat([j * ones(Int, length(x.nzind)) for (j, x) in enumerate(X)]...)
+    Vs = vcat([x.nzval for (j, x) in enumerate(X)]...)
+    Xv = sparse(Is, Js, Vs)'
     Rc = 1 ./ f1(Xv)[:]
     Xv = (Rc |> Diagonal) * Xv
     X = Rc .* X
@@ -66,20 +69,11 @@ if bool_q_preprocessed
         y = convert(Vector{Float64}, (y .- 1.5) * 2)
     else
     end
-    @info begin
-        a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
-        if a > 8
-            BLAS.set_num_threads(8)
-            a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
-        end
-        "using BLAS threads $a"
-    end
+
     @info "data reading finished"
 
     # precompute Q Matrix
-    Qc(x, y) = y^2 * x
-    bool_q_preprocessed && (P = Qc.(X, y))
-    Pv = hcat(P...)'
+    Pv = y .^ 2 .* Xv
 
     n = Xv[1, :] |> length
     Random.seed!(1)

@@ -438,6 +438,160 @@ function iterate_cholesky_nesterov(
 
 end
 
+function iterate_cholesky_monteiro_svaiter(
+    iter::ATRIteration,
+    state::ATRState{R,Tx};
+) where {R,Tx}
+    @debug """Monteiro Svaiter acceleration style
+    """
+    state.z = z = state.x
+    state.fz = fz = state.fx
+    state.∇fz = state.∇f
+
+    # --------------------------------------------------------
+    # compute extrapolation
+    β = 3
+    denom = state.k + β
+
+    # now state.x is the half update after extrapolation
+    state.x = state.k / denom * state.z + β / denom * state.v
+    # --------------------------------------------------------
+
+    state.∇f = iter.g(state.x)
+    state.ϵ = norm(state.∇f)
+    grad_regularizer = state.ϵ |> sqrt
+    decs_regularizer = grad_regularizer^3
+
+    if iter.hvp === nothing
+        H = Symmetric(iter.H(state.x))
+    else
+        throw(
+            ErrorException("only support Hessian mode for direct method")
+        )
+    end
+
+    k₂ = 0
+    γ₁ = 2.0
+    γ₂ = 2.0
+    η = 1.0
+    ρ = 1.0
+
+    # initialize an estimation
+    σ₀, Mₕ, Df, bool_acc = initial_rules_mishchenko(
+        state, iter.g, H, iter.H,
+        state.σ
+    )
+    σ₀ /= 2e1
+    r₀ = 4e0 / σ₀
+    Ω = sqrt(iter.ℓ / 3 * Mₕ)
+    @debug """Mishchenko's initialization
+        estimated Mₕ: $Mₕ,
+        σ: $σ₀
+        r: $r₀
+    """
+    σ = σ₀ * grad_regularizer
+    Δ = r₀ * grad_regularizer
+    @debug """After initialization
+        σ: $σ, 
+        Δ: $Δ, 
+        Df: $Df
+        """
+    # initialize
+    n = state.∇f |> length
+    θ = 0.0
+
+    v, θ, λ₁, kᵢ = TrustRegionCholesky(
+        H + σ * I,
+        state.∇f,
+        Δ;
+    )
+    @debug """periodic check step I
+    |d|: $(v |> norm):, 
+    Δ: $Δ, 
+    θ:  $θ, 
+    λₗ: $λ₁, 
+    kᵢ: $kᵢ
+    """
+    bool_acc = false
+    acc_style = :nothing
+    if θ > 1e-16
+        bool_acc = true
+        acc_style = :direct
+    end
+    @debug """periodic check step II
+    """
+    j₁ = 0
+    while (θ <= 1e-16) && (j₁ < 10)
+        g₊ = iter.g(state.x + v)
+        grad_regularizer = g₊ |> norm |> sqrt
+        σ = σ₀ * grad_regularizer
+        Δ = r₀ * grad_regularizer
+        v, θ, λ₁, kᵢ = TrustRegionCholesky(
+            H + σ * I,
+            state.∇f,
+            Δ;
+        )
+        @debug """inner iterates:
+        |d|:  $(v |> norm)
+          σ:  $σ,
+          Δ:  $Δ
+          θ:  $θ
+       |g₊|:  $(norm(g₊))
+        |g|:  $(norm(state.∇f))
+        """
+        j₁ += 1
+    end
+    return 1
+    bool_acc = θ <= σ
+    acc_style = bool_acc ? :lookahead : :nothing
+    if !bool_acc
+        μ₋ = σ
+        μ₊ = σ + θ
+        v, μ, j = bisect_μ(state, Mₕ, H, state.∇f, μ₋, μ₊)
+        k₂ += j
+        acc_style = :bisection
+    end
+
+    x = state.x + v
+    fx = iter.f(x)
+    df = fz - fx
+    dq = -v'H * v / 2 - v'state.∇f
+    ρₐ = df / dq
+    # update s, v
+    state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(x)
+    ns = norm(state.s)
+    state.v = state.v₀ - Ω * state.s / sqrt(ns)
+    @debug """periodic check (main iterate)
+        |d|: $(v |> norm):, Δ: $Δ, 
+        θ:  $θ, λₗ: $λ₁, 
+        kᵢ: $kᵢ
+    """
+
+    # do this when accept
+    state.σ = max(1e-12, σ / grad_regularizer)
+    state.r = max(Δ / grad_regularizer, 1e-1)
+    state.k₂ += k₂
+    state.kₜ = k₂
+    state.x = x
+    state.y = x
+    state.fx = fx
+    state.ρ = ρₐ
+    state.dq = dq
+    state.df = df
+    state.θ = θ
+    state.d = x - z
+    state.Δ = Δ
+    state.Δₙ = state.d |> norm
+    state.t = (Dates.now() - iter.t).value / 1e3
+    counting(iter, state)
+    state.status = true
+    # @info ρₐ
+    state.k += 1
+    checknan(state)
+    return state, state
+
+end
+
 ####################################################################################################
 # Basic Tools
 ####################################################################################################

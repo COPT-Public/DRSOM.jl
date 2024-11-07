@@ -7,10 +7,8 @@ using ArgParse
 using DRSOM
 using Dates
 
-using HTTP
 using KrylovKit
 using LaTeXStrings
-using LazyStack
 using LineSearches
 using LinearAlgebra
 using LinearOperators
