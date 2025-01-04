@@ -13,7 +13,11 @@
 
 using CUTEst
 using Test
+using Base.Threads
 include("./test_setup.jl")
+
+# Create a global lock
+const file_lock = ReentrantLock()
 
 
 tables = []
@@ -26,6 +30,12 @@ fstamppath = Dates.format(Dates.now(), dateformat"yyyymmddHHMM")
 csvfile = open("cutest-$fstamppath.csv", "w")
 write(csvfile, join(header, ","), "\n")
 
+function thread_safe_write(csvfile, line, fstamp)
+    line_content = join(line, ",") * "," * fstamp * "\n"
+    lock(file_lock) do
+        write(csvfile, line_content)
+    end
+end
 
 ##########################################
 # iteration
@@ -33,7 +43,7 @@ write(csvfile, join(header, ","), "\n")
 # todo, add field kf, kg, kH, and inner iteration #
 p = Progress(length(PROBLEMS); showspeed=true)
 for (f, param_combination) in PROBLEMS
-    for pc in [param_combination][:]
+    Threads.@threads for pc in [param_combination][:]
         try
             nlp = CUTEstModel(f, "-param", pc)
             name = "$(nlp.meta.name)-$(nlp.meta.nvar)"
@@ -91,13 +101,14 @@ for (f, param_combination) in PROBLEMS
                     @warn("instance $f opt $k failed")
                 end
                 # dump
-                write(
-                    csvfile,
-                    join(line, ","),
-                    ",",
-                    fstamp,
-                    "\n"
-                )
+                # write(
+                #     csvfile,
+                #     join(line, ","),
+                #     ",",
+                #     fstamp,
+                #     "\n"
+                # )
+                thread_safe_write(csvfile, line, fstamp)
                 flush(csvfile)
             end
             for (k, v) in OPTIMIZERS_OPTIM
@@ -138,13 +149,14 @@ for (f, param_combination) in PROBLEMS
                     @warn("instance $f opt $k failed")
                 end
                 # dump
-                write(
-                    csvfile,
-                    join(line, ","),
-                    ",",
-                    fstamp,
-                    "\n"
-                )
+                # write(
+                #     csvfile,
+                #     join(line, ","),
+                #     ",",
+                #     fstamp,
+                #     "\n"
+                # )
+                thread_safe_write(csvfile, line, fstamp)
                 flush(csvfile)
             end
             for (k, v) in OPTIMIZERS_NLP
@@ -175,13 +187,14 @@ for (f, param_combination) in PROBLEMS
                     @warn("instance $f opt $k failed")
                 end
                 # dump
-                write(
-                    csvfile,
-                    join(line, ","),
-                    ",",
-                    fstamp,
-                    "\n"
-                )
+                # write(
+                #     csvfile,
+                #     join(line, ","),
+                #     ",",
+                #     fstamp,
+                #     "\n"
+                # )
+                thread_safe_write(csvfile, line, fstamp)
                 flush(csvfile)
             end
             finalize(nlp)

@@ -6,11 +6,9 @@ using AdaptiveRegularization
 using ArgParse
 using DRSOM
 using Dates
-using Distributions
-using HTTP
+
 using KrylovKit
 using LaTeXStrings
-using LazyStack
 using LineSearches
 using LinearAlgebra
 using LinearOperators
@@ -239,7 +237,6 @@ if add_hsodm
         alg_hsodm_hvp(;
             x0=copy(x), f=loss, g=g,
             linesearch=:hagerzhang,
-            # linesearch=:backtrack,
             direction=:auto,
             adaptive=:mishchenko,
             kwargs...,

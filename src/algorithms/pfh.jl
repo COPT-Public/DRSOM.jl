@@ -4,7 +4,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
+
 using LineSearches
 using Krylov
 using LinearOperators
@@ -203,7 +203,7 @@ function Base.iterate(iter::PFHIteration, state::PFHState{R,Tx}) where {R,Tx}
     state.x = x
     state.y = y
     state.fx = fx
-    state.ρ = ro
+    state.ρ = isnan(ro) ? -1e6 : ro
     state.dq = dq
     state.df = df
     state.d = x - z

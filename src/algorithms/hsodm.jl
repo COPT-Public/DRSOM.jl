@@ -4,7 +4,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
+
 using LineSearches
 using SparseArrays
 
@@ -22,7 +22,7 @@ Base.@kwdef mutable struct HSODMIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
     adaptive_param = AR() # todo
-    eigtol::Float64 = 1e-8
+    eigtol::Float64 = 1e-7
     itermax::Int64 = 20
     direction = :warm
     linesearch = :hagerzhang
@@ -186,7 +186,7 @@ function Base.iterate(iter::HSODMIteration, state::HSODMState{R,Tx}) where {R,Tx
     state.x = x
     state.y = y
     state.fx = fx
-    state.ρ = ro
+    state.ρ = isnan(ro) ? -1e6 : ro
     state.dq = dq
     state.df = df
     state.d = x - z

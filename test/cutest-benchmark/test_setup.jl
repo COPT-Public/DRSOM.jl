@@ -13,11 +13,11 @@ test_before_start = true
 # define at run time
 ##########################################
 # test set
-filter_cutest_problem(nlp) = true
+# filter_cutest_problem(nlp) = true
 # small test
 # filter_cutest_problem(nlp) = (4 <= nlp.meta.nvar <= 200)
 # large_test
-# filter_cutest_problem(nlp) = (200 < nlp.meta.nvar <= 5000)
+filter_cutest_problem(nlp) = (1000 <= nlp.meta.nvar <= 5000)
 
 
 # filter_optimization_method(k) = true
@@ -49,9 +49,9 @@ filter_optimization_method(k) = k == :HSODMhvp
 # PROBLEMS = TEST
 # PROBLEMS = UNC_PROBLEMS_4to200
 # PROBLEMS = UNC_PROBLEMS_200to5000
-PROBLEMS = UNC_PROBLEMS_GOOD
+# PROBLEMS = UNC_PROBLEMS_GOOD
 # PROBLEMS = UNC_PROBLEMS_COMB[155:end]
-# PROBLEMS = UNC_PROBLEMS_COMB
+PROBLEMS = UNC_PROBLEMS_COMB
 # PROBLEMS = UNC_PROBLEM_NO_PARAMS
 
 if test_before_start

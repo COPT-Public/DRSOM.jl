@@ -3,6 +3,29 @@
 # I select a set of unconstrained problems
 TEST = [["EXTROSNB", "N=100"]]
 
+UNC_PROBLEM_TEST = [
+    ["CHAINWOO", "NS=1"],
+    ["CHAINWOO", "NS=499"],
+    ["CHNROSNB", "N=25"],
+    ["CHNRSNBM", "N=25"],
+    ["COSINE", "N=100"],
+    ["COSINE", "N=1000"],
+    ["CRAGGLVY", "M=24"],
+    ["CRAGGLVY", "M=499"],
+    ["CURLY10", "N=100"],
+    ["CURLY10", "N=1000"],
+    ["CURLY20", "N=100"],
+    ["CURLY20", "N=1000"],
+    ["CURLY30", "N=1000"],
+    ["DIXMAANA", "M=1000"],
+    ["DIXMAANA", "M=30"],
+    ["DIXMAANB", "M=1000"],
+    ["DIXMAANB", "M=30"],
+    ["DIXMAANC", "M=1000"],
+    ["DIXMAANC", "M=30"],
+    ["DIXMAAND", "M=1000"],
+    ["DIXMAAND", "M=30"],
+]
 
 UNC_PROBLEM_NO_PARAMS = [
     ["ALLINITU", ""],
