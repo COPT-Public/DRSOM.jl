@@ -8,8 +8,8 @@ using LineSearches
 using SparseArrays
 
 const ATR_LOG_SLOTS = @sprintf(
-    "%5s | %5s | %11s | %9s | %7s | %6s | %6s | %8s | %6s \n",
-    "k", "kₜ", "f", "|∇f|", "Δ", "σ", "r", "θ", "t"
+    "%5s | %5s | %11s | %9s | %7s | %6s | %6s | %8s | %6s | %6s \n",
+    "k", "kₜ", "f", "|∇f|", "Δ", "σ", "r", "θ", "t", "pts"
 )
 Base.@kwdef mutable struct ATRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     f::Tf             # f: smooth f
@@ -20,12 +20,22 @@ Base.@kwdef mutable struct ATRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     ff::Union{Function,Nothing} = nothing
     fc::Union{Function,Nothing} = nothing
     opH::Union{LinearOperator,Nothing} = nothing
+    Mₕ::Union{Function,Nothing} = nothing
     H::TH = nothing   # hessian function
     x0::Tx            # initial point
     t::Dates.DateTime = Dates.now()
+    # ----------------------------------------------------------------
+    # atr parameters
+    # scaling parameters for σ and Δ
+    ℓ::Float64 = 0.95
     σ₀::Float64 = 1e-3
-    ℓ::Float64 = 0.8
-    adaptive_param = AR() # todo
+    ratio_σ::Float64 = 2e1
+    ratio_Δ::Float64 = 4e0
+    Mμ₋::Float64 = 0.9
+    Mμ₊::Float64 = 1.2
+    γ₁::Float64 = 0.95
+    γ₂::Float64 = 1.0
+    # ----------------------------------------------------------------
     eigtol::Float64 = 1e-9
     itermax::Int64 = 20
     direction = :warm
@@ -36,6 +46,7 @@ Base.@kwdef mutable struct ATRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     subpstrategy = :direct
     adaptiverule = :utr
     initializerule = :undef
+    trs::Union{Function,Nothing} = nothing
     LOG_SLOTS::String = ATR_LOG_SLOTS
     ALIAS::String = "ATR"
     DESC::String = "Accelerated Universal Trust-Region Method"
@@ -81,6 +92,9 @@ Base.@kwdef mutable struct ATRState{R,Tx}
     kH::Int = 0       #  hessian evaluations
     kh::Int = 0       #      hvp evaluations
     k₂::Int = 0       # 2 oracle evaluations
+    # ----------------------------------------------------------------
+    acc_style::Symbol = :_
+    acc_count::Dict{Symbol,Int} = Dict(:I => 0, :II => 0, :III => 0)
 end
 
 @doc raw"""
@@ -112,6 +126,9 @@ function Base.iterate(iter::ATRIteration)
         Δ=gₙ * 1e1,
         σ=iter.σ₀
     )
+    if isnothing(iter.trs)
+        iter.trs = TrustRegionCholesky
+    end
     if iter.hvp === nothing
         return state, state
     end
@@ -127,6 +144,8 @@ function Base.iterate(iter::ATRIteration)
     end
     iter.ff = (y, v) -> hvps(y, v)
     iter.opH = LinearOperator(Float64, n, n, true, true, (y, v) -> iter.ff(y, v))
+
+
     return state, state
 end
 
@@ -136,24 +155,20 @@ function Base.iterate(
     state::ATRState{R,Tx};
 ) where {R,Tx}
     # use inexact method (a Lanczos method)
+    @debug """
+    subpstrategy: $(iter.subpstrategy)
+    """
     if (iter.subpstrategy == :direct)
         return iterate_cholesky(iter, state)
     elseif (iter.subpstrategy == :nesterov)
         return iterate_cholesky_nesterov(iter, state)
     elseif (iter.subpstrategy == :monteiro)
         return iterate_cholesky_monteiro_svaiter(iter, state)
-    elseif (iter.subpstrategy == :lanczos)
-        throw(ErrorException("""
-        unsupported mode $(iter.subpstrategy),
-        currently: {:direct}
-        we do not implement Lanczos method yet
-        """
-        ))
-        return iterate_evolve_lanczos(iter, state)
     else
         throw(ErrorException("""
         unsupported mode $(iter.subpstrategy),
-        currently: {:lanczos, :direct}
+        currently: {:direct, :nesterov, :monteiro}
+        we do not implement Lanczos method yet
         """
         ))
     end
@@ -191,23 +206,31 @@ function iterate_cholesky(
             state, iter.g, H, iter.H,
             state.σ
         )
-        σ = σ₀ / 2e1
-        r = 1e1 / 3 / σ₀
-        σ₀ = σ₀ * grad_regularizer
+        σ₀ = σ₀ / iter.ratio_σ
+        r₀ = iter.ratio_Δ / σ₀
         @debug """Mishchenko's initialization
             estimated Mₕ: $Mₕ,
-            σ: $σ
-            r: $r
+            σ: $σ₀
+            r: $r₀
+        """
+    elseif iter.initializerule == :given
+        Mₕ = iter.Mₕ(state.x)
+        σ₀ = sqrt(Mₕ) / 3
+        r₀ = 1 / sqrt(Mₕ) / 3
+        @debug """Given second-order smoothness initialization
+            given Mₕ: $Mₕ,
+            σ: $σ₀
+            r: $r₀
         """
     elseif iter.initializerule == :unscaled
-        σ = iter.σ₀
-        r = max(state.r, 1e-1)
+        σ₀ = iter.σ₀
+        r₀ = max(state.r, 1e-1)
     else
-        σ = σ₀ = state.σ
-        r = max(state.r, 1e-1)
+        σ₀ = state.σ
+        r₀ = max(state.r, 1e-1)
     end
-    σ = σ * grad_regularizer
-    Δ = r * grad_regularizer
+    σ = σ₀ * grad_regularizer
+    Δ = r₀ * grad_regularizer
     Df = (η / ρ) * decs_regularizer
     @debug """After initialization
         σ: $σ, 
@@ -221,7 +244,7 @@ function iterate_cholesky(
 
         # if not accepted
         #  λ (dual) must increase
-        v, θ, λ₁, kᵢ = TrustRegionCholesky(
+        v, θ, λ₁, kᵢ = iter.trs(
             H + σ * I,
             state.∇f,
             Δ;
@@ -278,6 +301,7 @@ function iterate_cholesky(
         state.status = true
         # @info ρₐ
         state.k += 1
+        state.acc_style = :I
         checknan(state)
         return state, state
     end
@@ -305,8 +329,7 @@ function iterate_cholesky_nesterov(
 
     state.∇f = iter.g(state.x)
     state.ϵ = norm(state.∇f)
-    grad_regularizer = state.ϵ |> sqrt
-    decs_regularizer = grad_regularizer^3
+    grad_regularizer = max(5e-3, state.ϵ |> sqrt)
 
     if iter.hvp === nothing
         H = Symmetric(iter.H(state.x))
@@ -317,40 +340,53 @@ function iterate_cholesky_nesterov(
     end
 
     k₂ = 0
-    γ₁ = 2.0
-    γ₂ = 2.0
-    η = 1.0
-    ρ = 1.0
-
     # initialize an estimation
-    σ₀, Mₕ, Df, bool_acc = initial_rules_mishchenko(
-        state, iter.g, H, iter.H,
-        state.σ
-    )
-    σ₀ /= 2e1
-    r₀ = 4e0 / σ₀
-    Ω = sqrt(iter.ℓ / 3 * Mₕ)
-    @debug """Mishchenko's initialization
+    if iter.initializerule == :mishchenko
+        σ₀, Mₕ, Df, bool_acc = initial_rules_mishchenko(
+            state, iter.g, H, iter.H,
+            state.σ
+        )
+        # σ₀ = σ₀ / iter.ratio_σ
+        # r₀ = iter.ratio_Δ / σ₀
+        σ₀ = 1 / 3 * sqrt(Mₕ)
+        r₀ = 1 / 3 / sqrt(Mₕ)
+        @debug """Mishchenko's initialization
+            estimated Mₕ: $Mₕ,
+            σ: $σ₀
+            r: $r₀
+        """
+    elseif iter.initializerule == :given
+        Mₕ = iter.Mₕ(state.x)
+        σ₀ = 0.333 * sqrt(Mₕ)
+        r₀ = 0.133 / sqrt(Mₕ)
+        @debug """Given second-order smoothness initialization
+            given Mₕ: $Mₕ,
+            σ: $σ₀
+            r: $r₀
+        """
+    else
+        throw(
+            ErrorException("unrecognized initializerule $(iter.initializerule)")
+        )
+    end
+    Ω = sqrt(iter.ℓ / (4Mₕ))
+    @debug """Parameter initialization
         estimated Mₕ: $Mₕ,
         σ: $σ₀
         r: $r₀
     """
-    σ = σ₀ * grad_regularizer
-    Δ = r₀ * grad_regularizer
+    σ = σ₀ * grad_regularizer * iter.ratio_σ
+    Δ = r₀ * grad_regularizer * iter.ratio_Δ
     @debug """After initialization
         σ: $σ, 
         Δ: $Δ, 
-        Df: $Df
         """
-    # initialize
-    n = state.∇f |> length
-    θ = 0.0
 
-    v, θ, λ₁, kᵢ = TrustRegionCholesky(
-        H + σ * I,
-        state.∇f,
-        Δ;
-    )
+    # --------------------------------------------------------
+    # phase-I
+    # --------------------------------------------------------
+    v, θ, λ₁, kᵢ = iter.trs(H + σ * I, state.∇f, Δ; Δϵ=1e-12)
+
     @debug """periodic check step I
     |d|: $(v |> norm):, 
     Δ: $Δ, 
@@ -359,43 +395,61 @@ function iterate_cholesky_nesterov(
     kᵢ: $kᵢ
     """
     bool_acc = false
-    acc_style = :nothing
-    if θ > 1e-16
+    acc_style = :_
+    if θ > 0.0
         bool_acc = true
-        acc_style = :direct
+        acc_style = :I
     end
-    @debug """periodic check step II
-    """
-    j₁ = 0
-    while (θ <= 1e-16) && (j₁ < 10)
-        g₊ = iter.g(state.x + v)
-        grad_regularizer = g₊ |> norm |> sqrt
-        σ = σ₀ * grad_regularizer
-        Δ = r₀ * grad_regularizer
-        v, θ, λ₁, kᵢ = TrustRegionCholesky(
-            H + σ * I,
-            state.∇f,
-            Δ;
-        )
-        @debug """inner iterates:
-        |d|:  $(v |> norm)
-          σ:  $σ,
-          Δ:  $Δ
-          θ:  $θ
-       |g₊|:  $(norm(g₊))
-        |g|:  $(norm(state.∇f))
+    if acc_style == :I
+    else
+        @debug """periodic check step II start
         """
-        j₁ += 1
-    end
-    return 1
-    bool_acc = θ <= σ
-    acc_style = bool_acc ? :lookahead : :nothing
-    if !bool_acc
-        μ₋ = σ
-        μ₊ = σ + θ
-        v, μ, j = bisect_μ(state, Mₕ, H, state.∇f, μ₋, μ₊)
-        k₂ += j
-        acc_style = :bisection
+        j₁ = 0
+        gl = 1e3
+        while (j₁ < 30)
+            g₊ = iter.g(state.x + v)
+            grad_regularizer = g₊ |> norm |> sqrt
+            σ = σ₀ * grad_regularizer * iter.ratio_σ
+            Δ = r₀ * grad_regularizer
+            v, θ, λ₁, kᵢ = iter.trs(
+                H + σ * I,
+                state.∇f,
+                Δ;
+                Δϵ=1e-12
+            )
+            @debug """stage II, inner iterates:
+            j₁:  $j₁
+            |d|:  $(v |> norm)
+            σ:  $σ,
+            Δ:  $Δ
+            θ:  $θ
+            |g₊|:  $(norm(g₊))
+            |g|:  $(norm(state.∇f))
+            ratio:  $(grad_regularizer ./ gl)
+            """
+            j₁ += 1
+            state.acc_count[:II] += 1
+            if θ > 0.0
+                break
+            end
+            if grad_regularizer ./ gl > iter.γ₁
+                break
+            end
+            gl = min(gl, grad_regularizer)
+        end
+        bool_acc = (θ <= iter.γ₂ * σ)
+        acc_style = bool_acc ? :II : :III
+        @debug """periodic check step II finish
+        """
+        Mₜ = iter.γ₂ * Mₕ # the estimated ratio between σ and |d|
+        if !bool_acc
+            @debug """start smart bisection at μ
+            """
+            μ₋ = iter.γ₂ * σ
+            μ₊ = iter.γ₂ * (σ + θ)
+            v, μ, j = bisect_μ(iter, state, Mₜ, H, state.∇f, μ₋, μ₊)
+            k₂ += j
+        end
     end
 
     x = state.x + v
@@ -408,7 +462,7 @@ function iterate_cholesky_nesterov(
     ns = norm(state.s)
     state.v = state.v₀ - Ω * state.s / sqrt(ns)
     @debug """periodic check (main iterate)
-        |d|: $(v |> norm):, Δ: $Δ, 
+        |d|: $(v |> norm):, Δ: $Δ, Ω: $Ω
         θ:  $θ, λₗ: $λ₁, 
         kᵢ: $kᵢ
     """
@@ -431,6 +485,8 @@ function iterate_cholesky_nesterov(
     state.t = (Dates.now() - iter.t).value / 1e3
     counting(iter, state)
     state.status = true
+    state.acc_style = acc_style
+    state.acc_count[acc_style] += 1
     # @info ρₐ
     state.k += 1
     checknan(state)
@@ -500,7 +556,7 @@ function iterate_cholesky_monteiro_svaiter(
     n = state.∇f |> length
     θ = 0.0
 
-    v, θ, λ₁, kᵢ = TrustRegionCholesky(
+    v, θ, λ₁, kᵢ = iter.trs(
         H + σ * I,
         state.∇f,
         Δ;
@@ -526,7 +582,7 @@ function iterate_cholesky_monteiro_svaiter(
         grad_regularizer = g₊ |> norm |> sqrt
         σ = σ₀ * grad_regularizer
         Δ = r₀ * grad_regularizer
-        v, θ, λ₁, kᵢ = TrustRegionCholesky(
+        v, θ, λ₁, kᵢ = iter.trs(
             H + σ * I,
             state.∇f,
             Δ;
@@ -620,8 +676,9 @@ function atr_display(k, state::ATRState)
         @printf("%s", UTR_LOG_SLOTS)
     end
     @printf(
-        "%5d | %5d | %+.4e | %.3e | %.1e | %+.0e | %+.0e | %+.1e | %6.1f \n",
-        k, state.kₜ, state.fx, state.ϵ, state.Δ, state.σ, state.r, state.θ, state.t
+        "%5d | %5d | %+.4e | %.3e | %.1e | %+.0e | %+.0e | %+.1e | %6.1f | %s \n",
+        k, state.kₜ, state.fx, state.ϵ,
+        state.Δ, state.σ, state.r, state.θ, state.t, state.acc_style
     )
 end
 
@@ -659,7 +716,11 @@ function (alg::IterativeAlgorithm{T,S})(;
     for cf ∈ [:f :g :H :hvp]
         apply_counter(cf, kwds)
     end
+
     iter = T(; eigtol=eigtol, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    for (_k, _) in kwds
+        @debug _k getfield(iter, _k)
+    end
     (verbose >= 1) && show(iter)
     for (k, state) in enumerate(iter)
 
@@ -681,6 +742,7 @@ function Base.show(io::IO, t::T) where {T<:ATRIteration}
     @printf io "  inner iteration limit := %s\n" t.itermax
     @printf io "  main       strategy   := %s\n" t.mainstrategy
     @printf io "  subproblem strategy   := %s\n" t.subpstrategy
+    @printf io "  trust-region solver   := %s\n" t.trs
     @printf io "  adaptive (σ,Δ) rule   := %s\n" t.adaptiverule
     if t.hvp !== nothing
         @printf io "      second-order info := using provided Hessian-vector product\n"
@@ -739,23 +801,24 @@ function initial_rules_mishchenko(state::ATRState, funcg, Hx, funcH, args...)
         M = approximate_lip(dx, gx, gy, Hx)
         σ1 = √M
     else
-        dx = state.d
-        gx = state.∇fz
+        dx = randn(Float64, state.x |> size)
+        gx = funcg(state.z)
         Hx = funcH(state.z)
-        gy = state.∇f
+        gy = funcg(state.z + dx)
         M = approximate_lip(dx, gx, gy, Hx)
         σ1 = max(
             σ / √2,
             √M
         )
     end
-    @debug "details:" norm(dx) norm(gy - gx) σ σ1
+    @debug "details:" norm(dx) norm(gy - gx) σ σ1 M
     return σ1, M, 0.0, bool_acc
 end
 
-function bisect_μ(state::ATRState, Mₕ::Real, H, g, μ₋::Real, μ₊::Real)
+function bisect_μ(iter::ATRIteration, state::ATRState, Mₕ::Real, H, g, μ₋::Real, μ₊::Real)
     p = nothing
     j = 0
+    v, μ, j = nothing, nothing, 0
     while j < 20
         μ = (μ₋ + μ₊) / 2
         F = cholesky(H + μ * I, check=false, perm=p)
@@ -771,18 +834,18 @@ function bisect_μ(state::ATRState, Mₕ::Real, H, g, μ₋::Real, μ₊::Real)
         @debug """bisect_μ 
         j: $j
         μ: $μ
-        η: $η
+        η: $η ? Mₕ: $Mₕ
         """
-        if η < Mₕ
+        if η < iter.Mμ₋ * Mₕ
             # too large step
             μ₋ = μ
             continue
-        elseif η > 2 * Mₕ
+        elseif η > iter.Mμ₊ * Mₕ
             # too small
             μ₊ = μ
             continue
         end
-
-        return v, μ, j
+        break
     end
+    return v, μ, j
 end

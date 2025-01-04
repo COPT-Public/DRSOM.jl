@@ -47,6 +47,6 @@ xd, ld, _ = DRSOM.TrustRegionCholesky(A, b, Δ)
     Direct
     dual    : $ld
     size    : $(xd |> norm) $(Δ)
-    residual: $(abs2.((A + ld*I)*xd + b) |> maximum)
+    residual: $(2*ld/M - xd |> norm)
     """
 end

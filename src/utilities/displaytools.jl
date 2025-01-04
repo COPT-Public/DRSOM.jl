@@ -12,7 +12,7 @@ default_stopping_criterion(tol, state::Any) = norm(state.res, Inf) <= tol
 
 # formatter
 const HEADER = [
-    "The Dimension-Reduced Second-Order Method",
+    "DRSOM.jl: A Package for Second-Order Methods",
     "(c) Chuwen Zhang, Yinyu Ye, Cardinal Operations (2022)",
 ]
 

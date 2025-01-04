@@ -3,9 +3,9 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-
 using LineSearches
 using SparseArrays
+using .TRS
 
 const UTR_LOG_SLOTS = @sprintf(
     "%5s | %5s | %11s | %9s | %7s | %6s | %6s | %8s | %6s \n",
