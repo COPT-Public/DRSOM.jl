@@ -33,7 +33,8 @@ filter_cutest_problem(nlp) = (1000 <= nlp.meta.nvar <= 5000)
 # filter_optimization_method(k) = k ∈ [:LBFGS, :HSODM]
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
 # filter_optimization_method(k) = k == :HSODM
-filter_optimization_method(k) = k == :HSODMhvp
+# filter_optimization_method(k) = k == :HSODMhvp
+filter_optimization_method(k) = k == :UTR
 # filter_optimization_method(k) = k ∈ [:HSODMhvp, :ARC, :TRST]
 # filter_optimization_method(k) = k ∈ [:iUTRhvp]
 # filter_optimization_method(k) = k == :ARC

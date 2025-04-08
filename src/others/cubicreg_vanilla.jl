@@ -290,7 +290,7 @@ function iterate_cholesky_nesterov(
     # summarize
     x = y = state.z + v * state.α
     # update s, v
-    Ω = sqrt(1 / (3Mₕ))
+    Ω = sqrt(1 / (6Mₕ))
     state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(x)
     ns = norm(state.s)
     state.v = state.v₀ - Ω * state.s / sqrt(ns)

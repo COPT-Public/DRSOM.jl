@@ -18,7 +18,6 @@ include("../tools.jl")
 
 using ArgParse
 using DRSOM
-using Distributions
 using LineSearches
 using Optim
 using ProximalOperators
@@ -26,10 +25,8 @@ using ProximalAlgorithms
 using Random
 using Plots
 using Printf
-using LazyStack
 using KrylovKit
 using ADNLPModels
-using HTTP
 using LaTeXStrings
 using LinearAlgebra
 using Statistics
@@ -37,21 +34,20 @@ using LinearOperators
 using Optim
 using SparseArrays
 using .LP
-using LoopVectorization
 using LIBSVMFileIO
 
 bool_q_preprocessed = true
 bool_opt = true
-bool_plot = true
+bool_plot = false
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1e-6 # * max(g(x0) |> norm, 1)
 λ = 1e-9
 if bool_q_preprocessed
-    # name = "a4a"
+    name = "a4a"
     # name = "a9a"
     # name = "w4a"
-    name = "w8a"
+    # name = "w8a"
     # name = "covtype"
     # name = "news20"
     # name = "rcv1"
@@ -177,7 +173,6 @@ if bool_opt
         subpstrategy=:direct,
         initializerule=:mishchenko
     )
-
     rf1 = UTR(name=Symbol("RegNewton-Fixed-1e-4"))(;
         x0=copy(x0), f=loss, g=g, H=H,
         maxiter=300, tol=ε, freq=1,

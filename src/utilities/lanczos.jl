@@ -89,7 +89,6 @@ function LanczosTridiag(
 )
     j = lc.j
     while j <= k - 1
-        @info j
         if j == 1
             lc.V[:, 1] = copy(b) / norm(b)
             u = A(lc.V[:, j])

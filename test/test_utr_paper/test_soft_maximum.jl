@@ -34,19 +34,19 @@ using LinearOperators
 using Optim
 using SparseArrays
 using .LP
-
+using ManualNLPModels
 
 using LIBSVMFileIO
 
 bool_setup = true
-bool_opt = true
-bool_plot = true
+bool_opt = false
+bool_plot = false
 
 if bool_setup
     Random.seed!(2)
-    n = 150
-    m = 120
-    μ = 0.05
+    n = 500
+    m = 1000
+    μ = 0.1
     X = [rand(Float64, n) * 2 .- 1 for _ in 1:m]
     Xm = hcat(X)'
     y = rand(Float64, m) * 2 .- 1
@@ -65,11 +65,21 @@ if bool_setup
         ∇ = Xm' * π0
         return ∇
     end
+    function grad_orig!(gx, w)
+        a = (Xm * w - y) / μ
+        ax = exp.(a)
+        π0 = ax / (ax |> sum)
+        ∇ = Xm' * π0
+        gx .= ∇
+    end
     function hess(w)
         a = (Xm * w - y) / μ
         ax = exp.(a)
         π0 = ax / (ax |> sum)
         return Symmetric(sparse(1 / μ * (Xm' * Diagonal(π0) * Xm - Xm' * π0 * π0' * Xm)))
+    end
+    function hprod!(hv, x, v; obj_weight=1)
+        hv .= obj_weight * hess(x) * v
     end
     ∇₀ = grad_orig(zeros(x0 |> size))
     X = [x - ∇₀ for x in X]
@@ -78,15 +88,28 @@ if bool_setup
     loss(w) = loss_orig(w)
     ε = 1e-5
     f₊ = loss(x0)
+    x₀ = 1.0 * ones(n)
+    nlp = NLPModel(x₀, loss, grad=grad_orig!, hprod=hprod!)
 end
 if bool_opt
-    results = Dict()
-    x₀ = 1.0 * ones(n)
+    K = 1000
+    results = []
+    stats, _ = ARCqKOp(
+        nlp,
+        max_time=500.0,
+        max_iter=500,
+        max_eval=typemax(Int64),
+        verbose=true
+        # atol=atol,
+        # rtol=rtol,
+        # @note: how to set |g|?
+    )
+    rarc = arc_to_result(nlp, stats, "ARC")
 
-    Mₕ(x) = 2 / μ^2
-    results["UTR"] = rd = ATR(name=Symbol("ATR"))(;
+    Mₕ(x) = 6 / μ^2
+    rd = ATR(name=Symbol("ATR"))(;
         x0=copy(x₀), f=loss, g=grad, H=hess,
-        maxiter=2000, tol=1e-4, freq=20,
+        maxiter=K, tol=1e-4, freq=20,
         bool_trace=true,
         subpstrategy=:direct,
         initializerule=:given,
@@ -95,36 +118,40 @@ if bool_opt
         ratio_Δ=1.0,
         Mₕ=Mₕ
     )
+    push!(results, ("UTR", rd))
 
-    results["ATR"] = rd = ATR(name=Symbol("ATR"))(;
+    rd = ATR(name=Symbol("ATR"))(;
         x0=copy(x₀), f=loss, g=grad, H=hess,
-        maxiter=2000, tol=1e-8, freq=20,
+        maxiter=K, tol=1e-8, freq=20,
         bool_trace=true,
-        subpstrategy=:direct,
-        initializerule=:mishchenko,
-        ratio_σ=1.0,
+        subpstrategy=:nesterov,
+        initializerule=:given,
+        ratio_σ=5.5,
         ratio_Δ=1.0,
         Mₕ=Mₕ
     )
+    push!(results, ("ATR", rd))
 
-    results["Cubic"] = rd = CubicRegularizationVanilla(name=Symbol("Cubic"))(;
+    rd = CubicRegularizationVanilla(name=Symbol("Cubic"))(;
         x0=copy(x₀), f=loss, g=grad, H=hess,
-        maxiter=2000, tol=1e-4, freq=20,
+        maxiter=K, tol=1e-4, freq=20,
         bool_trace=true,
         subpstrategy=:direct,
         initializerule=:given,
         Mₕ=Mₕ
     )
+    push!(results, ("CubicReg", rd))
 
 
-    results["Cubic (Acc)"] = rd = CubicRegularizationVanilla(name=Symbol("Cubic"))(;
+    rd = CubicRegularizationVanilla(name=Symbol("Cubic"))(;
         x0=copy(x₀), f=loss, g=grad, H=hess,
-        maxiter=2000, tol=1e-4, freq=20,
+        maxiter=K, tol=1e-8, freq=20,
         bool_trace=true,
         subpstrategy=:nesterov,
         initializerule=:given,
         Mₕ=Mₕ
     )
+    push!(results, ("CubicReg-A", rd))
 
 end
 
@@ -132,44 +159,51 @@ end
 if bool_plot
 
     linestyles = [:dash, :dot, :dashdot, :dashdotdot]
-    xaxis = :k
-    metric = :fx
-    @printf("plotting results\n")
+    for xaxis in [:k, :t]
+        metric = :fx
+        @printf("plotting results\n")
 
-    pgfplotsx()
-    title = L"Soft Maximum: $n:=$%$(n), $m:=$%$(m), $\mu:=$%$(μ)"
-    fig = plot(
-        xlabel=L"\textrm{Iterations}",
-        ylabel=L"f(x) - f(x^*)",
-        title=title,
-        size=(600, 500),
-        yticks=[1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e-1, 1e0, 1e1],
-        # xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
-        yscale=:log10,
-        dpi=500,
-        labelfontsize=14,
-        xtickfont=font(13),
-        ytickfont=font(13),
-        legendfontsize=14,
-        legendfontfamily="sans-serif",
-        legendfonthalign=:left,
-        titlefontsize=22,
-        palette=:Paired_8 #palette(:PRGn)[[1,3,9,10,11]]
-    )
-    for (k, (nm, rv)) in enumerate(results)
-        yv = getresultfield(rv, metric)
-        @info "plotting $metric" yv
-        plot!(fig,
-            xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
-            yv .- f₊ .+ 1e-20,
-            label=nm,
-            linewidth=2.5,
-            # markershape=:circle,
-            # markersize=2.0,
-            # markercolor=:match,
+        pgfplotsx()
+        title = L"Soft Maximum: $n:=$%$(n), $m:=$%$(m), $\mu:=$%$(μ)"
+        @info "title: $title"
+        title = ""
+        fig = plot(
+            xlabel=xaxis == :k ? L"\textrm{Iterations}" : L"\textrm{Time}",
+            ylabel=L"f(x) - f(x^*)",
+            title=title,
+            size=(600, 500),
+            yticks=[1e-12, 1e-8, 1e-4, 1e-1, 1e1],
+            # xticks=[1, 10, 100, 200, 500, 1000, 10000, 100000, 1e6],
+            yscale=:log10,
+            dpi=500,
+            xtickfont=font(20),
+            ytickfont=font(20),
+            xlabelfontsize=20,
+            ylabelfontsize=17,
+            legend=:top,
+            legendcolumns=2,
+            legendfontsize=24,
+            legend_background_color=RGBA(1.0, 1.0, 1.0, 0.7),
+            legendfontfamily="sans-serif",
+            legendfonthalign=:left,
+            titlefontsize=22,
+            palette=:Paired_8 #palette(:PRGn)[[1,3,9,10,11]]
         )
+        for (k, (nm, rv)) in enumerate(results)
+            yv = getresultfield(rv, metric)
+            @info "plotting $metric"
+            plot!(fig,
+                xaxis == :t ? getresultfield(rv, :t) : (1:(yv|>length)),
+                yv .- f₊ .+ 1e-20,
+                label=L"\texttt{%$nm}",
+                linewidth=2.5,
+                # markershape=:circle,
+                # markersize=2.0,
+                # markercolor=:match,
+            )
+        end
+        savefig(fig, "/tmp/$metric-softmax-$xaxis.png")
+        savefig(fig, "/tmp/$metric-softmax-$xaxis.tex")
+        savefig(fig, "/tmp/$metric-softmax-$xaxis.pdf")
     end
-    savefig(fig, "/tmp/$metric-softmax-$xaxis.png")
-    savefig(fig, "/tmp/$metric-softmax-$xaxis.tex")
-    savefig(fig, "/tmp/$metric-softmax-$xaxis.pdf")
 end

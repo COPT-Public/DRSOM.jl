@@ -358,7 +358,7 @@ function iterate_cholesky_nesterov(
     elseif iter.initializerule == :given
         Mₕ = iter.Mₕ(state.x)
         σ₀ = 0.333 * sqrt(Mₕ)
-        r₀ = 0.133 / sqrt(Mₕ)
+        r₀ = 1.533 / sqrt(Mₕ)
         @debug """Given second-order smoothness initialization
             given Mₕ: $Mₕ,
             σ: $σ₀
@@ -369,7 +369,7 @@ function iterate_cholesky_nesterov(
             ErrorException("unrecognized initializerule $(iter.initializerule)")
         )
     end
-    Ω = sqrt(iter.ℓ / (4Mₕ))
+    Ω = sqrt(iter.ℓ / (0.8 * Mₕ))
     @debug """Parameter initialization
         estimated Mₕ: $Mₕ,
         σ: $σ₀

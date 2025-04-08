@@ -1,5 +1,5 @@
 using LinearAlgebra, SparseArrays
-using ForwardDiff
+using ForwardDiff, ADNLPModels
 
 
 Base.@kwdef mutable struct NesterovHardCase
@@ -27,11 +27,18 @@ Base.@kwdef mutable struct NesterovHardCase
         this.fₛ = -k * p / (p + 1)
         return this
     end
+
 end
 
 function check_nesterovlb(data::NesterovHardCase, x::Vector{Float64})
     @info "check result" norm(x - data.xₛ) norm(data.g(x)) abs(data.f(x) - data.fₛ)
 end
+
+function get_nlp_nesterovlb(data::NesterovHardCase)
+    return ADNLPModel(data.f, data.x₀)
+end
+
+
 
 @doc raw"""
     nesterovlb(n::Int)
