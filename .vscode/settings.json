@@ -1,6 +1,0 @@
-{
-    "editor.formatOnSave": true,
-    "julia.environmentPath": "/Users/brent/workspace/DRSOM.jl/test",
-    "julia.executablePath": "/Users/brent/.local/bin/julia10",
-    "editor.fontFamily": "'roboto mono'"
-}
