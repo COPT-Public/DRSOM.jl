@@ -92,27 +92,53 @@ If you just want help on a specific algorithm, see the [Algorithm Reference](@re
 ## Reference
 You are welcome to cite our paper on DRSOM :)
 ```bibtex
-@misc{zhang_drsom_2022,
-	title = {{DRSOM}: {A} {Dimension} {Reduced} {Second}-{Order} {Method} and {Preliminary} {Analyses}},
-	url = {http://arxiv.org/abs/2208.00208},
-	publisher = {arXiv},
-	author = {Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
-	month = jul,
-	year = {2022},
-	note = {arXiv:2208.00208 [cs, math]},
-	keywords = {Computer Science - Machine Learning, Mathematics - Optimization and Control},
+@article{heHomogeneousSecondorderDescent2025,
+  title = {Homogeneous second-order descent framework: a fast alternative to {{Newton-type}} methods},
+  shorttitle = {Homogeneous second-order descent framework},
+  author = {He, Chang and Jiang, Yuntian and Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
+  year = {2025},
+  month = may,
+  journal = {Mathematical Programming},
+  issn = {1436-4646},
+  doi = {10.1007/s10107-025-02230-3},
+  urldate = {2025-05-15},
+  langid = {english}
 }
-```
-and HSODM,
-```
-@misc{zhang_homogenous_2022,
-	title = {A {Homogenous} {Second}-{Order} {Descent} {Method} for {Nonconvex} {Optimization}},
-	url = {http://arxiv.org/abs/2211.08212},
-	publisher = {arXiv},
-	author = {Zhang, Chuwen and Ge, Dongdong and He, Chang and Jiang, Bo and Jiang, Yuntian and Xue, Chenyu and Ye, Yinyu},
-	month = nov,
-	year = {2022},
-	note = {arXiv:2211.08212 [math]},
-	keywords = {Mathematics - Optimization and Control}
+@misc{jiangNonconvexityUniversalTrustregion2023,
+  title = {Beyond nonconvexity: a universal trust-region method with new analyses},
+  shorttitle = {Beyond nonconvexity},
+  author = {Jiang, Yuntian and He, Chang and Zhang, Chuwen and Ge, Dongdong and Jiang, Bo and Ye, Yinyu},
+  year = {2023},
+  number = {arXiv:2311.11489},
+  eprint = {2311.11489},
+  primaryclass = {math},
+  publisher = {arXiv},
+  doi = {10.48550/arXiv.2311.11489},
+  urldate = {2025-02-02},
+  archiveprefix = {arXiv}
+}
+@misc{zhangDRSOMDimensionReduced2022,
+  title = {{{DRSOM}}: a dimension reduced second-order method},
+  shorttitle = {{{DRSOM}}},
+  author = {Zhang, Chuwen and Ge, Dongdong and He, Chang and Jiang, Bo and Jiang, Yuntian and Ye, Yinyu},
+  year = {2022},
+  month = may,
+  number = {arXiv:2208.00208},
+  eprint = {2208.00208},
+  primaryclass = {cs, math},
+  publisher = {arXiv},
+  urldate = {2023-07-24},
+  archiveprefix = {arXiv}
+}
+@article{zhangHomogeneousSecondorderDescent2025,
+  title = {A homogeneous second-order descent method for nonconvex optimization},
+  author = {Zhang, Chuwen and He, Chang and Jiang, Yuntian and Xue, Chenyu and Jiang, Bo and Ge, Dongdong and Ye, Yinyu},
+  year = {2025},
+  month = may,
+  journal = {Mathematics of Operations Research},
+  publisher = {INFORMS},
+  issn = {0364-765X},
+  doi = {10.1287/moor.2023.0132},
+  urldate = {2025-05-19}
 }
 ```

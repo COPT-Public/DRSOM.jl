@@ -89,7 +89,6 @@ function LanczosTridiag(
 )
     j = lc.j
     while j <= k - 1
-        @info j
         if j == 1
             lc.V[:, 1] = copy(b) / norm(b)
             u = A(lc.V[:, j])
@@ -242,7 +241,7 @@ function InexactLanczosTrustRegionBisect(
     k::Int=(b |> length),
     k₁::Int=0,
     ϵ=1e-4,
-    ϵₗ=1e-2,
+    ϵₗ=1e-4,
     Ξ=1e-1,
     bool_reorth::Bool=true,
     bool_interior::Bool=false
@@ -251,10 +250,9 @@ function InexactLanczosTrustRegionBisect(
     xₖ = zeros(lc.n)
     λₖ = 0.0
     j = lc.j
-
-
+    k = min(k, b |> length)
     while true
-        if j <= k - 1 # degree not desired; expand
+        if j <= k #- 1 # degree not desired; expand
             if j == 1
                 lc.V[:, 1] = copy(b) / norm(b)
                 u = A(lc.V[:, j])
@@ -269,21 +267,27 @@ function InexactLanczosTrustRegionBisect(
                 end
             end
             γⱼ = norm(u)
-            lc.V[:, j+1] = u / γⱼ
             lc.γ[j] = γⱼ
-            j += 1
             lc.j = j
+            (j <= k - 1) && (lc.V[:, j+1] = u / γⱼ)
+            j += 1
             if (j < k₁) && (γⱼ > 1e-1)
                 continue
             end
         end
 
+
         # now compute solution
         T = SymTridiagonal(
-            view(lc.α, 1:j), view(lc.γ, 1:j-1)
+            view(lc.α, 1:j-1), view(lc.γ, 1:j-1)
         ) + σ * I
-        V = view(lc.V, :, 1:j)
+        V = view(lc.V, :, 1:j-1)
 
+        # @debug T[end-1:end, end-1:end] T |> size V |> size
+
+        if any(isnan, T)
+            throw(ErrorException("NaN detected in Lanczos, use debugging to fix"))
+        end
         # a mild estimate
         # minimum eigenvalue
         λ₁ = eigvals(T, 1:1)[]
@@ -295,7 +299,7 @@ function InexactLanczosTrustRegionBisect(
         Sₖ = ldlt(T + λₖ * I)
         dₖ = Sₖ \ bₜ
         dₙ = (dₖ |> norm)
-
+        # @debug "start at $j $λₗ $λᵤ"
         code = 0
         if dₙ <= Δ
             # check if minimum λ produces an interior point
@@ -312,6 +316,8 @@ function InexactLanczosTrustRegionBisect(
                 else
                     λᵤ *= 2
                 end
+                @debug "guess $λᵤ $dₙ $Δ"
+                break
             end
             # @debug begin
             #     """
@@ -321,17 +327,17 @@ function InexactLanczosTrustRegionBisect(
             # end
             # otherwise, we initialize a search procedure
             # using bisection (sway to λₗ)
-            while abs(λᵤ - λₗ) > ϵₗ
+            while abs(λᵤ - λₗ) > ϵₗ * λₗ
                 λₖ = λₗ * 0.5 + λᵤ * 0.5
                 Sₖ = ldlt(T + λₖ * I)
                 dₖ = Sₖ \ bₜ
                 dₙ = dₖ |> norm
                 kₗ += 1
-                # @debug begin
-                #     """
-                #      $dₙ $λₖ $λₗ $λᵤ
-                #     """
-                # end
+                @debug begin
+                    """
+                     $dₙ $λₖ $λₗ $λᵤ
+                    """
+                end
                 if dₙ <= Δ - ϵ
                     bool_interior && break
                     λᵤ = λₖ
@@ -345,18 +351,19 @@ function InexactLanczosTrustRegionBisect(
             code = 1
         end
         εₙ = (A(xₖ) + (σ + λₖ) * xₖ - b) |> norm
-        bool_acc = (max(min(dₙ^2, 1) * Ξ, 1e-6) >= εₙ) || (lc.γ[j-1] < tol) || (j >= k)
-        @debug """
-        try Lanczos size κ $j minimum: $k₁ 
-        - Lanczos residual: εₗ := $γⱼ; 
-        - Newton residual: εₙ := $(εₙ / max(dₙ^2, 1)) ∝ $εₙ / $(dₙ^2)  
-        """
+        bool_acc = (max(min(dₙ^2 * Ξ, 1e-1), 1e-8) >= εₙ) || (lc.γ[j-1] < tol) || (j >= k)
+        # @debug """
+        # try Lanczos size κ $j minimum: $k₁ 
+        # - Lanczos residual: εₗ := $γⱼ; 
+        # - Newton residual: εₙ := $(εₙ / max(dₙ^2, 1)) ∝ $εₙ / $(dₙ^2)  
+        # """
         ((mod(j, 20) == 0) || bool_acc) && @debug begin
             """
-            terminated.
+            periodic check
+            - acc? := $bool_acc
             - κ :=  $j, code: $code (1-direct pass, 0-search over λₖ)
             - εₗ := $γⱼ; 
-            - εₙ := $(εₙ / max(dₙ^2, 1)) ∝ $εₙ / $(dₙ^2)  
+            - εₙ := $εₙ ∝ $εₙ / $(dₙ^2) ~ $Ξ => $(max(min(dₙ^2, 1) * Ξ, 1e-6))
             - ls := $kₗ 
             - λₖ := $λₖ >= $λ₁ =: λ₁(H)
             - |d| := $dₙ <= $Δ =: Δ

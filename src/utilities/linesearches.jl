@@ -1,3 +1,14 @@
+include("./hagerzhang.jl")
+include("./backtracking.jl")
+
+const lsa::HagerZhangEx = HagerZhangEx(
+# linesearchmax=10
+)
+const lsb::BackTrackingEx = BackTrackingEx(
+    ρ_hi=0.8,
+    ρ_lo=0.1,
+    order=3
+)
 
 function TRStyleLineSearch(
     iter::IterationType,
@@ -65,9 +76,10 @@ function BacktrackLineSearch(
     dϕ_0 = dot(s, gx)
 
     try
-        α, fx, it = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        α, fx, it = lsb(ϕ, dϕ, ϕdϕ, 4.0, fx, dϕ_0)
         return α, fx, it
     catch y
+        throw(y)
         isa(y, LineSearchException) # && println() # todo
 
         return 0.1, fx, 1
@@ -98,7 +110,7 @@ function BacktrackLineSearch(
 
     dϕ_0 = dot(s, gx)
     try
-        α, fx = lsb(ϕ, dϕ, ϕdϕ, 1.0, fx, dϕ_0)
+        α, fx = lsb(ϕ, dϕ, ϕdϕ, 4.0, fx, dϕ_0)
         return α, fx
     catch y
         # throw(y)
