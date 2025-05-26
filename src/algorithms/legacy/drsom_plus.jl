@@ -4,7 +4,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
+
 
 """
     DRSOMPlusIteration(; <keyword-arguments>)
@@ -130,7 +130,7 @@ function Base.iterate(iter::DRSOMPlusIteration)
                 Δ=norm(d, 2),
                 dq=dq,
                 df=df,
-                ρ=ro,
+                ρ=isnan(ro) ? -1e6 : ro,
                 ϵ=norm(grad_f_x, 2),
                 γ=1e-6,
                 λ=1e-6,
@@ -243,7 +243,7 @@ function Base.iterate(iter::DRSOMPlusIteration, state::DRSOMPlusState{R,Tx}) whe
             state.x = x
             state.y = y
             state.fx = fx
-            state.ρ = ro
+            state.ρ = isnan(ro) ? -1e6 : ro
             state.dq = dq
             state.df = df
             state.d = x - z

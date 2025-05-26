@@ -127,7 +127,7 @@ function Base.iterate(iter::DRSOMFreeIteration)
                 Δ=0.0,
                 dq=dq,
                 df=df,
-                ρ=ro,
+                ρ=isnan(ro) ? -1e6 : ro,
                 ϵ1=norm(d, 2),
                 ϵ2=norm(grad_f_x, 2),
                 γ=1e-6,
@@ -202,7 +202,7 @@ function Base.iterate(iter::DRSOMFreeIteration, state::DRSOMFreeState{R,Tx}) whe
             state.x = x
             state.y = y
             state.fx = fx
-            state.ρ = ro
+            state.ρ = isnan(ro) ? -1e6 : ro
             state.dq = dq
             state.df = df
             state.d = x - z

@@ -18,7 +18,7 @@ include("../tools.jl")
 
 using ArgParse
 using DRSOM
-using Distributions
+
 using LineSearches
 using Optim
 using ProximalOperators
@@ -26,17 +26,13 @@ using ProximalAlgorithms
 using Random
 using Plots
 using Printf
-using LazyStack
 using KrylovKit
-using HTTP
 using LaTeXStrings
 using LinearAlgebra
-using Statistics
 using LinearOperators
 using Optim
 using SparseArrays
 using .LP
-using LoopVectorization
 using LIBSVMFileIO
 
 bool_q_preprocessed = bool_opt = true
@@ -44,17 +40,20 @@ bool_plot = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
 ε = 1.5e-8 # * max(g(x0) |> norm, 1)
-λ = 1e-6
+λ = 1e-5
 if bool_q_preprocessed
     # name = "a4a"
-    # name = "a9a"
+    name = "a9a"
     # name = "w4a"
     # name = "covtype"
-    name = "rcv1"
+    # name = "rcv1"
     # name = "news20"
 
-    X, y = libsvmread("test/instances/libsvm/$name.libsvm"; dense=false)
-    Xv = hcat(X...)'
+    X, y = libsvmread("test/instances/$name.libsvm"; dense=false)
+    Is = vcat([x.nzind for (j, x) in enumerate(X)]...)
+    Js = vcat([j * ones(Int, length(x.nzind)) for (j, x) in enumerate(X)]...)
+    Vs = vcat([x.nzval for (j, x) in enumerate(X)]...)
+    Xv = sparse(Is, Js, Vs)'
     Rc = 1 ./ f1(Xv)[:]
     Xv = (Rc |> Diagonal) * Xv
     X = Rc .* X
@@ -63,20 +62,11 @@ if bool_q_preprocessed
         y = convert(Vector{Float64}, (y .- 1.5) * 2)
     else
     end
-    @info begin
-        a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
-        if a > 8
-            BLAS.set_num_threads(8)
-            a = ccall((:openblas_get_num_threads64_, Base.libblas_name), Cint, ())
-        end
-        "using BLAS threads $a"
-    end
+
     @info "data reading finished"
 
     # precompute Q Matrix
-    Qc(x, y) = y^2 * x
-    bool_q_preprocessed && (P = Qc.(X, y))
-    Pv = hcat(P...)'
+    Pv = y .^ 2 .* Xv
 
     n = Xv[1, :] |> length
     Random.seed!(1)
@@ -106,7 +96,7 @@ if bool_q_preprocessed
         copyto!(Hv, (fq .* Pv)' * (Xv * v) ./ N .+ λ .* v)
     end
 
-    function hvpdiff(w, v, Hv; eps=1e-5)
+    function hvpdiff(w, v, Hv; eps=1e-6)
         gn = g(w + eps * v)
         gf = g(w)
         copyto!(Hv, (gn - gf) / eps)
@@ -175,8 +165,10 @@ if bool_opt
 
     rh = PFH(name=Symbol("PF-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
-        step=:hsodm, μ₀=5e-2,
+        maxiter=300, tol=ε, freq=1,
+        # step=:newton,
+        step=:hsodm,
+        μ₀=5e-2,
         bool_trace=true,
         direction=:warm,
         maxtime=500,
@@ -184,7 +176,7 @@ if bool_opt
 
     ra = HSODM(name=Symbol("Adaptive-HSODM"))(;
         x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-        maxiter=10000, tol=ε, freq=1,
+        maxiter=300, tol=ε, freq=1,
         direction=:warm, linesearch=:hagerzhang,
         adaptive=:none,
         maxtime=1500

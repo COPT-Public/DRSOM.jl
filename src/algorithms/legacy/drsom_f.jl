@@ -12,7 +12,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
+
 
 """
     DRSOMFIteration(; <keyword-arguments>)
@@ -136,7 +136,7 @@ function Base.iterate(iter::DRSOMFIteration)
                 dq=dq,
                 df=df,
                 G=[a1^2*norm(grad_f_x)^2 0; 0 0],
-                ρ=ro,
+                ρ=isnan(ro) ? -1e6 : ro,
                 ρd=ro,
                 ϵ=norm(grad_f_x, 2),
                 λ=1e-6,

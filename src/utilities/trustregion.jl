@@ -1,137 +1,10 @@
+module TRS
 using Base.Iterators
-using LinearAlgebra
-using Printf
-using Dates
+using LinearAlgebra, SparseArrays
+using Printf, Dates
 using KrylovKit
-using Distributions
 
-
-@doc raw"""
-A simple procedure to solve TRS via a given regularizer 
-This is only used in DRSOM
-
-- the radius free mode: compute the Lagrangian multiplier according to the adaptive ``\gamma`` instead. 
-    See the paper for details.
-- the strict regularization mode: strictly solve a quadratic regularization problems given a regularizer ``\lambda`` 
-
-- the strict radius mode: if you choose a radius, this function is a bisection procedure 
-    following the complexity of ``O(\log\log(1/ε))`` by Ye
-
-We use this function (radius-free mode) `only` in DRSOM, since the eigenvalues are easy to solve. 
-"""
-function SimpleTrustRegionSubproblem(
-    Q,
-    c::Vector{Float64},
-    state::StateType;
-    G=diagm(ones(2)),
-    mode=:free,
-    Δ::Float64=0.0,
-    Δϵ::Float64=1e-4,
-    Δl::Float64=1e2,
-    λ::Float64=0.0
-) where {StateType}
-
-    # the dimension of Q and G should not be two big.
-    _Q, _G = Symmetric(Q), Symmetric(G)
-    _c = c
-    if mode == :reg
-        ######################################
-        # the strict regularization mode
-        ######################################
-        # strictly solve a quadratic regularization problems
-        #   given a regularizer :λ 
-        ######################################
-        alpha = -(_Q + λ .* _G) \ _c
-        return alpha
-    end
-    if (mode == :free) && (length(_c) == 2)
-        ######################################
-        # the radius free mode
-        ######################################
-        # @special treatment for d = 2 (DRSOM 2D)
-        # when it is small, 
-        #   use more simple ways to calculate eigvalues.
-        a = _Q[1, 1]
-        b = _Q[1, 2]
-        d = _Q[2, 2]
-        t = a + d
-        s = a * d - b^2
-        lmin = t / 2 - (t^2 / 4 - s)^0.5
-        lmax = t / 2 + (t^2 / 4 - s)^0.5
-        # eigvalues = eigvals(_Q, _G)
-        # sort!(eigvalues)
-        # lmin, lmax = eigvalues
-        lb = max(1e-8, -lmin)
-        ub = max(lb, lmax) + Δl
-        state.λ = state.γ * lmax + max(1 - state.γ, 0) * lb
-        _QG = _Q + state.λ .* _G
-        a = _QG[1, 1]
-        b = _QG[1, 2]
-        d = _QG[2, 2]
-        s = a * d - b^2
-        K = [d/s -b/s; -b/s a/s]
-        alpha = -K * _c
-        return alpha
-    end
-
-    ######################################
-    # compute eigenvalues.
-    ######################################
-    eigvalues = eigvals(_Q, _G)
-    sort!(eigvalues)
-    lmin, lmax = eigvalues
-    lb = max(1e-8, -lmin)
-    ub = max(lb, lmax) + Δl
-
-    if mode == :trbisect
-        ######################################
-        # the strict radius mode
-        ######################################
-        # strictly solve TR given a radius :Δ 
-        #   via bisection
-        ######################################
-
-        λ = lb
-        try
-            alpha = -(_Q + λ .* _G) \ _c
-        catch e
-            println(lb)
-            printstyled(_Q)
-            println(_Q + λ .* _G)
-            throw(e)
-        end
-
-        s = sqrt(alpha' * _G * alpha) # size
-
-        if s <= Δ
-            # damped Newton step is OK
-            state.λ = λ
-            return alpha
-        end
-        # else we must hit the boundary
-        while (ub - lb) > Δϵ
-            λ = (lb + ub) / 2
-            alpha = -(_Q + λ .* _G) \ _c
-            s = sqrt(alpha' * _G * alpha) # size
-            if s > Δ + Δϵ
-                lb = λ
-            elseif s < Δ - Δϵ
-                ub = λ
-            else
-                # good enough
-                break
-            end
-        end
-        state.λ = λ
-        return alpha
-    end
-    ex = ErrorException("Do not support the options $mode")
-    throw(ex)
-end
-
-
-
-
+include("./trustregionlr.jl")
 
 @doc raw"""
 A direct procedure to solve `TRS` utilizing Cholesky factorization
@@ -141,41 +14,53 @@ using a hybrid bisection + regularized Newton's approach
 
 ```math
 \begin{aligned}
-\min ~& 1/2 x^TQx + c^Tx \\
+\min ~& 1/2 x'Qx + c'x \\
 \text{s.t.} ~& \|x\| \le \Delta
 \end{aligned}
 ```
 """
 function TrustRegionCholesky(
-    Q,
-    c::Vector{Float64},
-    Δ::Float64=0.0;
-    Δϵ::Float64=1e-2,
+    Q::Union{SparseMatrixCSC,Symmetric{R,SparseMatrixCSC{R,Int}}},
+    c::Vector{R},
+    Δ::R=0.0;
+    Δϵ::R=1e-2, # tolerance for the step size
     λₗ=0.0,
     λᵤ=Inf
-)
+) where {R}
+    @debug "initial λₗ: $λₗ λᵤ: $λᵤ"
     F = cholesky(Q + λₗ * I, check=false)
     if issuccess(F) # meaning psd
+        @debug """use provided λₗ cholesky successful
+        """
         x = F \ (-c)
         if norm(x) < Δϵ + Δ
+            @debug """use provided λₗ successful (|d| < Δ)
+            """
             return x, 0, 0.0, 0
         end
     end
-    # else it is indefinite.
+    @debug """use provided λₗ failed 
+    """
+    # else it is indefinite or too large step.
     # mild estimate to ensure p.s.d
     if λᵤ < Inf
         λₖ = (λₗ + λᵤ) / 2
     else
+        # use diagonal dominance
         λₖ = ((sum(abs, Q - Diagonal(Q), dims=1)[:] + abs.(diag(Q))) |> maximum) / 2
     end
     k = 1
     bool_indef = false
     p = nothing
+    @debug """start smart bisection
+    initial λₖ: $λₖ
+    """
     while true
-        F = cholesky(Q + λₖ * I, check=false, perm=p)
+        F = cholesky(Q + λₖ * I; check=false, perm=p)
+        @debug "cholesky: $(issuccess(F))"
         if !issuccess(F)
             bool_indef = true
-            λₖ *= 1.05
+            λₖ = max(λₖ * 1.05, 1e-10)
             continue
         end
         p === nothing ? F.p : p
@@ -187,12 +72,10 @@ function TrustRegionCholesky(
         Rt = F.L
         x = F \ (-c)
         q_l = Rt \ x
-        norm2_s = dot(x, x)
+        norm2_s = norm(x)
 
-        l2 = dot(q_l, q_l) / sqrt(norm2_s)^3
-        l1 = -(sqrt(norm2_s) - Δ) / sqrt(norm2_s) / Δ
-
-        # @info "this" (-l1 / l2) (norm2_s * (sqrt(norm2_s) - Δ) / (Δ * dot(q_l, q_l)))
+        l2 = dot(q_l, q_l) / norm2_s^3
+        l1 = -(norm2_s - Δ) / norm2_s / Δ
 
         dℓ = -(l1 / (l2 + 1e-2))
         if dℓ < 0
@@ -208,7 +91,7 @@ function TrustRegionCholesky(
         else
             λₖ += α * dℓ
         end
-        @debug """iterate""" k, [λₗ, λᵤ], λₖ, α, dℓ, norm2_s, (Δ^2)
+        @debug """iterate""" k, [λₗ, λᵤ], λₖ, α, dℓ, norm2_s, Δ
 
 
         k += 1
@@ -218,3 +101,31 @@ function TrustRegionCholesky(
     end
     return x, λₖ, -λₗ, k, p
 end
+
+
+# ------------------------------------------------------------------------------
+# Wrapper for Adachi's method; very slow, not recommended.
+# ------------------------------------------------------------------------------
+using ..ATRS
+
+@doc raw"""
+A direct procedure to solve `TRS` utilizing Adachi's method
+"""
+function AdachiTrustRegionSubproblem(
+    Q,
+    c::Vector{Float64},
+    Δ::R=0.0;
+    Δϵ::R=1e-2, # tolerance for the step size
+) where {R}
+    x, info = ATRS.trs(Q, c, Δ; tol=Δϵ)
+    @debug """
+    AdachiTrustRegionSubproblem
+    |d|: $(x |> norm)
+    λ: $(info.λ)
+    """
+    return x[:], info.λ[1], -0.0, 0.0, nothing
+end
+
+
+export SimpleTrustRegionSubproblem, TrustRegionCholesky, AdachiTrustRegionSubproblem
+end # module TRS

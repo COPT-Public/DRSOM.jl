@@ -3,9 +3,9 @@ using LinearAlgebra
 using Printf
 using Dates
 using KrylovKit
-using Distributions
 using LineSearches
 using SparseArrays
+using .TRS
 
 const UTR_LOG_SLOTS = @sprintf(
     "%5s | %5s | %11s | %9s | %7s | %6s | %6s | %8s | %6s \n",
@@ -175,11 +175,13 @@ function iterate_cholesky(
         σ = σ₀ / 2
         r = 1 / 3 / σ₀
         σ₀ = σ₀ * grad_regularizer
-    elseif iter.initializerule == :unscaled
-        σ = iter.σ₀
-        r = max(state.r, 1e-1)
+    elseif iter.initializerule == :classic
+        # no regularization
+        σ = σ₀ = 0.0
+        r = state.r
     else
-        σ = σ₀ = state.σ
+        # fixed regularization
+        σ = σ₀ = iter.σ₀
         r = max(state.r, 1e-1)
     end
     σ = σ * grad_regularizer
@@ -202,7 +204,8 @@ function iterate_cholesky(
             v, θ, λ₁, kᵢ = TrustRegionCholesky(
                 H + σ * I,
                 state.∇f,
-                1e3;
+                # 1e3;
+                Δ;
                 # λₗ=θ - σ
             )
             Δ = min(Δ, v |> norm)
@@ -217,7 +220,7 @@ function iterate_cholesky(
         k₂ += 1
         @debug """periodic check (main iterate)
             |d|: $(v |> norm):, Δ: $Δ, 
-            θ:  $θ, λₗ: $λₗ, 
+            θ:  $θ, λₗ: $λ₁, 
             kᵢ: $kᵢ, df: $df, 
             ρₐ: $ρₐ
         """
@@ -230,6 +233,12 @@ function iterate_cholesky(
         elseif iter.adaptiverule ∈ [:constant, :mishchenko]
             # do nothing
             bool_acc = true
+        elseif iter.adaptiverule == :classic
+            Δ, σ, Df, bool_acc = classic_rules_utr(
+                state, df,
+                Df, Δ, σ, ρₐ, γ₁, γ₂ / 1.5,
+                θ, λ₁ - σ
+            )
         else
             throw(
                 ErrorException("unrecognized adaptive mode $(iter.adaptiverule)")
@@ -237,8 +246,12 @@ function iterate_cholesky(
         end
         !bool_acc && continue
         # do this when accept
-        state.σ = max(1e-12, σ / grad_regularizer)
-        state.r = max(Δ / grad_regularizer, 1e-1)
+        if iter.adaptiverule != :classic
+            state.σ = max(1e-18, σ / grad_regularizer)
+            state.r = max(Δ / grad_regularizer, 1e-1)
+        else
+            state.r = max(Δ, 1e-8)
+        end
         state.k₂ += k₂
         state.kₜ = k₂
         state.x = x
@@ -395,6 +408,12 @@ function iterate_evolve_lanczos(
         elseif iter.adaptiverule ∈ [:constant, :mishchenko]
             # do nothing
             bool_acc = true
+        elseif iter.adaptiverule == :classic
+            Δ, σ, Df, bool_acc = classic_rules_utr(
+                state, df,
+                Df, Δ, σ, ρₐ, γ₁, γ₂,
+                θ, λ₁ - σ
+            )
         else
             throw(
                 ErrorException("unrecognized adaptive mode $(iter.adaptiverule)")
@@ -402,8 +421,11 @@ function iterate_evolve_lanczos(
         end
         !bool_acc && continue
         # do this when accept
-        state.σ = max(1e-18, σ / grad_regularizer)
-        state.r = max(Δ / grad_regularizer, 1e-1)
+        if iter.adaptiverule != :classic
+            state.σ = max(1e-18, σ / grad_regularizer)
+            state.r = max(Δ / grad_regularizer, 1e-1)
+        end
+
         state.k₂ += k₂
         state.kᵥ += kᵥ
         state.kₜ = k₂
@@ -430,7 +452,7 @@ end
     implement the strategy of Mishchenko [Algorithm 2.3, AdaN+](SIOPT, 2023)
     this is always accepting method
 """
-function initial_rules_mishchenko(state, funcg, Hx, funcH, args...)
+function initial_rules_mishchenko(state::UTRState, funcg, Hx, funcH, args...)
     σ, _... = args
     Δ = 10.0
     bool_acc = true
@@ -457,6 +479,20 @@ function initial_rules_mishchenko(state, funcg, Hx, funcH, args...)
     return σ1, M, 0.0, bool_acc
 end
 
+function classic_rules_utr(state, args...)
+    df, Df, Δ, σ, ρₐ, γ₁, γ₂, θ, λ₁, _... = args
+    # @info "details:" λ₁ σ
+    bool_acc = true
+    if (Δ > 1e-8) && ((df < 0) || ((df < Df) && (ρₐ < 0.2)))  # not satisfactory
+        # dec radius
+        Δ /= γ₂
+        bool_acc = false
+    end
+    if ρₐ > 0.6
+        Δ *= γ₂
+    end
+    return Δ, σ, Df, bool_acc
+end
 
 function adaptive_rules_utr(state, args...)
     df, Df, Δ, σ, ρₐ, γ₁, γ₂, θ, λ₁, _... = args

@@ -288,6 +288,7 @@ end
 
 
 function _eigenvalue(f::Function, iter, state; bg=:krylov)
+    # _tol = state.ϵ > 1e-3 ? 1e-6 : iter.eigtol
     _tol = state.ϵ > 1e-3 ? 1e-5 : max(iter.eigtol, 1e-2 * state.ϵ)
     if bg == :krylov
         n = length(state.x)
@@ -301,10 +302,9 @@ function _eigenvalue(f::Function, iter, state; bg=:krylov)
             vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)
         elseif iter.direction == :auto
             q = zeros(n + 1)
-            if state.α < 1e-3
+            if state.ϵ < 1e-4
                 q = state.ξ
             else
-                # q[1:end-1] = (rand(Float64, n) |> normalize) * 0.05
                 q[end] = 1.0
             end
             vals, vecs, info = KrylovKit.eigsolve(f, state.ξ, 1, :SR; tol=_tol, issymmetric=true, eager=true)

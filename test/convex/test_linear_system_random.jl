@@ -9,7 +9,7 @@ include("../tools.jl")
 
 using ArgParse
 using DRSOM
-using Distributions
+
 using LineSearches
 using Optim
 using ProximalOperators
@@ -48,19 +48,19 @@ if bool_gen
     m = 6000
     n = 10000
     nnz = 0.3
-    
+
     @info "data reading start" m n nnz
     name = "random"
     A = sprand(Float64, m, n, nnz)
     wₛ = rand(Float64, n)
     wₛ ./= norm(wₛ)
     y = A * wₛ
-    ϵ(w) = A*w - y
-    f(w) = 0.5*sum(abs2,ϵ(w))
+    ϵ(w) = A * w - y
+    f(w) = 0.5 * sum(abs2, ϵ(w))
     fₛ = f(wₛ)
-    
+
     g(w) = ForwardDiff.gradient(f, w)
-    
+
     γ = 0.0 # 1e-10
     Random.seed!(1)
     N = y |> length
@@ -81,11 +81,11 @@ if bool_gen
     g₀ = A'r₀
 
     Fw(w) = [
-        (A' * ϵ(w[1:end-1]) + A'y + g₀  * w[end]); 
-        (w[1:end-1]' * g₀  + δ₀ * w[end])
+        (A' * ϵ(w[1:end-1]) + A'y + g₀ * w[end]);
+        (w[1:end-1]' * g₀ + δ₀ * w[end])
     ]
     Fc = DRSOM.Counting(Fw)
-    
+
 
 end
 Fc([w₀; 1])
@@ -97,11 +97,11 @@ if bool_solve
 
     ts = time()
     rl = KrylovKit.eigsolve(
-        Fc, [w₀; 1], 1, :SR, 
+        Fc, [w₀; 1], 1, :SR,
         Lanczos(
-            tol=ε, 
-            maxiter=100, 
-            verbosity=2, 
+            tol=ε,
+            maxiter=100,
+            verbosity=2,
             eager=true
         );
     )
