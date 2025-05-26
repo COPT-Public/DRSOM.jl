@@ -175,14 +175,14 @@ function iterate_cholesky(
         σ = σ₀ / 2
         r = 1 / 3 / σ₀
         σ₀ = σ₀ * grad_regularizer
-    elseif iter.initializerule == :unscaled
-        σ = iter.σ₀
-        r = max(state.r, 1e-1)
     elseif iter.initializerule == :classic
+        # no regularization
         σ = σ₀ = 0.0
         r = state.r
     else
-        throw(ErrorException("unrecognized initialize rule $(iter.initializerule)"))
+        # fixed regularization
+        σ = σ₀ = iter.σ₀
+        r = max(state.r, 1e-1)
     end
     σ = σ * grad_regularizer
     Δ = r * grad_regularizer
