@@ -300,8 +300,8 @@ if add_hacubic
         alg_hacubic_i(;
             x0=copy(x), f=loss, g=g, H=H,
             A₀=1e-10,
-            α=2.0,
-            memory=10,
+            α=1.3,
+            memory=15,
             memory_type=:i,
             options...
         )
@@ -309,9 +309,9 @@ if add_hacubic
     wrapper_hacubic_ii(x, loss, g, H, options; kwargs...) =
         alg_hacubic_ii(;
             x0=copy(x), f=loss, g=g, H=H,
-            A₀=1e-12,
-            α=1.5,
-            memory=3,
+            A₀=1e-10,
+            α=1.3,
+            memory=4,
             memory_type=:ii,
             options...
         )

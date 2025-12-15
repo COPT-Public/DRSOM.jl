@@ -48,7 +48,8 @@ function CubicSubpCholesky(
         @debug "cholesky: $(issuccess(F))"
         if !issuccess(F)
             bool_indef = true
-            λₖ = max(λₖ * 1.05, 1e-10)
+            λₖ = max(λₖ * 1.15, 1e-10)
+            k += 1
             continue
         end
         p === nothing ? F.p : p

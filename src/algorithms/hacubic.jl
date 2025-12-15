@@ -55,9 +55,9 @@ Base.@kwdef mutable struct HaCubicIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     α::Float64 = 1.1 # inflation factor
     memory::Int64 = 5
     memory_type::Symbol = :i
-    A₀::Float64 = 1e-6 # initial regularizor
+    A₀::Float64 = 1e-12 # initial regularizor
     Aₖ::Tx = zeros(memory)
-    Aᵤ::Float64 = 1e10
+    Aᵤ::Float64 = 1e11
 end
 
 
@@ -194,10 +194,10 @@ function iterate_cholesky(
         )
     end
 
-    Mₖ = min(max(iter.Aₖ..., 0.0), iter.Aᵤ * min(state.ϵ, 1.0))
+    Mₖ = min(max(iter.Aₖ..., 1e-12), iter.Aᵤ * min(state.ϵ, 1.0))
 
     Lₖ = Mₖ * iter.α
-    v, θ, λ₁, kᵢ = iter.trs(
+    v, _... = iter.trs(
         H,
         state.∇f,
         Lₖ;
@@ -216,6 +216,7 @@ function iterate_cholesky(
     # update the regularizor
     m₂ = v' * H * v / 2 + v' * state.∇f
     Hₖ = (fx - (fz + m₂)) * 6 / (Δ^3)
+    Hₖ = isnan(Hₖ) ? iter.A₀ : Hₖ
 
     @debug "Aₖ: $(iter.Aₖ) memory_type: $(iter.memory_type)"
     if iter.memory_type == :i
@@ -265,11 +266,12 @@ function iterate_cholesky_nesterov(
 
     # --------------------------------------------------------
     # compute extrapolation
-    β = 3
-    denom = state.k + β
+    Bₖ = (state.k)^3
+    bₖ = (state.k + 1)^3 - Bₖ
+    ηₖ = Bₖ / (Bₖ + bₖ)
 
     # now state.x is the half update after extrapolation
-    state.x = state.k / denom * state.z + β / denom * state.v
+    state.x = ηₖ .* state.z + (1 - ηₖ) .* state.v
     # --------------------------------------------------------
 
     state.z = z = state.x
@@ -286,37 +288,55 @@ function iterate_cholesky_nesterov(
         )
     end
 
-    if iter.initializerule == :given
-        Mₕ = iter.Mₕ(state.x)
-        @debug """Given second-order smoothness initialization
-            given Mₕ: $Mₕ,
-        """
-    else
-        throw(
-            ErrorException("unrecognized initializerule $(iter.initializerule)")
+    # compute Mₖ from history
+    _M = Mₖ = min(max(iter.Aₖ..., 0.0), iter.Aᵤ * min(state.ϵ, 1.0))
+    _H₊ = 0.0
+    β = (iter.α + 1) * 0.5
+
+    while true
+        Lₖ = iter.α * _M
+        v, _... = iter.trs(
+            H,
+            state.∇f,
+            Lₖ
         )
+        # update the regularizor
+        state.x .+= v
+        state.Δ = Δ = norm(v)
+        g₊ = iter.g(state.x)
+        Hₖ = 2 * norm(g₊ + Lₖ / 2 * Δ * v) / Δ^2
+        if Hₖ > 2 * β * _M
+            @info "recalculate _M ratio: $(Hₖ / _M) $((iter.α + 1) * 0.5)"
+            _M = 2 * Hₖ
+            # and recalculate
+        else
+            # update the memory and return
+            _H₊ = Hₖ
+            @debug "Aₖ: $(iter.Aₖ) memory_type: $(iter.memory_type)"
+            if iter.memory_type == :i
+                # we never modify the first slot, keep with the initial value
+                iter.Aₖ[2] = max(iter.Aₖ[2], Hₖ)
+                if mod(state.k, iter.memory) == 0
+                    # discard the current keeper
+                    iter.Aₖ[2] = iter.A₀
+                end
+            elseif iter.memory_type == :ii
+                iter.Aₖ[1] = Hₖ
+                iter.Aₖ = circshift(iter.Aₖ, -1)
+            else
+                throw(ErrorException("unrecognized memory type $(iter.memory_type)"))
+            end
+            break
+        end
     end
-
-    Lₖ = 0.1Mₕ
-    v, θ, λ₁, kᵢ = iter.trs(
-        H,
-        state.∇f,
-        Lₖ
-    )
-
-    # check subp residual
-    Δ = v |> norm
-    r = Δ - 2 * θ / Lₖ
-
-    state.α = 1.0
-    fx = iter.f(state.z + v * state.α)
+    Cₚ = 3^(3.5) / (2^2(iter.α^2 - β^2)^0.5)
+    fx = iter.f(state.x)
     # summarize
-    x = y = state.z + v * state.α
+    x = y = state.x
     # update s, v
-    Ω = sqrt(1 / (6Mₕ))
-    state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(x)
+    state.s += bₖ * iter.g(x)
     ns = norm(state.s)
-    state.v = state.v₀ - Ω * state.s / sqrt(ns)
+    state.v = state.v₀ - (3 * Cₚ * _H₊)^(-0.5) * (ns^(-0.5)) * state.s
     @debug """periodic check (main iterate)
         |d|: $(v |> norm):, Δ: $Δ, 
         θ:  $θ, λₗ: $λ₁, 
@@ -327,10 +347,9 @@ function iterate_cholesky_nesterov(
     state.x = x
     state.y = y
     state.fx = fx
-    state.ϵₚ = r
-    state.θ = θ
+    state.θ = _H₊
     state.d = x - z
-    state.Δ = Δ
+
     state.t = (Dates.now() - iter.t).value / 1e3
     counting(iter, state)
     state.status = true
@@ -338,15 +357,6 @@ function iterate_cholesky_nesterov(
     state.acc_style = :I
     checknan(state)
     return state, state
-end
-
-function iterate_cholesky_monteiro_svaiter(
-    iter::HaCubicIteration,
-    state::HACubicState{R,Tx};
-) where {R,Tx}
-    throw(
-        ErrorException("not implemented yet $(iter.subpstrategy)")
-    )
 end
 
 ####################################################################################################
