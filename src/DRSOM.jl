@@ -7,8 +7,6 @@ const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
 
 # various utilities
-include("utilities/atrs/ATRS.jl")
-# myself
 include("utilities/autodiff.jl")
 include("utilities/fbtools.jl")
 include("utilities/iterationtools.jl")
@@ -16,11 +14,13 @@ include("utilities/displaytools.jl")
 include("utilities/counter.jl")
 include("utilities/interpolation.jl")
 include("utilities/linesearches.jl")
-include("utilities/homogeneous.jl")
-include("utilities/trustregion.jl")
-include("utilities/lanczos.jl")
-include("utilities/pthordersubp.jl")
 
+# subproblem solvers
+include("utilities/subp/atrs/ATRS.jl")
+include("utilities/subp/ghm.jl")
+include("utilities/subp/trs.jl")
+include("utilities/subp/lanczos.jl")
+include("utilities/subp/cubic.jl")
 
 # algorithm implementations
 include("algorithms/interface.jl")
@@ -31,6 +31,8 @@ include("algorithms/hsodm.jl")
 include("algorithms/pfh.jl")
 include("algorithms/utr.jl")
 include("algorithms/atr.jl")
+include("algorithms/atrms.jl")
+include("algorithms/hacubic.jl")
 
 # my implementation of other algorithms
 include("others/cubicreg_vanilla.jl")
@@ -47,6 +49,8 @@ PFH = PathFollowingHSODM
 FBEDRSOM = ForwardBackwardDimensionReducedSecondOrderMethod
 UTR = UniversalTrustRegion
 ATR = AcceleratedUniversalTrustRegion
+ATRMS = AcceleratedUniversalTrustRegionMonteiroSvaiter
+HaCubic = HistoryAwareCubicRegularization
 function __init__()
     # Logger.initialize()
 end
@@ -55,7 +59,8 @@ export Result
 export DRSOM2, DRSOMEx
 export FBEDRSOM
 export HSODM, PFH
-export UTR, ATR
+export UTR, ATR, ATRMS
+export HaCubic
 
 # other algorithms
 export CubicRegularizationVanilla

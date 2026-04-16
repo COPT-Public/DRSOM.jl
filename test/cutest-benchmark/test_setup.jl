@@ -1,5 +1,5 @@
 include("../tools.jl")
-include("./hsodm_paper_test.jl")
+include("./problem_cols.jl")
 
 
 log_freq = 200
@@ -15,9 +15,9 @@ test_before_start = true
 # test set
 # filter_cutest_problem(nlp) = true
 # small test
-# filter_cutest_problem(nlp) = (4 <= nlp.meta.nvar <= 200)
+filter_cutest_problem(nlp) = (4 <= nlp.meta.nvar <= 200)
 # large_test
-filter_cutest_problem(nlp) = (1000 <= nlp.meta.nvar <= 5000)
+# filter_cutest_problem(nlp) = (1000 <= nlp.meta.nvar <= 5000)
 
 
 # filter_optimization_method(k) = true
@@ -34,7 +34,11 @@ filter_cutest_problem(nlp) = (1000 <= nlp.meta.nvar <= 5000)
 # filter_optimization_method(k) = k ∈ [:DRSOM, :DRSOMHomo]
 # filter_optimization_method(k) = k == :HSODM
 # filter_optimization_method(k) = k == :HSODMhvp
-filter_optimization_method(k) = k == :UTR
+# filter_optimization_method(k) = k ∈ [:HaCubic, :UTR]
+# filter_optimization_method(k) = k ∈ [:HaCubicI, :HaCubicII, :ARC]
+filter_optimization_method(k) = k ∈ [:HaCubicII]
+# filter_optimization_method(k) = k ∈ [:ARCH]
+# filter_optimization_method(k) = k == :HaCubic
 # filter_optimization_method(k) = k ∈ [:HSODMhvp, :ARC, :TRST]
 # filter_optimization_method(k) = k ∈ [:iUTRhvp]
 # filter_optimization_method(k) = k == :ARC
@@ -48,11 +52,11 @@ filter_optimization_method(k) = k == :UTR
 # choose problem set
 # PROBLEMS = UNC_PROBLEMS_221104
 # PROBLEMS = TEST
-# PROBLEMS = UNC_PROBLEMS_4to200
-# PROBLEMS = UNC_PROBLEMS_200to5000
+PROBLEMS = intersect(UNC_PROBLEMS_4to200, UNC_PROBLEMS_GOOD)
+# PROBLEMS = UNC_PROBLEMS_201to5000
 # PROBLEMS = UNC_PROBLEMS_GOOD
 # PROBLEMS = UNC_PROBLEMS_COMB[155:end]
-PROBLEMS = UNC_PROBLEMS_COMB
+# PROBLEMS = UNC_PROBLEMS_COMB
 # PROBLEMS = UNC_PROBLEM_NO_PARAMS
 
 if test_before_start

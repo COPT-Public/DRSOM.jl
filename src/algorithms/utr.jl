@@ -172,8 +172,8 @@ function iterate_cholesky(
             state, iter.g, H, iter.H,
             state.σ
         )
-        σ = σ₀ / 2
-        r = 1 / 3 / σ₀
+        σ = σ₀ / 5
+        r = 20 / σ₀
         σ₀ = σ₀ * grad_regularizer
     elseif iter.initializerule == :classic
         # no regularization

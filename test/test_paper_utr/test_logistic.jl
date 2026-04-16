@@ -38,11 +38,14 @@ using LIBSVMFileIO
 
 bool_q_preprocessed = true
 bool_opt = true
-bool_plot = false
+bool_plot = true
 f1(A, d=2) = sqrt.(sum(abs2.(A), dims=d))
 
-ε = 1e-6 # * max(g(x0) |> norm, 1)
-λ = 1e-9
+ε = 1e-7 # * max(g(x0) |> norm, 1)
+λ = 1e-5
+
+results = []
+
 if bool_q_preprocessed
     name = "a4a"
     # name = "a9a"
@@ -120,7 +123,7 @@ end
 
 
 if bool_opt
-
+    K = 100
     # options for Optim.jl package
     options = Optim.Options(
         g_tol=ε,
@@ -130,36 +133,9 @@ if bool_opt
         show_every=1,
         time_limit=500
     )
-
-    # rn2 = PFH(name=Symbol("iNewton-1e-8"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=60, tol=ε, freq=1,
-    #     step=:newton, μ₀=0.0,
-    #     maxtime=500, linesearch=:backtrack,
-    #     bool_trace=true,
-    #     eigtol=1e-8,
-    #     direction=:warm
-    # )
-    # rn3 = PFH(name=Symbol("iNewton-1e-9"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=60, tol=ε, freq=1,
-    #     step=:newton, μ₀=0.0,
-    #     maxtime=500, linesearch=:backtrack,
-    #     bool_trace=true,
-    #     eigtol=1e-9,
-    #     direction=:warm
-    # )
-
-    # ra = HSODM(name=Symbol("adaptive-HSODM"))(;
-    #     x0=copy(x0), f=loss, g=g, hvp=hvpdiff,
-    #     maxiter=10000, tol=ε, freq=1,
-    #     maxtime=500,
-    #     direction=:warm, linesearch=:hagerzhang,
-    #     adaptive=:none
-    # )
     rmc = UTR(name=Symbol("RegNewton-AdaN+"))(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=300, tol=1e-7, freq=1,
+        maxiter=K, tol=1e-7, freq=1,
         bool_trace=true,
         subpstrategy=:direct,
         mainstrategy=:newton,
@@ -168,14 +144,14 @@ if bool_opt
     )
     ru = UTR(name=Symbol("Universal-TRS"))(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=300, tol=1e-7, freq=1,
+        maxiter=K, tol=1e-7, freq=1,
         bool_trace=true,
         subpstrategy=:direct,
-        initializerule=:mishchenko
+        initializerule=:mishchenko,
     )
     rf1 = UTR(name=Symbol("RegNewton-Fixed-1e-4"))(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=300, tol=ε, freq=1,
+        maxiter=K, tol=ε, freq=1,
         bool_trace=true,
         subpstrategy=:direct,
         mainstrategy=:newton,
@@ -184,7 +160,7 @@ if bool_opt
     )
     rf2 = UTR(name=Symbol("RegNewton-Fixed-1e-5"))(;
         x0=copy(x0), f=loss, g=g, H=H,
-        maxiter=300, tol=ε, freq=1,
+        maxiter=K, tol=ε, freq=1,
         bool_trace=true,
         subpstrategy=:direct,
         mainstrategy=:newton,

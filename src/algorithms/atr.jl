@@ -35,8 +35,9 @@ Base.@kwdef mutable struct ATRIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     Mμ₊::Float64 = 1.2
     γ₁::Float64 = 0.95
     γ₂::Float64 = 1.0
+    localtol::Float64 = 1e-4
+    localthres::Float64 = 1e-4
     # ----------------------------------------------------------------
-    eigtol::Float64 = 1e-9
     itermax::Int64 = 20
     direction = :warm
     linesearch = :none
@@ -215,8 +216,8 @@ function iterate_cholesky(
         """
     elseif iter.initializerule == :given
         Mₕ = iter.Mₕ(state.x)
-        σ₀ = sqrt(Mₕ) / 3
-        r₀ = 1 / sqrt(Mₕ) / 3
+        σ₀ = sqrt(Mₕ) / 3 * iter.ratio_σ
+        r₀ = 1 / sqrt(Mₕ) / 3 * iter.ratio_Δ
         @debug """Given second-order smoothness initialization
             given Mₕ: $Mₕ,
             σ: $σ₀
@@ -357,8 +358,8 @@ function iterate_cholesky_nesterov(
         """
     elseif iter.initializerule == :given
         Mₕ = iter.Mₕ(state.x)
-        σ₀ = 0.333 * sqrt(Mₕ)
-        r₀ = 1.533 / sqrt(Mₕ)
+        σ₀ = 0.133 * sqrt(Mₕ)
+        r₀ = 1.033 / sqrt(Mₕ)
         @debug """Given second-order smoothness initialization
             given Mₕ: $Mₕ,
             σ: $σ₀
@@ -395,70 +396,65 @@ function iterate_cholesky_nesterov(
     kᵢ: $kᵢ
     """
     bool_acc = false
-    acc_style = :_
+    acc_style = :_ # default value
     if θ > 0.0
         bool_acc = true
         acc_style = :I
     end
     if acc_style == :I
     else
-        @debug """periodic check step II start
-        """
-        j₁ = 0
-        gl = 1e3
-        while (j₁ < 30)
-            g₊ = iter.g(state.x + v)
-            grad_regularizer = g₊ |> norm |> sqrt
-            σ = σ₀ * grad_regularizer * iter.ratio_σ
-            Δ = r₀ * grad_regularizer
-            v, θ, λ₁, kᵢ = iter.trs(
-                H + σ * I,
-                state.∇f,
-                Δ;
-                Δϵ=1e-12
-            )
-            @debug """stage II, inner iterates:
-            j₁:  $j₁
-            |d|:  $(v |> norm)
-            σ:  $σ,
-            Δ:  $Δ
-            θ:  $θ
-            |g₊|:  $(norm(g₊))
-            |g|:  $(norm(state.∇f))
-            ratio:  $(grad_regularizer ./ gl)
-            """
-            j₁ += 1
-            state.acc_count[:II] += 1
-            if θ > 0.0
-                break
+        # otherwise, enter the Local Detection phase
+        @debug("periodic check step II start")
+        j₁ = 1
+        _gₙ = state.ϵ
+        if _gₙ <= iter.localthres
+            _buff = copy(state.x)
+            _g = copy(state.∇f)
+            _H = copy(H)
+            while (j₁ < 20)
+                v = -(_H + σ / 1e2 * I) \ _g
+                _buff .+= v
+                _g = iter.g(_buff)
+                _H = iter.H(_buff)
+                _g₊ = norm(_g)
+                @debug("j₁: $j₁, norm(_g): $(_g₊) $(_gₙ)")
+                if _g₊ > _gₙ
+                    bool_acc = false
+                    @debug("local detection failed")
+                    break
+                elseif norm(_g) < iter.localtol
+                    bool_acc = true
+                    state.x = x = _buff
+                    state.∇f .= _g
+                    state.ϵ = _g₊
+                    @debug("local detection success")
+                    break
+                end
+                _gₙ = norm(_g)
+                j₁ += 1
             end
-            if grad_regularizer ./ gl > iter.γ₁
-                break
-            end
-            gl = min(gl, grad_regularizer)
         end
-        bool_acc = (θ <= iter.γ₂ * σ)
         acc_style = bool_acc ? :II : :III
-        @debug """periodic check step II finish
-        """
+        @debug("periodic check step II finish")
         Mₜ = iter.γ₂ * Mₕ # the estimated ratio between σ and |d|
-        if !bool_acc
-            @debug """start smart bisection at μ
-            """
-            μ₋ = iter.γ₂ * σ
-            μ₊ = iter.γ₂ * (σ + θ)
-            v, μ, j = bisect_μ(iter, state, Mₜ, H, state.∇f, μ₋, μ₊)
-            k₂ += j
-        end
+    end
+    if !bool_acc
+        @debug("start smart bisection at μ")
+
+        μ₋ = iter.γ₂ * σ
+        μ₊ = iter.γ₂ * (σ + θ)
+        v, μ, j = bisect_μ(iter, state, Mₜ, H, state.∇f, μ₋, μ₊)
+        k₂ += j
+        state.x = x = state.x + v
     end
 
-    x = state.x + v
-    fx = iter.f(x)
+
+    fx = iter.f(state.x)
     df = fz - fx
     dq = -v'H * v / 2 - v'state.∇f
     ρₐ = df / dq
     # update s, v
-    state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(x)
+    state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(state.x)
     ns = norm(state.s)
     state.v = state.v₀ - Ω * state.s / sqrt(ns)
     @debug """periodic check (main iterate)
@@ -472,14 +468,14 @@ function iterate_cholesky_nesterov(
     state.r = max(Δ / grad_regularizer, 1e-1)
     state.k₂ += k₂
     state.kₜ = k₂
-    state.x = x
-    state.y = x
+
+    state.y .= state.x
     state.fx = fx
     state.ρ = ρₐ
     state.dq = dq
     state.df = df
     state.θ = θ
-    state.d = x - z
+    state.d .= state.x - z
     state.Δ = Δ
     state.Δₙ = state.d |> norm
     state.t = (Dates.now() - iter.t).value / 1e3
@@ -603,7 +599,7 @@ function iterate_cholesky_monteiro_svaiter(
     if !bool_acc
         μ₋ = σ
         μ₊ = σ + θ
-        v, μ, j = bisect_μ(state, Mₕ, H, state.∇f, μ₋, μ₊)
+        v, μ, j = bisect_μ(iter, state, Mₕ, H, state.∇f, μ₋, μ₊)
         k₂ += j
         acc_style = :bisection
     end
@@ -702,11 +698,11 @@ function (alg::IterativeAlgorithm{T,S})(;
     tol=1e-6,
     freq=10,
     verbose=1,
-    eigtol=1e-9,
     direction=:cold,
-    linesearch=:none,
     adaptive=:none,
     bool_trace=false,
+    localtol=tol / 2,
+    localthres=tol * 5e1,
     kwargs...
 ) where {T<:ATRIteration,S<:ATRState}
 
@@ -717,7 +713,14 @@ function (alg::IterativeAlgorithm{T,S})(;
         apply_counter(cf, kwds)
     end
 
-    iter = T(; eigtol=eigtol, linesearch=linesearch, adaptive=adaptive, direction=direction, verbose=verbose, kwds...)
+    iter = T(;
+        adaptive=adaptive,
+        direction=direction,
+        verbose=verbose,
+        localtol=localtol,
+        localthres=localthres,
+        kwds...
+    )
     for (_k, _) in kwds
         @debug _k getfield(iter, _k)
     end

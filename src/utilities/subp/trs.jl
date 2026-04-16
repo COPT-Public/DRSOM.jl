@@ -4,7 +4,7 @@ using LinearAlgebra, SparseArrays
 using Printf, Dates
 using KrylovKit
 
-include("./trustregionlr.jl")
+include("./trs_simple.jl")
 
 @doc raw"""
 A direct procedure to solve `TRS` utilizing Cholesky factorization

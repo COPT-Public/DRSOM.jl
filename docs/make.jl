@@ -34,12 +34,3 @@ makedocs(
     doctestfilters=[r"[\s\-]?\d\.\d{6}e[\+\-]\d{2}"],
     # modules=[DRSOM]
 )
-
-
-deploydocs(
-    repo="https://github.com/brentian/DRSOM.jl.git",
-    push_preview=true,
-    devbranch="dev",
-    devurl="dev",
-    versions=["stable" => "v^", "v#.#", "dev" => "dev"],
-)

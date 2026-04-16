@@ -6,24 +6,28 @@
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-purple.svg
 <!-- [docs-stable-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/stable -->
 <!-- [docs-dev-url]: https://JuliaSmoothOptimizers.github.io/LinearOperators.jl/dev -->
-[docs-stable-url]: https://copt-public.github.io/DRSOM.jl/stable
-[docs-dev-url]: https://copt-public.github.io/DRSOM.jl/dev
-
+[docs-stable-url]: https://https://drsom.bzhangcw.io/DRSOM.jl/stable
+[docs-dev-url]: https://https://drsom.bzhangcw.io/DRSOM.jl/dev
 
 DRSOM.jl is a Julia implementation of a few second-order optimization methods for nonlinear optimization. 
 
 **DRSOM.jl now includes a bunch of other algorithms, beyond the original `DRSOM`**:
 - Dimension-Reduced Second-Order Method (`DRSOM`)
-- Homogeneous Second-order Descent Method (`HSODM`).
-- Homotopy Path-Following HSODM (`PFH`)
-- Universal Trust-Region Method (`UTR`)
+- [Homogeneous Second-order Descent Method (`HSODM`)](https://doi.org/10.1287/moor.2023.0132), Math. Oper. Res., 2025
+  - The path-following version, [Homotopy Path-Following HSODM (`PFH`)](https://doi.org/10.1007/s10107-025-02230-3), Math. Program., (2025). 
+- [Universal Trust-Region Method (`UTR`)](https://link.springer.com/article/10.1007/s10915-025-03154-y), J Sci. Comp., (2026).
+  - [Accelerated version (ATR)](https://arxiv.org/abs/2511.00680)
+- A preliminary Cubic Regularization Method, and a [History-Aware Adaptive Regularization Method (HAR)](https://arxiv.org/abs/2511.05788)
 
 ## Reference
 You are welcome to cite our papers : )
 ```
 1.  Jiang, Y., He, C., Zhang, C., Ge, D., Jiang, B., Ye, Y.: Beyond nonconvexity: a universal trust-region method with new analyses, http://arxiv.org/abs/2311.11489, (2023)
+
 2.  He, C., Jiang, Y., Zhang, C., Ge, D., Jiang, B., Ye, Y.: Homogeneous second-order descent framework: a fast alternative to Newton-type methods. Math. Program. (2025). https://doi.org/10.1007/s10107-025-02230-3
+
 3.  Zhang, C., He, C., Jiang, Y., Xue, C., Jiang, B., Ge, D., Ye, Y.: A homogeneous second-order descent method for nonconvex optimization. Mathematics of OR. (2025). https://doi.org/10.1287/moor.2023.0132
+
 4.  Zhang, C., Ge, D., He, C., Jiang, B., Jiang, Y., Ye, Y.: DRSOM: a dimension reduced second-order method, http://arxiv.org/abs/2208.00208, (2022)
 ```
 

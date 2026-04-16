@@ -7,11 +7,11 @@ using KrylovKit
 using LineSearches
 using SparseArrays
 
-const CUBIC_LOG_SLOTS = @sprintf(
+const HACUBIC_LOG_SLOTS = @sprintf(
     "%5s | %5s | %11s | %9s | %7s | %8s | %8s | %6s | %6s \n",
     "k", "kₜ", "f", "|∇f|", "Δ", "θ", "ε", "t", "pts"
 )
-Base.@kwdef mutable struct CubicIteration{Tx,Tf,Tϕ,Tg,TH,Th}
+Base.@kwdef mutable struct HaCubicIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     f::Tf             # f: smooth f
     ϕ::Tϕ = nothing   # ϕ: nonsmooth part (not implemented yet)
     g::Tg = nothing   # gradient function
@@ -46,16 +46,24 @@ Base.@kwdef mutable struct CubicIteration{Tx,Tf,Tϕ,Tg,TH,Th}
     subpstrategy = :direct
     initializerule = :undef
     trs::Union{Function,Nothing} = nothing
-    LOG_SLOTS::String = CUBIC_LOG_SLOTS
-    ALIAS::String = "Cubic"
-    DESC::String = "Vanilla Cubic Regularization"
+    LOG_SLOTS::String = HACUBIC_LOG_SLOTS
+    ALIAS::String = "HaCubic"
+    DESC::String = "History Aware Cubic Regularization"
     error::Union{Nothing,Exception} = nothing
+    # ----------------------------------------------------------------
+    # memory for Ak (regularizor)
+    α::Float64 = 1.1 # inflation factor
+    memory::Int64 = 5
+    memory_type::Symbol = :i
+    A₀::Float64 = 1e-12 # initial regularizor
+    Aₖ::Tx = zeros(memory)
+    Aᵤ::Float64 = 1e11
 end
 
 
-Base.IteratorSize(::Type{<:CubicIteration}) = Base.IsInfinite()
+Base.IteratorSize(::Type{<:HaCubicIteration}) = Base.IsInfinite()
 
-Base.@kwdef mutable struct CubicState{R,Tx}
+Base.@kwdef mutable struct HACubicState{R,Tx}
     status::Bool = true # status
     fx::R             # new value f at x: x(k)
     fz::R             # old value f at z: x(k-1)
@@ -93,7 +101,7 @@ end
  Initialize the state, change of behavior:
     do not optimize at the first (0th) iterate.
 """
-function Base.iterate(iter::CubicIteration)
+function Base.iterate(iter::HaCubicIteration)
     iter.t = Dates.now()
     z = copy(iter.x0)
     fz = iter.f(z)
@@ -101,7 +109,7 @@ function Base.iterate(iter::CubicIteration)
     Hv = similar(grad_f_x) # this is a buffer for Hvp
     gₙ = norm(grad_f_x, 2)
     n = z |> length
-    state = CubicState(
+    state = HACubicState(
         x=z,
         v=z,
         y=z,
@@ -117,9 +125,13 @@ function Base.iterate(iter::CubicIteration)
         ϵ=gₙ,
         Δ=gₙ * 1e1,
     )
+    iter.Aₖ .= iter.A₀
+    # println("α: $(iter.α), Aₖ: $(iter.Aₖ)")
+
     if isnothing(iter.trs)
         iter.trs = CubicSubpCholesky
     end
+
     if iter.hvp === nothing
         return state, state
     end
@@ -142,8 +154,8 @@ end
 
 
 function Base.iterate(
-    iter::CubicIteration,
-    state::CubicState{R,Tx};
+    iter::HaCubicIteration,
+    state::HACubicState{R,Tx};
 ) where {R,Tx}
     # use inexact method (a Lanczos method)
     @debug """
@@ -164,8 +176,8 @@ function Base.iterate(
 end
 
 function iterate_cholesky(
-    iter::CubicIteration,
-    state::CubicState{R,Tx};
+    iter::HaCubicIteration,
+    state::HACubicState{R,Tx};
 ) where {R,Tx}
 
     state.z = z = state.x
@@ -182,18 +194,10 @@ function iterate_cholesky(
         )
     end
 
-    if iter.initializerule == :given
-        Mₕ = iter.Mₕ(state.x)
-        @debug """Given second-order smoothness initialization
-            given Mₕ: $Mₕ,
-        """
-    else
-        throw(
-            ErrorException("unrecognized initializerule $(iter.initializerule)")
-        )
-    end
-    Lₖ = 2 * Mₕ
-    v, θ, λ₁, kᵢ = iter.trs(
+    Mₖ = min(max(iter.Aₖ..., 1e-12), iter.Aᵤ * min(state.ϵ, 1.0))
+
+    Lₖ = Mₖ * iter.α
+    v, _... = iter.trs(
         H,
         state.∇f,
         Lₖ;
@@ -201,38 +205,58 @@ function iterate_cholesky(
     Δ = v |> norm
 
     state.α = 1.0
-    fx = iter.f(state.z + v * state.α)
     # summarize
     x = y = state.z + v * state.α
+    fx = iter.f(x)
+    bool_acc = false
+    if fx < state.fx
+        bool_acc = true
+    end
 
-    @debug """periodic check (main iterate)
-        |d|: $(v |> norm):, Δ: $Δ, 
-        θ:  $θ, λₗ: $λ₁, 
-        kᵢ: $kᵢ, df: $df, 
-        ρₐ: $ρₐ
-    """
+    # update the regularizor
+    m₂ = v' * H * v / 2 + v' * state.∇f
+    Hₖ = (fx - (fz + m₂)) * 6 / (Δ^3)
+    Hₖ = isnan(Hₖ) ? iter.A₀ : Hₖ
 
+    @debug "Aₖ: $(iter.Aₖ) memory_type: $(iter.memory_type)"
+    if iter.memory_type == :i
+        # we never modify the first slot, keep with the initial value
+        iter.Aₖ[2] = max(iter.Aₖ[2], Hₖ)
+        if mod(state.k, iter.memory) == 0
+            # discard the current keeper
+            iter.Aₖ[2] = iter.A₀
+        end
+    elseif iter.memory_type == :ii
+        iter.Aₖ[1] = Hₖ
+        iter.Aₖ = circshift(iter.Aₖ, -1)
+    else
+        throw(ErrorException("unrecognized memory type $(iter.memory_type)"))
+    end
     # do this when accept
-    state.x = x
-    state.y = y
-    state.fx = fx
-    state.θ = θ
-    state.d = x - z
-    state.Δ = Δ
+    state.θ = Mₖ
+    if bool_acc
+        state.x = x
+        state.y = y
+        state.fx = fx
+        state.d = x - z
+        state.Δ = Δ
+        state.acc_style = :accept
+    else
+        state.acc_style = :null
+    end
     state.t = (Dates.now() - iter.t).value / 1e3
     counting(iter, state)
     state.status = true
     # @info ρₐ
     state.k += 1
-    state.acc_style = :I
     checknan(state)
     return state, state
 end
 
 
 function iterate_cholesky_nesterov(
-    iter::CubicIteration,
-    state::CubicState{R,Tx};
+    iter::HaCubicIteration,
+    state::HACubicState{R,Tx};
 ) where {R,Tx}
     @debug """Nesterov acceleration style
     """
@@ -242,11 +266,12 @@ function iterate_cholesky_nesterov(
 
     # --------------------------------------------------------
     # compute extrapolation
-    β = 3
-    denom = state.k + β
+    Bₖ = (state.k)^3
+    bₖ = (state.k + 1)^3 - Bₖ
+    ηₖ = Bₖ / (Bₖ + bₖ)
 
     # now state.x is the half update after extrapolation
-    state.x = state.k / denom * state.z + β / denom * state.v
+    state.x = ηₖ .* state.z + (1 - ηₖ) .* state.v
     # --------------------------------------------------------
 
     state.z = z = state.x
@@ -263,37 +288,55 @@ function iterate_cholesky_nesterov(
         )
     end
 
-    if iter.initializerule == :given
-        Mₕ = iter.Mₕ(state.x)
-        @debug """Given second-order smoothness initialization
-            given Mₕ: $Mₕ,
-        """
-    else
-        throw(
-            ErrorException("unrecognized initializerule $(iter.initializerule)")
+    # compute Mₖ from history
+    _M = Mₖ = min(max(iter.Aₖ..., 0.0), iter.Aᵤ * min(state.ϵ, 1.0))
+    _H₊ = 0.0
+    β = (iter.α + 1) * 0.5
+
+    while true
+        Lₖ = iter.α * _M
+        v, _... = iter.trs(
+            H,
+            state.∇f,
+            Lₖ
         )
+        # update the regularizor
+        state.x .+= v
+        state.Δ = Δ = norm(v)
+        g₊ = iter.g(state.x)
+        Hₖ = 2 * norm(g₊ + Lₖ / 2 * Δ * v) / Δ^2
+        if Hₖ > 2 * β * _M
+            @info "recalculate _M ratio: $(Hₖ / _M) $((iter.α + 1) * 0.5)"
+            _M = 2 * Hₖ
+            # and recalculate
+        else
+            # update the memory and return
+            _H₊ = Hₖ
+            @debug "Aₖ: $(iter.Aₖ) memory_type: $(iter.memory_type)"
+            if iter.memory_type == :i
+                # we never modify the first slot, keep with the initial value
+                iter.Aₖ[2] = max(iter.Aₖ[2], Hₖ)
+                if mod(state.k, iter.memory) == 0
+                    # discard the current keeper
+                    iter.Aₖ[2] = iter.A₀
+                end
+            elseif iter.memory_type == :ii
+                iter.Aₖ[1] = Hₖ
+                iter.Aₖ = circshift(iter.Aₖ, -1)
+            else
+                throw(ErrorException("unrecognized memory type $(iter.memory_type)"))
+            end
+            break
+        end
     end
-
-    Lₖ = 0.1Mₕ
-    v, θ, λ₁, kᵢ = iter.trs(
-        H,
-        state.∇f,
-        Lₖ
-    )
-
-    # check subp residual
-    Δ = v |> norm
-    r = Δ - 2 * θ / Lₖ
-
-    state.α = 1.0
-    fx = iter.f(state.z + v * state.α)
+    Cₚ = 3^(3.5) / (2^2(iter.α^2 - β^2)^0.5)
+    fx = iter.f(state.x)
     # summarize
-    x = y = state.z + v * state.α
+    x = y = state.x
     # update s, v
-    Ω = sqrt(1 / (6Mₕ))
-    state.s += (state.k + 1) * (state.k + 2) / 2 * iter.g(x)
+    state.s += bₖ * iter.g(x)
     ns = norm(state.s)
-    state.v = state.v₀ - Ω * state.s / sqrt(ns)
+    state.v = state.v₀ - (3 * Cₚ * _H₊)^(-0.5) * (ns^(-0.5)) * state.s
     @debug """periodic check (main iterate)
         |d|: $(v |> norm):, Δ: $Δ, 
         θ:  $θ, λₗ: $λ₁, 
@@ -304,10 +347,9 @@ function iterate_cholesky_nesterov(
     state.x = x
     state.y = y
     state.fx = fx
-    state.ϵₚ = r
-    state.θ = θ
+    state.θ = _H₊
     state.d = x - z
-    state.Δ = Δ
+
     state.t = (Dates.now() - iter.t).value / 1e3
     counting(iter, state)
     state.status = true
@@ -317,22 +359,13 @@ function iterate_cholesky_nesterov(
     return state, state
 end
 
-function iterate_cholesky_monteiro_svaiter(
-    iter::CubicIteration,
-    state::CubicState{R,Tx};
-) where {R,Tx}
-    throw(
-        ErrorException("not implemented yet $(iter.subpstrategy)")
-    )
-end
-
 ####################################################################################################
 # Basic Tools
 ####################################################################################################
-cubic_stopping_criterion(tol, state::CubicState) =
+cubic_stopping_criterion(tol, state::HACubicState) =
     (state.ϵ <= tol) || (state.Δ <= 1e-12)
 
-function counting(iter::T, state::S) where {T<:CubicIteration,S<:CubicState}
+function counting(iter::T, state::S) where {T<:HaCubicIteration,S<:HACubicState}
     try
         state.kf = getfield(iter.f, :counter)
         state.kH = hasproperty(iter.H, :counter) ? getfield(iter.H, :counter) : 0
@@ -343,15 +376,15 @@ function counting(iter::T, state::S) where {T<:CubicIteration,S<:CubicState}
     end
 end
 
-function checknan(state::S) where {S<:CubicState}
+function checknan(state::S) where {S<:HACubicState}
     if any(isnan, state.x)
         @warn(ErrorException("NaN detected in Lanczos, use debugging to fix"))
     end
 end
 
-function cubic_display(k, state::CubicState)
+function cubic_display(k, state::HACubicState)
     if k == 1 || mod(k, 30) == 0
-        @printf("%s", CUBIC_LOG_SLOTS)
+        @printf("%s", HACUBIC_LOG_SLOTS)
     end
     @printf(
         "%5d | %5d | %+.4e | %.3e | %.1e | %+.1e | %+.1e | %6.1f | %s \n",
@@ -360,14 +393,14 @@ function cubic_display(k, state::CubicState)
     )
 end
 
-default_solution(::CubicIteration, state::CubicState) = state.x
+default_solution(::HaCubicIteration, state::HACubicState) = state.x
 
 
-CubicRegularizationVanilla(;
-    name=:Cubic,
+HistoryAwareCubicRegularization(;
+    name=:HaCubic,
     stop=cubic_stopping_criterion,
     display=cubic_display
-) = IterativeAlgorithm(CubicIteration, CubicState; name=name, stop=stop, display=display)
+) = IterativeAlgorithm(HaCubicIteration, HACubicState; name=name, stop=stop, display=display)
 
 
 
@@ -386,7 +419,7 @@ function (alg::IterativeAlgorithm{T,S})(;
     adaptive=:none,
     bool_trace=false,
     kwargs...
-) where {T<:CubicIteration,S<:CubicState}
+) where {T<:HaCubicIteration,S<:HACubicState}
 
     arr = Vector{S}()
     kwds = Dict(kwargs...)
@@ -413,7 +446,7 @@ function (alg::IterativeAlgorithm{T,S})(;
 end
 
 
-function Base.show(io::IO, t::T) where {T<:CubicIteration}
+function Base.show(io::IO, t::T) where {T<:HaCubicIteration}
     format_header(t.LOG_SLOTS)
     @printf io "  algorithm alias       := %s\n" t.ALIAS
     @printf io "  algorithm description := %s\n" t.DESC
@@ -435,7 +468,7 @@ function Base.show(io::IO, t::T) where {T<:CubicIteration}
     flush(io)
 end
 
-function summarize(io::IO, k::Int, t::T, s::S) where {T<:CubicIteration,S<:CubicState}
+function summarize(io::IO, k::Int, t::T, s::S) where {T<:HaCubicIteration,S<:HACubicState}
     println(io, "-"^length(t.LOG_SLOTS))
     println(io, "summary:")
     @printf io " (main)          f       := %.2e\n" s.fx
@@ -453,5 +486,5 @@ function summarize(io::IO, k::Int, t::T, s::S) where {T<:CubicIteration,S<:Cubic
     flush(io)
 end
 
-summarize(k::Int, t::T, s::S) where {T<:CubicIteration,S<:CubicState} =
+summarize(k::Int, t::T, s::S) where {T<:HaCubicIteration,S<:HACubicState} =
     summarize(stdout, k, t, s)

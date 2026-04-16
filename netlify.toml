@@ -1,0 +1,12 @@
+[build]
+  command = "bash scripts/netlify-build.sh"
+  publish = "docs/build"
+
+[build.environment]
+  JULIA_NUM_THREADS = "2"
+  # Optionally pin Julia version used in build script
+  # JULIA_VERSION = "1.8.5"
+  # JULIA_PKG_SERVER can speed up dependency resolution; uncomment to pin
+  # JULIA_PKG_SERVER = "https://pkg.julialang.org"
+
+
